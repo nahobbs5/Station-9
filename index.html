@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Station 9</title>
+  <meta name="description" content="A small first-person horror game: repair a failing research station while something hunts you by sound.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600&family=Share+Tech+Mono&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <div id="game"></div>
+  <div id="vignette"></div>
+  <div id="flash" hidden></div>
+
+  <div id="hud" hidden>
+    <div id="crosshair"></div>
+    <div id="top-left">
+      <div id="location">Arrival Airlock</div>
+      <div id="objective"></div>
+      <ul id="checklist"></ul>
+    </div>
+    <div id="bottom-left">
+      <div class="meter"><span>NOISE</span><div class="track"><div id="noise-bar"></div></div></div>
+      <div class="meter"><span>STAMINA</span><div class="track"><div id="stamina-bar"></div></div></div>
+      <div id="mode"></div>
+      <div id="decoys"></div>
+    </div>
+    <div id="prompt"></div>
+    <div id="progress" hidden><div id="progress-bar"></div></div>
+    <div id="subtitle" hidden></div>
+    <pre id="log" hidden></pre>
+  </div>
+
+  <section id="title" class="screen">
+    <h1>STATION <span>9</span></h1>
+    <p class="tagline">REPAIR. SURVIVE. FIND A WAY OUT.</p>
+    <p class="blurb">Something came through the teleporter. It can't see well, but it can hear you.<br>
+      Fix the generator, call for rescue, and get to the escape pod.</p>
+    <ul class="controls">
+      <li><b>WASD</b> move</li>
+      <li><b>Mouse</b> look</li>
+      <li><b>Shift</b> sprint (loud)</li>
+      <li><b>C</b> crouch (quiet)</li>
+      <li><b>E</b> use / hold to repair</li>
+      <li><b>F</b> flashlight</li>
+      <li><b>Q</b> throw noise-maker</li>
+      <li><b>Esc</b> pause</li>
+    </ul>
+    <label class="voice"><input type="checkbox" id="voice" checked> Station voice (text-to-speech)</label>
+    <button id="start">Begin shift</button>
+    <p id="start-error" class="hint"></p>
+    <p class="hint">Best with headphones. Keyboard and mouse only.</p>
+  </section>
+
+  <section id="pause" class="screen" hidden>
+    <h2>Paused</h2>
+    <p>Click to resume.</p>
+  </section>
+
+  <section id="caught" class="screen" hidden>
+    <h2>Found.</h2>
+    <p id="caught-stats"></p>
+    <p class="hint">It listens for footsteps. Crouch near it, close doors behind you, and throw noise-makers away from you.</p>
+    <button class="restart">Try again</button>
+  </section>
+
+  <section id="win" class="screen" hidden>
+    <h2>Launched.</h2>
+    <p>The pod drops away from Station 9. Behind you, every light on the station comes on at once.</p>
+    <p id="win-stats"></p>
+    <button class="restart">Play again</button>
+  </section>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

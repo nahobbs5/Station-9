@@ -1,10 +1,13 @@
 // First-person movement, mouse look, sprint/crouch, stamina and the flashlight.
 import * as THREE from 'three';
 import { cellOf } from './layout.js';
+import { STEP_LOUDNESS } from './noise.js';
 
-const SPEED = { walk: 3.0, sprint: 5.4, crouch: 1.5 };
+// Sprint is the only way to outpace a hunting alien (5.5 m/s), and it is loud.
+export const SPEED = { walk: 3.0, sprint: 6.0, crouch: 1.5 };
 const STRIDE = { walk: 1.7, sprint: 2.2, crouch: 1.1 };
-export const STEP_LOUDNESS = { walk: 5, sprint: 13, crouch: 1.2 };
+const SPRINT_TIME = 4;  // seconds of running on a full bar
+const RECOVER_TIME = 6; // seconds to refill it
 const EYE = { stand: 1.6, crouch: 0.95 };
 const RADIUS = 0.3;
 const LOOK = 0.0022;
@@ -24,6 +27,9 @@ export class Player {
     this.exhausted = false;
     this.keys = new Set();
     this.flashlightOn = true;
+    this.flashClicked = false; // set on toggle; main turns it into a small noise
+    this.moving = false;
+    this.idle = 0; // seconds since you last moved
 
     camera.rotation.order = 'YXZ';
     this.flashlight = new THREE.SpotLight(0xfff0d0, 30, 26, 0.42, 0.45, 1.6);
@@ -33,7 +39,10 @@ export class Player {
 
     addEventListener('keydown', (e) => {
       this.keys.add(e.code);
-      if (e.code === 'KeyF' && !e.repeat && document.pointerLockElement) this.flashlightOn = !this.flashlightOn;
+      if (e.code === 'KeyF' && !e.repeat && document.pointerLockElement) {
+        this.flashlightOn = !this.flashlightOn;
+        this.flashClicked = true;
+      }
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
     addEventListener('blur', () => this.keys.clear());
@@ -68,14 +77,15 @@ export class Player {
     else this.mode = 'walk';
 
     if (this.mode === 'sprint') {
-      this.stamina -= dt / 5;
+      this.stamina -= dt / SPRINT_TIME;
       if (this.stamina <= 0) { this.stamina = 0; this.exhausted = true; }
     } else {
-      this.stamina = Math.min(1, this.stamina + dt / (moving ? 9 : 6));
-      if (this.exhausted && this.stamina > 0.35) this.exhausted = false;
+      this.stamina = Math.min(1, this.stamina + dt / RECOVER_TIME);
+      if (this.exhausted && this.stamina >= 1) this.exhausted = false;
     }
 
     let step = null;
+    this.moving = false;
     if (moving) {
       const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
       const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
@@ -87,6 +97,7 @@ export class Player {
       if (!this.blocked(this.pos.x + vx, this.pos.z)) this.pos.x += vx;
       if (!this.blocked(this.pos.x, this.pos.z + vz)) this.pos.z += vz;
       const moved = Math.hypot(this.pos.x - ox, this.pos.z - oz);
+      this.moving = moved > 1e-4;
       this.stride += moved;
       this.bob += moved * (Math.PI / STRIDE[this.mode]);
       if (this.stride >= STRIDE[this.mode]) {
@@ -94,6 +105,8 @@ export class Player {
         step = { loudness: STEP_LOUDNESS[this.mode], mode: this.mode };
       }
     }
+
+    this.idle = this.moving ? 0 : this.idle + dt;
 
     const eyeTarget = this.crouching ? EYE.crouch : EYE.stand;
     this.eye += (eyeTarget - this.eye) * Math.min(1, dt * 10);

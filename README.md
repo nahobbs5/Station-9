@@ -15,11 +15,13 @@ Restore main power in the Generator Room, send a rescue call from Comms, then pr
 | Shift | Sprint (loud, uses stamina) |
 | C | Crouch (quiet, slow) |
 | E | Use, or hold to repair |
-| F | Flashlight (it can see you from further away with it on) |
+| F | Flashlight (it can only see you if you're moving or lit, and the click is a small noise) |
 | Q | Throw a noise-maker (pick them up in Storage) |
 | Esc | Pause |
 
-Tips: it clicks right before it moves. Closed doors slow it down and muffle your noise. A noise-maker thrown away from you pulls it off your trail.
+Tips: every state sounds different. Slow clicks mean it's patrolling, quick clicks and a murmur mean it's investigating, and when the hum cuts out and the clicking stops, it's about to hunt. Closed doors slow it down and muffle your noise. A noise-maker thrown away from you pulls it off your trail. Teal hatches lead to two safe rooms it can never enter.
+
+**Bonus:** twelve staff terminals hold the station's story. Each one you read adds to your score, and reading all twelve changes the ending.
 
 ## Run it locally
 
@@ -46,7 +48,7 @@ npm test
 
 ## How it's built
 
-Plain JavaScript modules and [three.js](https://threejs.org) 0.160 from a CDN. Everything is grey-box geometry and canvas-drawn textures, plus the six sounds in `sound_effects/`.
+Plain JavaScript modules and [three.js](https://threejs.org) 0.160 from a CDN. Everything is grey-box geometry and canvas-drawn textures, plus the sounds in `sound_effects/` and the title theme in `music/`. Every audio file is listed on the in-game Credits screen (`js/credits.js`).
 
 | File | What it does |
 | --- | --- |
@@ -57,7 +59,8 @@ Plain JavaScript modules and [three.js](https://threejs.org) 0.160 from a CDN. E
 | `js/world.js` | Builds the 3D station, lights, doors, posters and the alien's mesh |
 | `js/player.js` | Movement, mouse look, stamina, flashlight |
 | `js/tricks.js` | Environment tricks (lights, doors, phantom footsteps) and the Hat Man |
-| `js/intercom.js` | The station voice's lines and the terminal logs |
+| `js/intercom.js` | Marigold's lines (the station voice) |
+| `data/lore.json` | The twelve terminal entries. Edit the words here without touching code |
 | `js/audio.js` | Positional sound, synthesized effects, heartbeat |
 | `js/main.js` | Game loop, objectives, HUD, screens |
 

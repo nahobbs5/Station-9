@@ -8,7 +8,7 @@ export const H = 25;
 
 export const VOID = 0, ROOM = 1, CORRIDOR = 2, DOOR = 3;
 
-// Seven rooms in a loop, matching the station map on the mood board.
+// Eight rooms in a loop, plus two small safe rooms the alien can't enter.
 export const ROOMS = [
   { id: 'control',    name: 'Control Room',    x: 12, y: 1,  w: 5, h: 5 },
   { id: 'generator',  name: 'Generator Room',  x: 1,  y: 6,  w: 5, h: 5 },
@@ -17,13 +17,16 @@ export const ROOMS = [
   { id: 'comms',      name: 'Comms Room',      x: 23, y: 14, w: 5, h: 5 },
   { id: 'airlock',    name: 'Arrival Airlock', x: 9,  y: 19, w: 5, h: 5 },
   { id: 'pod',        name: 'Escape Pod Bay',  x: 17, y: 19, w: 5, h: 5 },
+  { id: 'crew',       name: 'Crew Quarters',   x: 12, y: 10, w: 5, h: 5 },
+  { id: 'wellness',   name: 'Wellness Room',   x: 7,  y: 6,  w: 3, h: 3, safe: true },
+  { id: 'quiet',      name: 'Quiet Room',      x: 19, y: 11, w: 3, h: 3, safe: true },
 ];
 
 // The alien's patrol loop, in walking order.
-export const ROUTE = ['teleporter', 'control', 'generator', 'storage', 'airlock', 'pod', 'comms'];
+export const ROUTE = ['teleporter', 'control', 'generator', 'storage', 'airlock', 'crew', 'pod', 'comms'];
 
-// Each corridor is a polyline of cells that starts and ends inside a room.
-// The first and last corridor cells (on the room walls) become doors.
+// Each corridor is a polyline of cells. An end inside a room gets a door on that room's wall.
+// An end that starts in an existing corridor is a side branch, with no door at the junction.
 const CORRIDOR_PATHS = [
   [[12, 3], [3, 3], [3, 6]],      // control -> generator
   [[16, 3], [25, 3], [25, 6]],    // control -> teleporter
@@ -32,6 +35,10 @@ const CORRIDOR_PATHS = [
   [[3, 18], [3, 21], [9, 21]],    // storage -> airlock
   [[25, 18], [25, 21], [21, 21]], // comms -> pod bay
   [[13, 21], [17, 21]],           // airlock -> pod bay
+  [[14, 5], [14, 10]],            // control -> crew quarters
+  [[13, 14], [13, 19]],           // crew quarters -> airlock
+  [[8, 3], [8, 7]],               // north corridor -> wellness room (safe)
+  [[25, 12], [21, 12]],           // east corridor -> quiet room (safe)
 ];
 
 // Things you can use. Each fills one cell and blocks movement.
@@ -40,10 +47,22 @@ export const PROPS = [
   { id: 'comms',          kind: 'repair',  room: 'comms',      cell: [25, 16], label: 'Send rescue call', duration: 5 },
   { id: 'pod',            kind: 'repair',  room: 'pod',        cell: [19, 20], label: 'Prep escape pod',  duration: 6 },
   { id: 'crate',          kind: 'crate',   room: 'storage',    cell: [1, 16],  label: 'Take noise-makers' },
-  { id: 'log-control',    kind: 'log',     room: 'control',    cell: [14, 1],  label: 'Read terminal' },
-  { id: 'log-teleporter', kind: 'log',     room: 'teleporter', cell: [27, 8],  label: 'Read terminal' },
-  { id: 'log-comms',      kind: 'log',     room: 'comms',      cell: [23, 15], label: 'Read terminal' },
   { id: 'teleporter',     kind: 'scenery', room: 'teleporter', cell: [25, 8] },
+  // Lore terminals (text in data/lore.json), a few steps off the direct routes.
+  ...[
+    ['t01', 'airlock',    [9, 23]],
+    ['t02', 'control',    [12, 1]],
+    ['t11', 'control',    [16, 1]],
+    ['t03', 'teleporter', [27, 6]],
+    ['t07', 'teleporter', [27, 10]],
+    ['t04', 'crew',       [12, 10]],
+    ['t06', 'crew',       [16, 10]],
+    ['t08', 'crew',       [16, 14]],
+    ['t05', 'storage',    [1, 18]],
+    ['t10', 'generator',  [1, 10]],
+    ['t09', 'comms',      [27, 18]],
+    ['t12', 'pod',        [21, 23]],
+  ].map(([id, room, cell]) => ({ id, kind: 'log', room, cell, label: 'Read terminal' })),
 ];
 
 // Doors that start shut. The alien starts behind these.
@@ -84,11 +103,14 @@ export function buildLayout() {
         x += dx; z += dz;
       }
     }
-    const outside = cells.filter(([x, z]) => roomIdx[idx(x, z)] < 0);
-    for (const [x, z] of outside) type[idx(x, z)] = CORRIDOR;
-    for (const [x, z] of [outside[0], outside[outside.length - 1]]) {
+    const outside = cells.filter(([x, z]) => roomIdx[idx(x, z)] < 0 && type[idx(x, z)] !== DOOR);
+    for (const [x, z] of outside) if (type[idx(x, z)] === VOID) type[idx(x, z)] = CORRIDOR;
+    // [end of the polyline, corridor cell next to it]
+    for (const [end, [x, z]] of [[path[0], outside[0]], [path[path.length - 1], outside[outside.length - 1]]]) {
+      const room = rooms[roomIdx[idx(end[0], end[1])]];
+      if (!room) continue;
       type[idx(x, z)] = DOOR;
-      doors.push({ cx: x, cz: z });
+      doors.push({ cx: x, cz: z, safe: !!room.safe });
     }
   }
 
@@ -100,6 +122,13 @@ export function buildLayout() {
   }
 
   const solid = new Set(PROPS.map((p) => key(p.cell[0], p.cell[1])));
+  // Safe rooms and their hatches: the alien never goes in.
+  const safe = new Set();
+  for (const r of rooms) {
+    if (!r.safe) continue;
+    for (let z = r.y; z < r.y + r.h; z++) for (let x = r.x; x < r.x + r.w; x++) safe.add(key(x, z));
+  }
+  for (const d of doors) if (d.safe) safe.add(key(d.cx, d.cz));
   const doorIndex = new Map(doors.map((d, i) => [key(d.cx, d.cz), i]));
 
   const layout = {
@@ -110,22 +139,23 @@ export function buildLayout() {
     isDoor: (x, z) => inBounds(x, z) && type[idx(x, z)] === DOOR,
     isCorridor: (x, z) => inBounds(x, z) && type[idx(x, z)] === CORRIDOR,
     isSolid: (x, z) => solid.has(key(x, z)),
+    isSafe: (x, z) => safe.has(key(x, z)),
     // Floor you can stand on (doors count, whatever their state).
     isOpen: (x, z) => isFloor(x, z) && !solid.has(key(x, z)),
     doorIndexAt: (x, z) => doorIndex.get(key(x, z)) ?? -1,
     roomAt: (x, z) => (inBounds(x, z) && roomIdx[idx(x, z)] >= 0 ? rooms[roomIdx[idx(x, z)]] : null),
     room: (id) => rooms.find((r) => r.id === id),
-    // Closest standable cell, searching outward in rings.
-    nearestOpen(x, z) {
+    // Closest standable cell (that also passes `ok`, if given), searching outward in rings.
+    nearestOpen(x, z, ok = layout.isOpen) {
       x = Math.max(0, Math.min(W - 1, x));
       z = Math.max(0, Math.min(H - 1, z));
-      if (layout.isOpen(x, z)) return [x, z];
+      if (ok(x, z)) return [x, z];
       for (let r = 1; r < 6; r++) {
         let best = null, bestD = Infinity;
         for (let dz = -r; dz <= r; dz++) {
           for (let dx = -r; dx <= r; dx++) {
             if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
-            if (!layout.isOpen(x + dx, z + dz)) continue;
+            if (!ok(x + dx, z + dz)) continue;
             const d = dx * dx + dz * dz;
             if (d < bestD) { bestD = d; best = [x + dx, z + dz]; }
           }

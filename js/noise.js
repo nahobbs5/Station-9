@@ -1,17 +1,24 @@
 // The noise system: one shared signal carrying a position and a loudness.
-// Loudness is roughly "metres away it can still be heard".
+// Loudness is the hearing radius in metres (Alien Behavior doc).
 import { traceCells } from './layout.js';
 
+// Each footstep, by how you're moving.
+export const STEP_LOUDNESS = { walk: 6, sprint: 14, crouch: 2 };
+
 export const LOUDNESS = {
-  door: 6,
-  repair: 9,
-  decoy: 20,
+  door: 8,
+  doorSlam: 12,   // using a door while sprinting
+  repair: 10,
+  decoy: 16,
+  flashlight: 3,
+  terminal: 4,
   comms: 22,
   generator: 30,
 };
 
-const DOOR_DAMP = 0.45; // each closed door between source and listener
-const WALL_DAMP = 0.7;  // each wall cell between them (capped)
+const DOOR_DAMP = 0.5;  // each closed door halves it
+const WALL_DAMP = 0.33; // each solid wall cuts it by about two thirds
+const MAX_WALLS = 2;
 
 export function createNoiseBus() {
   const subs = [];
@@ -24,10 +31,12 @@ export function createNoiseBus() {
 
 // How loud `noise` is by the time it reaches `to`, after doors and walls muffle it.
 export function heardLoudness(layout, noise, to, isDoorClosed) {
-  let walls = 0, doors = 0;
+  let walls = 0, doors = 0, inWall = false;
   for (const [x, z] of traceCells(noise.x, noise.z, to.x, to.z)) {
-    if (!layout.isFloor(x, z)) walls++;
-    else if (layout.isDoor(x, z) && isDoorClosed(x, z)) doors++;
+    const solid = !layout.isFloor(x, z);
+    if (solid && !inWall) walls++; // count each wall once, however thick
+    inWall = solid;
+    if (!solid && layout.isDoor(x, z) && isDoorClosed(x, z)) doors++;
   }
-  return noise.loudness * DOOR_DAMP ** doors * WALL_DAMP ** Math.min(walls, 4);
+  return noise.loudness * DOOR_DAMP ** doors * WALL_DAMP ** Math.min(walls, MAX_WALLS);
 }

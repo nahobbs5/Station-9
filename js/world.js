@@ -4,6 +4,7 @@ import { TILE, WALL_H, cellCenter, key } from './layout.js';
 
 const EMERGENCY = { color: 0xff3a22, intensity: 5 };
 const POWERED = { color: 0xd8e2ff, intensity: 16 };
+const SAFE_LIGHT = { color: 0xffe2b0, intensity: 5 }; // safe rooms: warm and steady, on their own circuit
 
 // Small seeded random, so the grime looks the same every load.
 function seeded(seed) {
@@ -65,14 +66,20 @@ function floorTexture(w, h) {
   }, [w, h]);
 }
 
+// Skipper, Vantora's mascot: a smiling star-shaped traveller.
 function drawMascot(g, cx, cy, r) {
   g.save();
   g.lineWidth = r * 0.08;
   g.strokeStyle = '#2d2a26';
-  g.fillStyle = '#e9e4d4'; // helmet
-  g.beginPath(); g.arc(cx, cy, r * 1.25, 0, Math.PI * 2); g.fill(); g.stroke();
-  g.fillStyle = '#f6d7a8'; // face
-  g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill(); g.stroke();
+  g.lineJoin = 'round';
+  g.fillStyle = '#f2c14e';
+  g.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const rr = i % 2 ? r * 0.72 : r * 1.45;
+    g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+  }
+  g.closePath(); g.fill(); g.stroke();
   g.fillStyle = '#2d2a26'; // eyes
   g.beginPath(); g.ellipse(cx - r * 0.35, cy - r * 0.2, r * 0.1, r * 0.16, 0, 0, Math.PI * 2); g.fill();
   g.beginPath(); g.ellipse(cx + r * 0.35, cy - r * 0.2, r * 0.1, r * 0.16, 0, 0, Math.PI * 2); g.fill();
@@ -97,7 +104,7 @@ function posterTexture(lines, accent) {
     });
     g.fillStyle = '#2b2b2b';
     g.font = 'bold 30px Oswald, Impact, sans-serif';
-    g.fillText('STATION 9 · BRIGHTWELL DYNAMICS', 34, h - 36);
+    g.fillText('VANTORA TRANSIT GROUP · CLOSER EVERY DAY.', 34, h - 36);
     grime(g, w, h, rand, 60, 0.3);
     g.fillStyle = 'rgba(0,0,0,0.25)';
     g.fillRect(w * 0.7, 0, 40, h * 0.2); // a tear
@@ -115,14 +122,14 @@ function mapTexture(layout) {
     for (let z = 0; z < layout.h; z++) {
       for (let x = 0; x < layout.w; x++) {
         if (!layout.isFloor(x, z)) continue;
-        g.fillStyle = layout.isDoor(x, z) ? '#d8c27a' : layout.isCorridor(x, z) ? '#53716a' : '#355048';
+        g.fillStyle = layout.isDoor(x, z) ? '#d8c27a' : layout.isSafe(x, z) ? '#2f8f86' : layout.isCorridor(x, z) ? '#53716a' : '#355048';
         g.fillRect(ox + x * s, oy + z * s, s - 1, s - 1);
       }
     }
     g.fillStyle = '#cde8dc';
     g.font = 'bold 13px sans-serif';
     for (const r of layout.rooms) {
-      g.fillText(r.name.toUpperCase(), ox + (r.cx + 0.5) * s, oy + (r.cz + 0.5) * s + 4);
+      g.fillText((r.safe ? 'SAFE' : r.name).toUpperCase(), ox + (r.cx + 0.5) * s, oy + (r.cz + 0.5) * s + 4);
     }
     g.fillStyle = '#ff6a4a';
     const a = layout.room('airlock');
@@ -136,7 +143,7 @@ function screenTexture() {
     drawMascot(g, 60, 90, 34);
     g.fillStyle = '#8fe0cf';
     g.font = '15px monospace';
-    ['Good evening,', 'operative!', 'Your safety is', 'our priority.'].forEach((t, i) => g.fillText(t, 110, 62 + i * 20));
+    ['Welcome,', 'Technician!', 'Closer', 'every day.'].forEach((t, i) => g.fillText(t, 110, 62 + i * 20));
     g.fillStyle = 'rgba(143,224,207,0.08)';
     for (let y = 0; y < h; y += 4) g.fillRect(0, y, w, 2);
   });
@@ -220,11 +227,12 @@ export function buildWorld(scene, layout) {
 
   // Doors -------------------------------------------------------------------
   const doorMat = std({ color: 0x5d6166, roughness: 0.5, metalness: 0.7 });
+  const hatchMat = std({ color: 0x2f6e6a, roughness: 0.4, metalness: 0.75 }); // safe-room hatches
   const lampRed = new THREE.MeshBasicMaterial({ color: 0xff2a1a });
   const lampGreen = new THREE.MeshBasicMaterial({ color: 0x2aff7a });
   const doorGeo = new THREE.BoxGeometry(1, 1, 1);
   const doors = layout.doors.map((d) => {
-    const mesh = new THREE.Mesh(doorGeo, doorMat);
+    const mesh = new THREE.Mesh(doorGeo, d.safe ? hatchMat : doorMat);
     if (d.axis === 'x') mesh.scale.set(0.25, WALL_H, TILE);
     else mesh.scale.set(TILE, WALL_H, 0.25);
     const x = cellCenter(d.cx), z = cellCenter(d.cz);
@@ -237,31 +245,34 @@ export function buildWorld(scene, layout) {
       scene.add(lamp);
       return lamp;
     });
-    const door = { ...d, x, z, mesh, lamps, closed: false, t: 0 };
+    const door = { ...d, x, z, mesh, lamps, closed: false, closedByPlayer: false, t: 0 };
     return door;
   });
   const doorByKey = new Map(doors.map((d) => [key(d.cx, d.cz), d]));
   const setDoor = (door, closed) => {
     door.closed = closed;
+    if (!closed) door.closedByPlayer = false;
     for (const l of door.lamps) l.material = closed ? lampRed : lampGreen;
   };
   for (const d of doors) if (d.startClosed) { setDoor(d, true); d.t = 1; }
 
   // Room lights -------------------------------------------------------------
   const rooms = layout.rooms.map((room) => {
-    const light = new THREE.PointLight(EMERGENCY.color, EMERGENCY.intensity, 13, 2);
+    const base = room.safe ? SAFE_LIGHT : EMERGENCY;
+    const light = new THREE.PointLight(base.color, base.intensity, room.safe ? 7 : 13, 2);
     light.position.set(cellCenter(room.cx), WALL_H - 0.4, cellCenter(room.cz));
     scene.add(light);
-    const fixtureMat = new THREE.MeshBasicMaterial({ color: EMERGENCY.color });
+    const fixtureMat = new THREE.MeshBasicMaterial({ color: base.color });
     const fixture = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.06, 0.3), fixtureMat);
     fixture.position.set(light.position.x, WALL_H - 0.03, light.position.z);
     scene.add(fixture);
-    return { room, light, fixtureMat, base: { ...EMERGENCY }, mult: 1, beat: 0 };
+    return { room, light, fixtureMat, base: { ...base }, mult: 1, beat: 0, haunt: 0 };
   });
   let powered = false;
   const setPower = (on) => {
     powered = on;
     for (const r of rooms) {
+      if (r.room.safe) continue;
       // The pod bay stays red: it runs on its own circuit.
       r.base = on && r.room.id !== 'pod' ? { ...POWERED } : { ...EMERGENCY };
       r.light.color.set(r.base.color);
@@ -366,6 +377,50 @@ export function buildWorld(scene, layout) {
     interactables.push({ id: 'door', kind: 'door', door: d, pos: new THREE.Vector3(d.x, 1.4, d.z), range: 2.6 });
   }
 
+  // Loose props: chairs and boxes that don't block anything. The prop trick moves them.
+  const loose = [];
+  const looseRand = seeded(11);
+  const chairGeo = new THREE.BoxGeometry(0.45, 0.06, 0.45);
+  const legGeo = new THREE.BoxGeometry(0.04, 0.45, 0.04);
+  const backGeo = new THREE.BoxGeometry(0.45, 0.5, 0.05);
+  const boxGeo = new THREE.BoxGeometry(0.55, 0.45, 0.45);
+  const chairMat = std({ color: 0x8a8578, roughness: 0.7, metalness: 0.3 });
+  const boxMat = std({ color: 0x5a4a32, roughness: 0.9 });
+  const makeChair = () => {
+    const g = new THREE.Group();
+    const seat = new THREE.Mesh(chairGeo, chairMat); seat.position.y = 0.45; g.add(seat);
+    const back = new THREE.Mesh(backGeo, chairMat); back.position.set(0, 0.72, -0.2); g.add(back);
+    for (const [lx, lz] of [[-0.19, -0.19], [0.19, -0.19], [-0.19, 0.19], [0.19, 0.19]]) {
+      const leg = new THREE.Mesh(legGeo, chairMat); leg.position.set(lx, 0.22, lz); g.add(leg);
+    }
+    return g;
+  };
+  const makeBox = () => { const b = new THREE.Mesh(boxGeo, boxMat); b.position.y = 0.22; const g = new THREE.Group(); g.add(b); return g; };
+  // Spots near the walls of a room, away from doors and fixed props.
+  const looseSpots = (room) => {
+    const spots = [];
+    for (let z = room.y; z < room.y + room.h; z++) {
+      for (let x = room.x; x < room.x + room.w; x++) {
+        const edge = x === room.x || z === room.y || x === room.x + room.w - 1 || z === room.y + room.h - 1;
+        const nearDoor = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => layout.isDoor(x + dx, z + dz));
+        if (edge && !nearDoor && layout.isOpen(x, z)) spots.push([x, z]);
+      }
+    }
+    return spots;
+  };
+  for (const room of layout.rooms) {
+    if (room.safe) continue;
+    const spots = looseSpots(room);
+    for (let i = 0; i < 2 && spots.length; i++) {
+      const [cx, cz] = spots.splice(Math.floor(looseRand() * spots.length), 1)[0];
+      const mesh = i === 0 ? makeChair() : makeBox();
+      mesh.position.set(cellCenter(cx) + (looseRand() - 0.5) * 0.6, 0, cellCenter(cz) + (looseRand() - 0.5) * 0.6);
+      mesh.rotation.y = looseRand() * Math.PI * 2;
+      scene.add(mesh);
+      loose.push({ mesh, room, spots });
+    }
+  }
+
   // Posters -----------------------------------------------------------------
   const poster = (roomId, side, tex, wM = 1.3, hM = 1.95, y = 1.75) => {
     const s = wallSpot(layout.room(roomId), side);
@@ -374,7 +429,10 @@ export function buildWorld(scene, layout) {
     mesh.rotation.y = s.rot;
     scene.add(mesh);
   };
-  poster('airlock', 'n', posterTexture(['A BRIGHTER', 'TOMORROW.', 'TOGETHER.'], '#b3332a'));
+  poster('airlock', 'n', posterTexture(['CLOSER', 'EVERY', 'DAY.'], '#b3332a'));
+  poster('crew', 'w', posterTexture(['YOUR WELLNESS', 'IS OUR', 'WAYPOINT.'], '#2f6e6a'));
+  poster('wellness', 's', posterTexture(['BREATHE IN.', 'BREATHE OUT.', 'STAY.'], '#2f6e6a'), 1.1, 1.65);
+  poster('quiet', 'w', posterTexture(['SHHH.', 'MARIGOLD', 'IS LISTENING.'], '#b3332a'), 1.1, 1.65);
   poster('storage', 'w', posterTexture(['SMALL STEPS.', 'BIG', 'POSSIBILITIES.'], '#b3332a'));
   poster('generator', 'w', posterTexture(['POWER IS A', 'PRIVILEGE.', 'EARN IT.'], '#2f6e4a'));
   poster('comms', 'e', posterTexture(["WE'RE", 'ALWAYS', 'LISTENING.'], '#b3332a'));
@@ -383,7 +441,8 @@ export function buildWorld(scene, layout) {
   poster('control', 'n', mapTexture(layout), 2.4, 2.1, 1.85);
 
   // Per-frame animation -----------------------------------------------------
-  function update(dt, time) {
+  // alien: { pos, state } so a room's light can stutter as it passes through (the patrol tell).
+  function update(dt, time, alien = null) {
     for (const d of doors) {
       const target = d.closed ? 1 : 0;
       d.t += Math.sign(target - d.t) * Math.min(Math.abs(target - d.t), dt * 2.2);
@@ -393,7 +452,12 @@ export function buildWorld(scene, layout) {
       let k = r.mult;
       if (r.beat > 0) { r.beat -= dt; k *= 0.25; }
       // Emergency lights hum and stutter a little on their own.
-      if (!powered || r.room.id === 'pod') k *= 0.85 + 0.15 * Math.sin(time * 3 + r.room.index * 1.7);
+      if (!r.room.safe && (!powered || r.room.id === 'pod')) k *= 0.85 + 0.15 * Math.sin(time * 3 + r.room.index * 1.7);
+      const R = r.room;
+      const inside = alien && alien.state === 'patrol' &&
+        alien.pos.x > R.x * TILE && alien.pos.x < (R.x + R.w) * TILE && alien.pos.z > R.y * TILE && alien.pos.z < (R.y + R.h) * TILE;
+      r.haunt = inside ? Math.min(1, r.haunt + dt * 2) : Math.max(0, r.haunt - dt);
+      if (r.haunt > 0 && Math.sin(time * 23 + Math.sin(time * 7) * 4) > 0.6) k *= 1 - 0.75 * r.haunt;
       r.light.intensity = r.base.intensity * k;
       r.fixtureMat.color.set(r.base.color).multiplyScalar(Math.max(0.05, k));
     }
@@ -405,7 +469,9 @@ export function buildWorld(scene, layout) {
   }
 
   return {
-    doors, rooms, props, interactables, setDoor, setPower, update,
+    doors, rooms, props, interactables, loose, setDoor, setPower, update,
+    // A terminal you've read turns green.
+    markRead(id) { props[id]?.status.material.color.set(0x2aff7a); },
     doorAt: (x, z) => doorByKey.get(key(x, z)),
     get powered() { return powered; },
     // Dim every room for a moment (the Hat Man's tell).
@@ -413,51 +479,145 @@ export function buildWorld(scene, layout) {
   };
 }
 
-// The alien: a dark, wet, roughly-there shape. You mostly see it as highlights in your flashlight.
+// The alien: a black, wet mass with a crown of long stringy tentacles that reach along the
+// walls and ceiling (after the "Colossal Alien" concept art). You mostly see it as wet highlights
+// in your flashlight. It's built from simple shapes: a lumpy body and jointed tentacle chains.
+const TENTACLE_SEGMENTS = 7;
+
 export function makeAlienMesh() {
   const group = new THREE.Group();
-  const skin = new THREE.MeshStandardMaterial({ color: 0x050607, roughness: 0.22, metalness: 0.85 });
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 1.1, 6, 12), skin);
-  body.position.set(0, 1.15, -0.1);
-  body.rotation.x = 0.55;
-  group.add(body);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 10), skin);
-  head.scale.set(1, 0.8, 1.7);
-  head.position.set(0, 1.75, 0.35);
-  group.add(head);
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x8a9aa8, transparent: true, opacity: 0.55 });
-  for (let i = 0; i < 6; i++) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.018 + (i % 3) * 0.006, 6, 4), eyeMat);
-    eye.position.set((i - 2.5) * 0.07, 1.8 + ((i * 37) % 5) * 0.03, 0.82 - Math.abs(i - 2.5) * 0.04);
-    group.add(eye);
+  const inner = new THREE.Group(); // leans forward when it hunts
+  group.add(inner);
+  const skin = new THREE.MeshStandardMaterial({ color: 0x07090c, roughness: 0.2, metalness: 0.65 });
+  const strandMat = new THREE.MeshStandardMaterial({ color: 0x050607, roughness: 0.35, metalness: 0.5 });
+  const rand = seeded(29);
+
+  // Body: a squashed sphere with lumps. The lump is a function of position, so the seam stays closed.
+  const bodyGeo = new THREE.SphereGeometry(0.75, 24, 18);
+  const v = new THREE.Vector3();
+  const pos = bodyGeo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const n = v.clone().normalize();
+    const lump = 1 + 0.13 * Math.sin(5 * n.x + 1.3) * Math.sin(4 * n.y + 0.7) * Math.sin(6 * n.z + 2.1)
+      + 0.06 * Math.sin(11 * n.x + 7 * n.z) + 0.04 * Math.sin(17 * n.y + 3 * n.x);
+    v.multiplyScalar(lump);
+    pos.setXYZ(i, v.x, v.y, v.z);
   }
-  const limbs = [];
+  bodyGeo.computeVertexNormals();
+  const body = new THREE.Mesh(bodyGeo, skin);
+  body.scale.set(1.35, 0.85, 1.5);
+  const bodyHolder = new THREE.Group();
+  bodyHolder.position.y = 2.05;
+  bodyHolder.add(body);
+  inner.add(bodyHolder);
+
+  // Faint pale eyes, scattered and not quite in a row.
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x9aaab8, transparent: true, opacity: 0.5 });
   for (let i = 0; i < 7; i++) {
-    const a = (i / 7) * Math.PI * 2;
-    const pivot = new THREE.Group();
-    pivot.position.set(Math.cos(a) * 0.25, 1.2, Math.sin(a) * 0.25 - 0.1);
-    const limb = new THREE.Mesh(new THREE.ConeGeometry(0.06, 1.4, 6), skin);
-    limb.position.y = -0.7;
-    pivot.add(limb);
-    pivot.rotation.set(Math.sin(a) * 0.5, 0, Math.cos(a) * 0.5);
-    pivot.userData = { a, base: pivot.rotation.clone() };
-    group.add(pivot);
-    limbs.push(pivot);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.016 + (i % 3) * 0.007, 6, 4), eyeMat);
+    eye.position.set((i - 3) * 0.11, -0.1 + ((i * 37) % 5) * 0.04, 0.92 - Math.abs(i - 3) * 0.05);
+    bodyHolder.add(eye);
   }
-  group.userData.limbs = limbs;
+
+  // Stringy strands hanging from the underside.
+  const strandGeo = new THREE.CylinderGeometry(0.006, 0.014, 1, 4);
+  strandGeo.translate(0, -0.5, 0);
+  for (let i = 0; i < 40; i++) {
+    const a = rand() * Math.PI * 2, r = 0.2 + rand() * 0.6;
+    const strand = new THREE.Mesh(strandGeo, strandMat);
+    strand.position.set(Math.cos(a) * r, -0.35 - rand() * 0.15, Math.sin(a) * r);
+    strand.scale.y = 0.35 + rand() * 0.9;
+    strand.rotation.set((rand() - 0.5) * 0.3, 0, (rand() - 0.5) * 0.3);
+    bodyHolder.add(strand);
+  }
+
+  // Tentacles: [kind, angle around the body]. Legs drop to the floor, crowns climb the
+  // walls and ceiling, reachers stretch out ahead of it.
+  const plan = [
+    ['leg', 0.5], ['leg', 1.6], ['leg', 2.7], ['leg', 3.6], ['leg', 4.7], ['leg', 5.7],
+    ['crown', 0.9], ['crown', 2.2], ['crown', 3.2], ['crown', 4.2], ['crown', 5.3],
+    ['reach', -0.4], ['reach', 0.4], ['reach', 0],
+  ];
+  const segGeos = [];
+  for (let j = 0; j < TENTACLE_SEGMENTS; j++) {
+    const len = 0.44 - j * 0.03;
+    const r0 = 0.17 * (1 - j / TENTACLE_SEGMENTS) + 0.02, r1 = 0.17 * (1 - (j + 1) / TENTACLE_SEGMENTS) + 0.015;
+    const g = new THREE.CylinderGeometry(r1, r0, len, 7);
+    g.translate(0, len / 2, 0);
+    segGeos.push({ g, len });
+  }
+  const up = new THREE.Vector3(0, 1, 0);
+  const tentacles = [];
+  for (const [kind, a] of plan) {
+    let dir, curl;
+    if (kind === 'leg') { dir = new THREE.Vector3(Math.sin(a) * 0.55, -0.85, Math.cos(a) * 0.55); curl = -0.16; }
+    else if (kind === 'crown') { dir = new THREE.Vector3(Math.sin(a) * 0.45, 0.9, Math.cos(a) * 0.45); curl = 0.2; }
+    else { dir = new THREE.Vector3(Math.sin(a) * 0.5, 0.15, 1); curl = 0.1 * Math.sign(a || 1); }
+    dir.normalize();
+    const root = new THREE.Group();
+    root.position.set(Math.sin(a) * 0.55, 2.0 + dir.y * 0.25, Math.cos(a) * 0.55 + (kind === 'reach' ? 0.5 : 0));
+    root.quaternion.setFromUnitVectors(up, dir);
+    inner.add(root);
+    const joints = [];
+    let parent = root;
+    for (let j = 0; j < TENTACLE_SEGMENTS; j++) {
+      const joint = new THREE.Group();
+      if (j > 0) joint.position.y = segGeos[j - 1].len;
+      joint.rotation.x = curl * (1 + j * 0.15);
+      joint.userData.base = joint.rotation.x;
+      parent.add(joint);
+      joint.add(new THREE.Mesh(segGeos[j].g, skin));
+      // A few stringy bits trailing from the thicker segments.
+      for (let k = 0; k < (j < 5 ? 2 : 0); k++) {
+        const strand = new THREE.Mesh(strandGeo, strandMat);
+        strand.position.set((rand() - 0.5) * 0.1, segGeos[j].len * rand(), (rand() - 0.5) * 0.1);
+        strand.scale.y = 0.25 + rand() * 0.4;
+        joint.add(strand);
+      }
+      joints.push(joint);
+      parent = joint;
+    }
+    tentacles.push({ kind, joints, phase: rand() * Math.PI * 2 });
+  }
+
+  // A dull red glow that shows it for a moment when a hunt starts. Kept in the scene at
+  // zero intensity, because adding or removing lights recompiles every shader.
+  const reveal = new THREE.PointLight(0xff2a14, 0, 6, 2);
+  reveal.position.set(0, 1.6, 1.2);
+  group.add(reveal);
+
+  group.userData = { inner, bodyHolder, tentacles, reveal, phase: 0, lean: 0, last: null };
   return group;
 }
 
+// How each state moves: [wave speed, wave size, lean forward].
+const ALIEN_MOTION = {
+  dormant: [0.25, 0.04, 0], patrol: [1.1, 0.12, 0], investigate: [2.4, 0.18, 0.08],
+  warn: [0.4, 0.03, 0.05], hunt: [6.5, 0.3, 0.3], lost: [0.8, 0.1, 0],
+};
+
 export function animateAlienMesh(mesh, alien, time) {
-  mesh.position.set(alien.pos.x, Math.sin(time * 2.3) * 0.04, alien.pos.z);
+  const u = mesh.userData;
+  const dt = u.last === null ? 0 : Math.min(0.1, Math.max(0, time - u.last));
+  u.last = time;
+  mesh.position.set(alien.pos.x, 0, alien.pos.z);
   // Turn smoothly toward its heading.
   let d = alien.heading - mesh.rotation.y;
   d = Math.atan2(Math.sin(d), Math.cos(d));
   mesh.rotation.y += d * 0.15;
-  const speed = alien.moving ? (alien.state === 'hunt' ? 14 : 6) : 1.5;
-  for (const p of mesh.userData.limbs) {
-    const { a, base } = p.userData;
-    p.rotation.x = base.x + Math.sin(time * speed + a * 3) * 0.35;
-    p.rotation.z = base.z + Math.cos(time * speed * 0.8 + a * 2) * 0.25;
+
+  const mood = alien.dormant > 0 ? 'dormant' : alien.warning ? 'warn' : alien.state;
+  const [speed, amp, lean] = ALIEN_MOTION[mood] ?? ALIEN_MOTION.patrol;
+  u.phase += dt * speed; // accumulate, so changing speed never makes the tentacles jump
+  u.lean += (lean - u.lean) * Math.min(1, dt * 4);
+  u.inner.rotation.x = u.lean;
+  u.bodyHolder.position.y = 2.05 + Math.sin(time * 1.7) * 0.05;
+  for (const t of u.tentacles) {
+    t.joints.forEach((joint, j) => {
+      const w = amp * (1 + j * 0.2);
+      joint.rotation.x = joint.userData.base + Math.sin(u.phase + t.phase + j * 0.7) * w;
+      joint.rotation.z = Math.cos(u.phase * 0.7 + t.phase * 1.3 + j * 0.5) * w * 0.6;
+    });
   }
 }

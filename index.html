@@ -24,6 +24,7 @@
       <div id="location">Arrival Airlock</div>
       <div id="objective"></div>
       <ul id="checklist"></ul>
+      <div id="lore"></div>
     </div>
     <div id="bottom-left">
       <div class="meter"><span>NOISE</span><div class="track"><div id="noise-bar"></div></div></div>
@@ -34,14 +35,21 @@
     <div id="prompt"></div>
     <div id="progress" hidden><div id="progress-bar"></div></div>
     <div id="subtitle" hidden></div>
-    <pre id="log" hidden></pre>
+    <div id="toast" hidden></div>
+    <div id="log" hidden><div id="log-head"></div><div id="log-meta"></div><div id="log-body"></div></div>
   </div>
 
-  <section id="title" class="screen">
+  <section id="splash" class="screen">
+    <h1>STATION <span>9</span></h1>
+    <p class="press">Click to continue</p>
+  </section>
+
+  <section id="title" class="screen" hidden>
     <h1>STATION <span>9</span></h1>
     <p class="tagline">REPAIR. SURVIVE. FIND A WAY OUT.</p>
     <p class="blurb">Something came through the teleporter. It can't see well, but it can hear you.<br>
-      Fix the generator, call for rescue, and get to the escape pod.</p>
+      Fix the generator, call for rescue, and get to the escape pod.<br>
+      Teal hatches lead to safe rooms. Staff terminals hold bonus lore.</p>
     <ul class="controls">
       <li><b>WASD</b> move</li>
       <li><b>Mouse</b> look</li>
@@ -56,6 +64,13 @@
     <button id="start">Begin shift</button>
     <p id="start-error" class="hint"></p>
     <p class="hint">Best with headphones. Keyboard and mouse only.</p>
+    <button id="credits-open" class="link">Credits</button>
+  </section>
+
+  <section id="credits" class="screen" hidden>
+    <h2>Credits</h2>
+    <div id="credits-list"></div>
+    <button id="credits-back">Back</button>
   </section>
 
   <section id="pause" class="screen" hidden>
@@ -66,14 +81,15 @@
   <section id="caught" class="screen" hidden>
     <h2>Found.</h2>
     <p id="caught-stats"></p>
-    <p class="hint">It listens for footsteps. Crouch near it, close doors behind you, and throw noise-makers away from you.</p>
+    <p class="hint">It listens for footsteps. Crouch near it, close doors behind you, throw noise-makers away from you, and duck into a safe room behind a teal hatch.</p>
     <button class="restart">Try again</button>
   </section>
 
   <section id="win" class="screen" hidden>
     <h2>Launched.</h2>
-    <p>The pod drops away from Station 9. Behind you, every light on the station comes on at once.</p>
+    <p id="win-text">The pod drops away from Station 9. Behind you, every light on the station comes on at once.</p>
     <p id="win-stats"></p>
+    <p id="win-score" class="score"></p>
     <button class="restart">Play again</button>
   </section>
 

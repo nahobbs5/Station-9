@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { buildLayout, ROOMS, cellCenter, lineClear, traceCells, TILE } from '../js/layout.js';
 import { findPath } from '../js/pathfind.js';
 import { heardLoudness, STEP_LOUDNESS } from '../js/noise.js';
+import { revealAround } from '../js/minimap.js';
 import {
   Alien, inSight, SPEED, HUNT_TIMEOUT, LOSE_TRACK_AFTER, DOOR_FORCE_TIME, WARN_TIME, WARN_TIME_CLOSE,
 } from '../js/alien.js';
@@ -297,4 +298,47 @@ test('every audio file exists and is credited', async () => {
   const credited = new Set(CREDITS.map((c) => c.file));
   for (const f of used) assert.ok(credited.has(f), `no credit for ${f}`);
   assert.equal(used.length, CREDITS.length);
+});
+
+// Minimap -----------------------------------------------------------------
+
+const seenRoom = (explored, id) => {
+  const r = layout.room(id);
+  for (let z = r.y; z < r.y + r.h; z++) for (let x = r.x; x < r.x + r.w; x++) if (!explored[z * layout.w + x]) return false;
+  return true;
+};
+const anySeen = (explored, id) => {
+  const r = layout.room(id);
+  for (let z = r.y; z < r.y + r.h; z++) for (let x = r.x; x < r.x + r.w; x++) if (explored[z * layout.w + x]) return true;
+  return false;
+};
+
+test('minimap: at the start you only know the airlock', () => {
+  const explored = new Uint8Array(layout.w * layout.h);
+  const a = layout.room('airlock');
+  revealAround(layout, explored, at([a.cx, a.cz]), allOpen);
+  assert.ok(seenRoom(explored, 'airlock'));
+  for (const id of ['generator', 'control', 'pod', 'crew']) assert.equal(anySeen(explored, id), false, id);
+});
+
+test('minimap: a closed door hides what is past it, but the door itself shows', () => {
+  const door = layout.doors.find((d) => d.cx === 14 && d.cz === 21); // airlock -> pod corridor
+  const shut = (x, z) => x === door.cx && z === door.cz;
+  const from = at([13, 21]);
+  const closed = new Uint8Array(layout.w * layout.h);
+  revealAround(layout, closed, from, shut);
+  assert.equal(closed[door.cz * layout.w + door.cx], 1, 'door cell revealed');
+  assert.equal(closed[21 * layout.w + 15], 0, 'corridor past the door hidden');
+  const open = new Uint8Array(layout.w * layout.h);
+  revealAround(layout, open, from, allOpen);
+  assert.equal(open[21 * layout.w + 15], 1, 'corridor visible with the door open');
+});
+
+test('minimap: walking to crew quarters maps the way, not the rest', () => {
+  const explored = new Uint8Array(layout.w * layout.h);
+  const [sx, sz] = layout.room('airlock').spot;
+  const [gx, gz] = layout.room('crew').spot;
+  for (const cell of [[sx, sz], ...findPath(grid(), sx, sz, gx, gz)]) revealAround(layout, explored, at(cell), allOpen);
+  assert.ok(seenRoom(explored, 'crew'));
+  for (const id of ['pod', 'generator', 'teleporter']) assert.equal(anySeen(explored, id), false, id);
 });

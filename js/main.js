@@ -9,6 +9,7 @@ import { renderCredits } from './credits.js';
 import { findTarget, Throwables } from './interact.js';
 import { Tricks, HatMan } from './tricks.js';
 import { Intercom, LINES } from './intercom.js';
+import { Minimap, revealAround } from './minimap.js';
 
 const $ = (id) => document.getElementById(id);
 const ORDER = ['generator', 'comms', 'pod'];
@@ -101,6 +102,13 @@ const LORE_TOTAL = layout.props.filter((p) => p.kind === 'log').length;
 let reading = null; // { id, pos, timer, noiseTimer }
 const inSafeRoom = () => layout.isSafe(cellOf(player.pos.x), cellOf(player.pos.z));
 
+// Minimap: only what you've seen. M hides it.
+const explored = new Uint8Array(layout.w * layout.h);
+const minimap = new Minimap($('minimap'), layout);
+const terminals = layout.props.filter((p) => p.kind === 'log');
+let exploreTimer = 0, mapTimer = 0, lastCell = '';
+revealAround(layout, explored, player.pos, isDoorClosed);
+
 // Noise --------------------------------------------------------------------------
 const noise = createNoiseBus();
 noise.on((n) => {
@@ -116,6 +124,7 @@ addEventListener('keydown', (e) => {
   if (state !== 'playing') return;
   if (e.code === 'KeyE') { if (!e.repeat) ePressed = true; eHeld = true; }
   if (e.code === 'KeyQ' && !e.repeat) throwDecoy();
+  if (e.code === 'KeyM' && !e.repeat) $('map').hidden = !$('map').hidden;
 });
 addEventListener('keyup', (e) => { if (e.code === 'KeyE') eHeld = false; });
 
@@ -445,7 +454,28 @@ function update(dt) {
   drawHud(dt, target, repairing);
 }
 
+function drawMap(dt) {
+  // Reveal a few times a second, and straight away when you step into a new cell.
+  const cell = cellOf(player.pos.x) + ',' + cellOf(player.pos.z);
+  exploreTimer -= dt;
+  if (exploreTimer <= 0 || cell !== lastCell) {
+    exploreTimer = 0.25;
+    lastCell = cell;
+    revealAround(layout, explored, player.pos, isDoorClosed);
+  }
+  mapTimer -= dt;
+  if (mapTimer > 0 || $('map').hidden) return;
+  mapTimer = 0.1;
+  minimap.draw({
+    player, explored, terminals, loreRead,
+    doors: world.doors,
+    objective: stage < 3 ? layout.props.find((p) => p.id === ORDER[stage]).cell : null,
+    time: elapsed,
+  });
+}
+
 function drawHud(dt, target, repairing) {
+  drawMap(dt);
   const room = layout.roomAt(cellOf(player.pos.x), cellOf(player.pos.z));
   $('location').textContent = room ? room.name + (room.safe ? ' · SAFE' : '') : layout.isSafe(cellOf(player.pos.x), cellOf(player.pos.z)) ? 'Hatch · SAFE' : 'Corridor';
   $('lore').textContent = `LORE ${loreRead.size}/${LORE_TOTAL}`;
@@ -507,6 +537,6 @@ addEventListener('resize', () => {
 
 // Handy for debugging in the browser console.
 window.station9 = {
-  alien, player, world, layout, hatman, tricks, progress, loreRead,
+  alien, player, world, layout, hatman, tricks, progress, loreRead, explored,
   get lore() { return lore; }, get state() { return state; }, get stage() { return stage; },
 };

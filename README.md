@@ -17,6 +17,7 @@ Restore main power in the Generator Room, send a rescue call from Comms, then pr
 | E | Use, or hold to repair |
 | F | Flashlight (it can only see you if you're moving or lit, and the click is a small noise) |
 | Q | Throw a noise-maker (pick them up in Storage) |
+| M | Show or hide the minimap (it only shows what you've seen) |
 | Esc | Pause |
 
 Tips: every state sounds different. Slow clicks mean it's patrolling, quick clicks and a murmur mean it's investigating, and when the hum cuts out and the clicking stops, it's about to hunt. Closed doors slow it down and muffle your noise. A noise-maker thrown away from you pulls it off your trail. Teal hatches lead to two safe rooms it can never enter.

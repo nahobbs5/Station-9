@@ -6,6 +6,18 @@ import { wallSpot } from './textures.js';
 import { seeded } from './textures.js';
 import { wallSegments } from './walls.js';
 import { grateSpots } from './vents.js';
+import { podFootprint } from './podplan.js';
+
+// Is (x, z) on or within m metres of the escape pod (and its ramp)? Decor and loose items keep off.
+export function nearPod(x, z, m = 0) {
+  const f = podFootprint();
+  return x > f.x0 - m && x < f.x1 + m && z > f.z0 - m && z < f.z1 + m;
+}
+// Does grid cell (cx, cz) touch the pod's footprint (plus m metres)?
+export function podCell(cx, cz, m = 0) {
+  const f = podFootprint();
+  return cx * TILE < f.x1 + m && (cx + 1) * TILE > f.x0 - m && cz * TILE < f.z1 + m && (cz + 1) * TILE > f.z0 - m;
+}
 
 export const LIGHTS = {
   EMERGENCY: { color: 0xff3a22, intensity: 5 },
@@ -125,7 +137,7 @@ export function looseItems(layout, clutterCells) {
       for (let x = room.x; x < room.x + room.w; x++) {
         const edge = x === room.x || z === room.y || x === room.x + room.w - 1 || z === room.y + room.h - 1;
         const nearDoor = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => layout.isDoor(x + dx, z + dz));
-        if (edge && !nearDoor && layout.isOpen(x, z) && !clutterCells.has(key(x, z)) && !keepClear.has(key(x, z)) && !byGrate(cellCenter(x), cellCenter(z))) spots.push([x, z]);
+        if (edge && !nearDoor && layout.isOpen(x, z) && !clutterCells.has(key(x, z)) && !keepClear.has(key(x, z)) && !byGrate(cellCenter(x), cellCenter(z)) && !podCell(x, z, 0.3)) spots.push([x, z]);
       }
     }
     return spots;

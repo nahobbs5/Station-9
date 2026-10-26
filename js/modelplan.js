@@ -2,7 +2,7 @@
 // Plain data from the layout and the decor plan, so it's testable in Node; js/babylon/models.js
 // loads them. Until a model has loaded, the code-built stand-in (if any) shows instead.
 import { cellCenter } from './layout.js';
-import { furniturePlacement } from './worldplan.js';
+import { furniturePlacement, nearPod } from './worldplan.js';
 import { grateSpots } from './vents.js';
 import { GRATE_CLEAR } from './decorplan.js';
 
@@ -32,7 +32,7 @@ function onFurniture(layout, f, lx, y, lz) {
 export function modelPlacements(layout, plan) {
   const out = [];
   const grates = grateSpots(layout);
-  const clear = (x, z) => !grates.some((g) => Math.hypot(g.x - x, g.z - z) < GRATE_CLEAR.floor);
+  const clear = (x, z) => !grates.some((g) => Math.hypot(g.x - x, g.z - z) < GRATE_CLEAR.floor) && !nearPod(x, z, 0.6);
   plan.clutter.filter((c) => c.kind === 'barrel').forEach((c, i) => {
     const model = i % 2 ? 'drum' : 'barrel';
     out.push(c.tipped

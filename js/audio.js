@@ -11,11 +11,36 @@ const FILES = {
   footsteps: 'AlienApproachingSound.wav', // the alien moving nearby (loops)
   engine: 'freesound_community-low-engine-hum-72529.mp3',
   rumble: 'freesound_community-rumble-002-26712.mp3',
-  sprint: 'u_3x9ga8wevj-walking-sound-effect-272246.mp3',
+  sprint: 'u_3x9ga8wevj-walking-sound-effect-272246.mp3', // running footsteps
+  walk: 'freeeverythingxx-walking-on-concrete-ver-2-268513.mp3', // walking footsteps
   whoosh: 'dragon-studio-spaceship-whoosh-video-game-sound-320171.mp3',
 };
 // Where each footfall starts in the sprint clip (seconds); each is about 0.47s long.
 const SPRINT_STEPS = [0.09, 0.56, 1.04, 1.52, 1.99, 2.47, 2.94, 3.42, 3.9];
+// Walking and crouching use the concrete clip; its footfalls are found when it loads (findFootfalls).
+const STEP_VOLUME = { walk: 0.16, crouch: 0.05 }; // quiet: only sprinting should be loud
+
+// Where each footfall starts in a recording of footsteps: the moments the loudness jumps up from
+// quiet, at least minGap seconds apart. samples: one channel; returns [{ t, len }] in seconds.
+export function findFootfalls(samples, rate, { minGap = 0.3, maxLen = 0.45 } = {}) {
+  const win = Math.max(1, Math.floor(rate * 0.01)); // 10 ms windows
+  const env = [];
+  for (let i = 0; i + win <= samples.length; i += win) {
+    let sum = 0;
+    for (let k = i; k < i + win; k++) sum += samples[k] * samples[k];
+    env.push(Math.sqrt(sum / win));
+  }
+  const peak = Math.max(...env, 1e-9);
+  const sorted = env.slice().sort((a, b) => a - b);
+  const floor = sorted[Math.floor(sorted.length * 0.3)]; // the quiet between steps
+  const thr = floor + (peak - floor) * 0.25;
+  const starts = [];
+  for (let i = 1; i < env.length; i++) {
+    const t = (i * win) / rate;
+    if (env[i] >= thr && env[i - 1] < thr && (!starts.length || t - starts[starts.length - 1] >= minGap)) starts.push(t);
+  }
+  return starts.map((t, i) => ({ t: Math.max(0, t - 0.02), len: Math.min(maxLen, (starts[i + 1] ?? samples.length / rate) - t) }));
+}
 export const SOUND_FILES = Object.values(FILES).map((f) => 'sound_effects/' + f);
 export const MENU_MUSIC = 'music/alex-morgan-dark-suspense-thriller-528314.mp3';
 export const END_MUSIC = 'music/sub_clair-suspense-tension-622546.mp3';
@@ -195,6 +220,7 @@ export class GameAudio {
       } catch (e) { console.warn('Could not load sound', file, e); }
     }));
     this.makeSynth();
+    if (this.buffers.walk) this.walkSteps = findFootfalls(this.buffers.walk.getChannelData(0), this.buffers.walk.sampleRate);
     // The hunt screech: the teleporter whine played backwards.
     const tele = this.buffers.teleporter;
     if (tele) {
@@ -500,6 +526,15 @@ export class GameAudio {
       do i = Math.floor(Math.random() * SPRINT_STEPS.length); while (i === this.lastSprintStep && SPRINT_STEPS.length > 1);
       this.lastSprintStep = i;
       this.play2D('sprint', { volume: 0.7, rate: 0.95 + Math.random() * 0.1, offset: Math.max(0, SPRINT_STEPS[i] - 0.03), duration: 0.42 });
+      return;
+    }
+    // Walking (and, softer, crouching): one footfall from the concrete clip, never the same twice running.
+    const steps = this.walkSteps;
+    if (mode !== 'sprint' && steps?.length) {
+      let i;
+      do i = Math.floor(Math.random() * steps.length); while (i === this.lastWalkStep && steps.length > 1);
+      this.lastWalkStep = i;
+      this.play2D('walk', { volume: STEP_VOLUME[mode] ?? STEP_VOLUME.walk, rate: (mode === 'crouch' ? 0.9 : 0.97) + Math.random() * 0.08, offset: steps[i].t, duration: steps[i].len });
       return;
     }
     const v = { crouch: 0.015, walk: 0.05, sprint: 0.45 }[mode];

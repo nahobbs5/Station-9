@@ -10,6 +10,8 @@ export const CREDITS = [
     file: 'sound_effects/05_teleporter_instability.wav', use: 'Teleporter lab, the creature waking and hunting' },
   { group: 'Sound effects', title: 'Walking Sound Effect', credit: 'u_3x9ga8wevj via Pixabay',
     file: 'sound_effects/u_3x9ga8wevj-walking-sound-effect-272246.mp3', use: 'Your footsteps when sprinting' },
+  { group: 'Sound effects', title: 'Walking on Concrete (ver. 2)', credit: 'freeeverythingxx via Pixabay',
+    file: 'sound_effects/freeeverythingxx-walking-on-concrete-ver-2-268513.mp3', use: 'Your footsteps when walking or crouching' },
   { group: 'Sound effects', title: 'Alien Approaching', credit: 'Original sound design',
     file: 'sound_effects/AlienApproachingSound.wav', use: 'Something moving nearby' },
   { group: 'Sound effects', title: 'Lights Flicker / Power Loss', credit: 'Original sound design',

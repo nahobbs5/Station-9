@@ -3,6 +3,7 @@
 // paths on and what most game logic reads. No engine imports here, so Node tests can load it.
 import { buildShape, sampleCorridor } from './shape.js';
 import { SUITE_SOLIDS } from './suiteplan.js';
+import { POD } from './podplan.js';
 
 export const TILE = 2;      // metres per grid cell
 export const WALL_H = 3;    // ceiling height in metres
@@ -178,6 +179,7 @@ export function buildLayout() {
 
   const solid = new Set([...PROPS, ...FURNITURE.filter((f) => f.solid)].map((p) => key(p.cell[0], p.cell[1])));
   for (const [x, z] of SUITE_SOLIDS) solid.add(key(x, z)); // the suites' gurneys
+  for (const [x, z] of POD.solidCells) solid.add(key(x, z)); // the escape pod (4.5 m long)
   // Safe rooms and their hatches: the alien never goes in.
   const safe = new Set();
   for (const r of rooms) {

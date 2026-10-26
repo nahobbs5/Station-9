@@ -4,7 +4,7 @@
 // traced wall outline (js/walls.js), so it hangs flat on angled and curved walls too.
 import { TILE, WALL_H, cellCenter, cellOf } from './layout.js';
 import { wallSegments } from './walls.js';
-import { furniturePlacement, signPlacements, windowPlacements, wallAlong, doorFrames, FRAME, EMBLEM, generatorFixtures } from './worldplan.js';
+import { furniturePlacement, signPlacements, windowPlacements, wallAlong, doorFrames, FRAME, EMBLEM, generatorFixtures, nearPod, podCell } from './worldplan.js';
 import { grateSpots } from './vents.js';
 
 // Densities and counts, all in one place for tuning.
@@ -318,7 +318,7 @@ export function planDecor(layout, seed = 1234) {
     .map((p) => ({ x: p.x, z: p.z, yaw: yawOf(p), cell: cellAt(p) }));
   const panels = [];
   const roomCells = [];
-  for (let z = 0; z < L.h; z++) for (let x = 0; x < L.w; x++) if (L.isOpen(x, z) && L.roomAt(x, z) && !L.roomAt(x, z).safe && !L.isDoor(x, z)) roomCells.push([x, z]);
+  for (let z = 0; z < L.h; z++) for (let x = 0; x < L.w; x++) if (L.isOpen(x, z) && L.roomAt(x, z) && !L.roomAt(x, z).safe && !L.isDoor(x, z) && !podCell(x, z, 0.3)) roomCells.push([x, z]);
   for (const [x, z] of shuffle(roomCells.slice())) {
     if (panels.length >= DECOR.panels) break;
     if (panels.some((p) => L.roomAt(...p.cell) === L.roomAt(x, z))) continue;
@@ -333,6 +333,7 @@ export function planDecor(layout, seed = 1234) {
       if (!L.isOpen(x, z) || nextToDoor(x, z) || rand() > DECOR.clutterChance) continue;
       const sx = x === room.x ? -1 : 1, sz = z === room.y ? -1 : 1; // which corner walls
       if (nearGrate(cellCenter(x) + sx * 0.55, cellCenter(z) + sz * 0.55, GRATE_CLEAR.floor)) continue;
+      if (nearPod(cellCenter(x) + sx * 0.55, cellCenter(z) + sz * 0.55, 0.8)) continue;
       clutter.push({ kind: rand() < 0.65 ? 'barrel' : 'debris', x: cellCenter(x) + sx * 0.55, z: cellCenter(z) + sz * 0.55, cell: [x, z], spin: rand() * Math.PI * 2, tipped: rand() < 0.2 });
     }
   }
@@ -358,7 +359,7 @@ export function planDecor(layout, seed = 1234) {
 
   // Drop any stain that would sit on a grate, then add each grate's own tell-tale smear: a dust
   // ring round a floor grating; for a wall vent, a ring on the floor in front and grime above it.
-  for (let i = stains.length - 1; i >= 0; i--) if (nearGrate(stains[i].x, stains[i].z, GRATE_CLEAR.floor)) stains.splice(i, 1);
+  for (let i = stains.length - 1; i >= 0; i--) if (nearGrate(stains[i].x, stains[i].z, GRATE_CLEAR.floor) || nearPod(stains[i].x, stains[i].z, 0.6)) stains.splice(i, 1);
   for (const g of hideGrates) {
     if (g.kind === 'floor') stains.push({ kind: 'dust', x: g.x, z: g.z, r: g.w * 0.95, rot: rand() * 6.28, grate: g.id });
     else {

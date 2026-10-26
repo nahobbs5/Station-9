@@ -418,6 +418,7 @@ export function startGame(createView) {
   function win() {
     state = 'won';
     audio.silenceAlien(); // nothing of it in the ending
+    world.launchPod?.(); // the door shuts, the thrusters flare
     const allLore = loreRead.size === LORE_TOTAL;
     tapes.stop(false);
     intercom.stop();

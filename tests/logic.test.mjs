@@ -728,3 +728,28 @@ test('generator room fixtures hang on clear walls', async () => {
   }
   assert.ok(plan.stencils.some((s) => s.kind === 'g1'));
 });
+
+test('findFootfalls picks out each step in a footsteps recording', async () => {
+  const { findFootfalls } = await import('../js/audio.js');
+  const rate = 8000, steps = [0.2, 0.75, 1.3, 1.9];
+  const samples = new Float32Array(rate * 2.4);
+  for (let i = 0; i < samples.length; i++) samples[i] = (Math.random() - 0.5) * 0.004; // room tone
+  for (const t of steps) for (let k = 0; k < rate * 0.12; k++) samples[Math.floor(t * rate) + k] += Math.sin(k * 0.3) * Math.exp(-k / (rate * 0.04));
+  const found = findFootfalls(samples, rate);
+  assert.equal(found.length, steps.length);
+  found.forEach((f, i) => { assert.ok(Math.abs(f.t - steps[i]) < 0.04, `step ${i} at ${f.t}`); assert.ok(f.len > 0.2 && f.len <= 0.45); });
+});
+
+test('decor, models and loose items keep off the escape pod and its ramp', async () => {
+  const { nearPod, podCell, looseItems, extraSeats } = await import('../js/worldplan.js');
+  const { modelPlacements } = await import('../js/modelplan.js');
+  const plan = planDecor(layout);
+  const floorItems = [...plan.stains, ...plan.clutter, ...plan.grates, ...plan.stripes, ...modelPlacements(layout, plan), ...extraSeats(layout)];
+  for (const o of floorItems) assert.ok(!nearPod(o.x, o.z, 0.3), `${o.kind ?? o.model ?? 'item'} at ${o.x.toFixed(1)},${o.z.toFixed(1)} is on the pod`);
+  for (const p of plan.panels) assert.ok(!podCell(...p.cell), 'a ceiling panel hangs over the pod');
+  const items = looseItems(layout, new Set());
+  for (const it of items) {
+    assert.ok(!nearPod(it.x, it.z, 0.3), 'a loose item on the pod');
+    for (const [cx, cz] of it.spots) assert.ok(!podCell(cx, cz), `loose items could be moved to ${cx},${cz} under the pod`);
+  }
+});

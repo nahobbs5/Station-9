@@ -17,6 +17,8 @@ import { buildVentMeshes } from './vents.js';
 import { cutVentHoles } from '../vents.js';
 import { paddedSuite } from '../suiteplan.js';
 import { grateSpots } from '../vents.js';
+import { buildPod } from './pod.js';
+import { POD } from '../podplan.js';
 import { pbr, basic, toTexture, redraw, srgb, linear, compose, instances, TUNING, bevelBox } from './util.js';
 
 // Console status lights: Marigold until you've heard its tape, then Soft Teal (terminals spec).
@@ -273,6 +275,7 @@ export function buildWorld(scene, layout) {
 
   // Props -------------------------------------------------------------------
   const props = {};
+  let podView = null; // the escape pod's moving parts (door, thrusters, door control)
   const interactables = [];
   for (const p of layout.props) {
     const { x, z, rotY } = propPlacement(layout, p);
@@ -351,13 +354,12 @@ export function buildWorld(scene, layout) {
       statusPos = [-0.6, 1.0, 0.46];
       props.commsScreen = { tex: callTex, last: -1 };
     } else if (p.id === 'pod') {
-      const pod = add(MeshBuilder.CreateCapsule('pod', { radius: 0.65, height: 0.8 + 1.3, tessellation: 16 }, scene), 0, 0.85, 0);
-      pod.rotation.z = Math.PI / 2;
-      pod.material = pbr(scene, { color: 0xcfcbbf, roughness: 0.4, metalness: 0.3 });
-      const win = add(MeshBuilder.CreateSphere('window', { diameter: 0.7, segments: 8 }, scene), 0.3, 1.15, 0.45);
-      win.scaling.set(1.2, 0.7, 0.5);
-      win.material = pbr(scene, { color: 0x0a1418, roughness: 0.1, metalness: 0.9 });
-      statusPos = [-0.7, 1.35, 0.5];
+      // The escape pod (js/babylon/pod.js, js/podplan.js): it lies along the bay, nose east, so it
+      // doesn't turn to face the room like other props. You use it at its door control.
+      group.position.set(POD.center.x, 0, POD.center.z);
+      group.rotation.y = 0;
+      podView = buildPod(scene, group);
+      statusPos = podView.statusPos;
     } else if (p.id === 'crate') {
       add(bevelBox('crate', { width: 1.3, height: 0.8, depth: 0.9, bevel: 0.03 }, scene), 0, 0.4, 0).material = pbr(scene, { color: 0x4b5232, roughness: 0.8 });
       add(MeshBuilder.CreateBox('stripe', { width: 1.32, height: 0.12, depth: 0.92 }, scene), 0, 0.62, 0).material = pbr(scene, { color: 0xc9a227, roughness: 0.6 });
@@ -391,7 +393,8 @@ export function buildWorld(scene, layout) {
     } else if (p.kind !== 'scenery') {
       add(status, ...statusPos);
       props[p.id] = { group, status: statusMat };
-      interactables.push({ id: p.id, kind: p.kind, label: p.label, duration: p.duration, pos: { x, y: propHeight(p), z }, range: 2.7 });
+      const at = p.id === 'pod' ? { x: POD.panel.x, y: POD.panel.y, z: POD.panel.z } : { x, y: propHeight(p), z };
+      interactables.push({ id: p.id, kind: p.kind, label: p.label, duration: p.duration, pos: at, range: 2.7 });
     } else {
       status.dispose();
     }
@@ -496,6 +499,7 @@ export function buildWorld(scene, layout) {
     decor.update(dt, time, player);
     suites.update(dt, time);
     vents.update(dt);
+    podView?.update(dt);
     // The CRT overlay breathes very slightly, like an old tube's refresh.
     crtMat.alpha = 0.88 + Math.random() * 0.12;
     // A screen that just changed flickers for a moment.
@@ -525,6 +529,8 @@ export function buildWorld(scene, layout) {
 
   return {
     doors, rooms, props, interactables, loose, decor, vents, setDoor, setPower, update,
+    // The pod launches: door shut, thrusters flaring (js/babylon/pod.js).
+    launchPod() { podView?.launch(); },
     set onDecorEvent(fn) { onDecorEvent = fn; },
     markRead(id) { if (props[id]) props[id].status.emissiveColor = srgb(READ); },
     // Repairs change what some screens say (power online, signal sent, launch window open).
@@ -539,6 +545,7 @@ export function buildWorld(scene, layout) {
     setCommsLit() { redraw(props.commsScreen.tex, commsCallScreen({ sent: true }), { mirror: true }); props.commsScreen.last = 2; },
     // While E is held on a repair: the comms screen walks through the call (redrawn in steps).
     setRepairProgress(id, p) {
+      if (id === 'pod') { podView?.setProgress(p); return; }
       const c = props.commsScreen;
       if (id !== 'comms' || !c || c.last >= 2) return;
       if (p < 1 && Math.abs(p - c.last) < 0.04) return;

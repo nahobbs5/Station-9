@@ -1,42 +1,66 @@
 // Where things go in the station and how its doors and lights behave each frame, shared by both
 // renderers. Plain data and maths; each renderer builds its own meshes from it.
-import { TILE, WALL_H, cellCenter, key } from './layout.js';
+import { TILE, WALL_H, cellCenter, cellOf, key, WINDOWS, SIGN_DOORS } from './layout.js';
+import { findPath } from './pathfind.js';
+import { wallSpot } from './textures.js';
 import { seeded } from './textures.js';
+import { wallSegments } from './walls.js';
 
 export const LIGHTS = {
   EMERGENCY: { color: 0xff3a22, intensity: 5 },
   POWERED: { color: 0xd8e2ff, intensity: 16 },
-  SAFE: { color: 0xffe2b0, intensity: 5 }, // safe rooms: warm and steady, on their own circuit
+  SAFE: { color: 0xeef6ff, intensity: 5 }, // the wellness suites: cool white and steady, on their own circuit
 };
 
-// Every empty cell that touches floor gets a wall block, in one of three finishes mixed at random
-// so it looks patched together over the years.
-export function wallCells(layout) {
-  const cells = [];
-  for (let z = -1; z <= layout.h; z++) {
-    for (let x = -1; x <= layout.w; x++) {
-      if (layout.isFloor(x, z)) continue;
-      let touches = false;
-      for (let dz = -1; dz <= 1 && !touches; dz++)
-        for (let dx = -1; dx <= 1 && !touches; dx++) touches = layout.isFloor(x + dx, z + dz);
-      if (touches) cells.push([x, z]);
+// The walls, as flat panels about 2 m wide following the station's outline (js/walls.js), so they
+// bend round angled corners and curves. Each 2 m stretch gets one of three finishes, mixed at random
+// so it looks patched together over the years. u0/u1: where the panel sits along the wall texture.
+export function wallPanels(layout) {
+  const rand = seeded(41);
+  const panels = [];
+  const byLoop = new Map();
+  for (const s of wallSegments(layout.shape)) {
+    if (!byLoop.has(s.loop)) byLoop.set(s.loop, []);
+    byLoop.get(s.loop).push(s);
+  }
+  for (const segs of byLoop.values()) {
+    let u = 0; // metres along this wall
+    let variant = 0, nextChange = 0;
+    for (const s of segs) {
+      let t0 = 0;
+      while (t0 < s.len - 1e-6) {
+        if (u >= nextChange) { variant = rand() < 0.45 ? 0 : rand() < 0.5 ? 1 : 2; nextChange = Math.floor(u / TILE + 1) * TILE; }
+        const step = Math.min(s.len - t0, nextChange - u);
+        const k0 = t0 / s.len, k1 = (t0 + step) / s.len;
+        panels.push({
+          ax: s.ax + (s.bx - s.ax) * k0, az: s.az + (s.bz - s.az) * k0,
+          bx: s.ax + (s.bx - s.ax) * k1, bz: s.az + (s.bz - s.az) * k1,
+          nx: s.nx, nz: s.nz, u0: u / TILE, u1: (u + step) / TILE, variant,
+        });
+        t0 += step; u += step;
+      }
     }
   }
-  const rand = seeded(41);
-  return cells.map(([x, z]) => ({ x, z, variant: rand() < 0.45 ? 0 : rand() < 0.5 ? 1 : 2 }));
+  return panels;
 }
 
-// Dim red guide strips along both sides of every corridor cell.
+// Dim red guide strips along both sides of every corridor, every metre, turned to follow curves.
+// rot: the strip's turn about Y so its length runs along the corridor.
 export function guideStrips(layout) {
   const strips = [];
-  for (let z = 0; z < layout.h; z++) {
-    for (let x = 0; x < layout.w; x++) {
-      if (!layout.isCorridor(x, z)) continue;
-      const alongX = layout.isFloor(x - 1, z) && layout.isFloor(x + 1, z);
+  for (const c of layout.corridors) {
+    let next = 0;
+    for (const p of c.pts) {
+      if (p.s < next) continue;
+      next = p.s + 1;
+      const cx = cellOf(p.x), cz = cellOf(p.z);
+      if (!layout.isCorridor(cx, cz)) continue; // not in rooms or door cells
       for (const side of [-1, 1]) {
-        strips.push(alongX
-          ? { x: cellCenter(x), z: cellCenter(z) + side * 0.92, rot: 0 }
-          : { x: cellCenter(x) + side * 0.92, z: cellCenter(z), rot: Math.PI / 2 });
+        const off = p.r - 0.08;
+        const x = p.x - p.tz * side * off, z = p.z + p.tx * side * off;
+        // Only along a wall: skip spots that would float in open floor (junctions, wide bends).
+        if (layout.walkDistance(x, z) > 0.3) continue;
+        strips.push({ x, z, rot: Math.atan2(-p.tz, p.tx) });
       }
     }
   }
@@ -58,8 +82,6 @@ export const propHeight = (p) => PROP_HEIGHT[p.kind] ?? 1;
 export const POSTERS = [
   ['airlock', 'n', ['CLOSER', 'EVERY', 'DAY.'], '#b3332a'],
   ['crew', 'w', ['YOUR WELLNESS', 'IS OUR', 'WAYPOINT.'], '#2f6e6a'],
-  ['wellness', 's', ['BREATHE IN.', 'BREATHE OUT.', 'STAY.'], '#2f6e6a', 1.1, 1.65],
-  ['quiet', 'w', ['SHHH.', 'MARIGOLD', 'IS LISTENING.'], '#b3332a', 1.1, 1.65],
   ['storage', 'w', ['SMALL STEPS.', 'BIG', 'POSSIBILITIES.'], '#b3332a'],
   ['generator', 'w', ['POWER IS A', 'PRIVILEGE.', 'EARN IT.'], '#2f6e4a'],
   ['comms', 'e', ["WE'RE", 'ALWAYS', 'LISTENING.'], '#b3332a'],
@@ -70,17 +92,26 @@ export const POSTERS = [
 export const WALL_MAP = { room: 'control', side: 'n', w: 2.4, h: 2.1, y: 1.85 };
 export const EMBLEM = { room: 'airlock', side: 's', src: 'images/emblem.jpg', frame: 1.9, size: 1.75, y: 1.75 };
 
+// Cells kept clear so nothing stands in front of the emblem: the one under it and the one before it.
+export function emblemClearCells(layout) {
+  const s = wallSpot(layout.room(EMBLEM.room), EMBLEM.side);
+  const nx = Math.round(Math.sin(s.rot)), nz = Math.round(Math.cos(s.rot)); // out from the wall
+  const cx = cellOf(s.x + nx * 0.5), cz = cellOf(s.z + nz * 0.5);
+  return new Set([key(cx, cz), key(cx + nx, cz + nz)]);
+}
+
 // Loose chairs and boxes near room walls, away from doors, props and the decor's clutter.
 // The prop trick moves them later, using `spots`.
 export function looseItems(layout, clutterCells) {
   const rand = seeded(11);
+  const keepClear = emblemClearCells(layout);
   const spotsOf = (room) => {
     const spots = [];
     for (let z = room.y; z < room.y + room.h; z++) {
       for (let x = room.x; x < room.x + room.w; x++) {
         const edge = x === room.x || z === room.y || x === room.x + room.w - 1 || z === room.y + room.h - 1;
         const nearDoor = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => layout.isDoor(x + dx, z + dz));
-        if (edge && !nearDoor && layout.isOpen(x, z) && !clutterCells.has(key(x, z))) spots.push([x, z]);
+        if (edge && !nearDoor && layout.isOpen(x, z) && !clutterCells.has(key(x, z)) && !keepClear.has(key(x, z))) spots.push([x, z]);
       }
     }
     return spots;
@@ -139,3 +170,103 @@ export function roomBase(room, powered) {
   if (room.safe) return { ...LIGHTS.SAFE };
   return powered && room.id !== 'pod' ? { ...LIGHTS.POWERED } : { ...LIGHTS.EMERGENCY };
 }
+
+// Furniture -------------------------------------------------------------------------------
+// How deep each piece is (metres from its back to its front), so it can stand against a wall.
+export const FURNITURE_DEPTH = {
+  bunk: 0.95, lockers: 0.5, bench: 0.62, shelves: 0.45, bigCrate: 1.0, cart: 0.55, workbench: 0.75,
+  desk: 0.75, cabinet: 0.55, sofa: 0.9, plant: 0.45, messTable: 0.9, coffeeTable: 0.6,
+};
+
+// Which wall a room-edge cell backs onto: the inward direction (dx, dz) and the turn that faces it.
+function wallSide(room, cx, cz) {
+  if (cz === room.y) return { dx: 0, dz: 1, rotY: 0 };                 // north wall: face +z
+  if (cz === room.y + room.h - 1) return { dx: 0, dz: -1, rotY: Math.PI }; // south wall: face -z
+  if (cx === room.x) return { dx: 1, dz: 0, rotY: Math.PI / 2 };       // west wall: face +x
+  if (cx === room.x + room.w - 1) return { dx: -1, dz: 0, rotY: -Math.PI / 2 }; // east wall
+  return null;
+}
+
+// Where a piece stands: x, z and its turn about Y (0 faces +z). Wall pieces back onto the wall.
+export function furniturePlacement(layout, f) {
+  const room = layout.room(f.room);
+  const [cx, cz] = f.cell;
+  const side = f.rot === undefined ? wallSide(room, cx, cz) : null;
+  if (!side) return { x: cellCenter(cx), z: cellCenter(cz), rotY: f.rot ?? 0 };
+  const push = TILE / 2 - (FURNITURE_DEPTH[f.kind] ?? 0.6) / 2 - 0.04; // toward the wall
+  return { x: cellCenter(cx) - side.dx * push, z: cellCenter(cz) - side.dz * push, rotY: side.rotY };
+}
+
+// Small pieces that go with others: an office chair in front of every console, four chairs
+// round the mess table, two stools at the workbench. Each: { kind, x, z, rotY }.
+export function extraSeats(layout) {
+  const seats = [];
+  for (const p of layout.props) {
+    if (p.kind !== 'log' && p.kind !== 'console') continue;
+    const { x, z, rotY } = propPlacement(layout, p);
+    seats.push({ kind: 'officeChair', x: x + Math.sin(rotY) * 0.95, z: z + Math.cos(rotY) * 0.95, rotY: rotY + Math.PI + 0.3 });
+  }
+  for (const f of layout.furniture) {
+    const at = furniturePlacement(layout, f);
+    if (f.kind === 'messTable') {
+      for (const sx of [-0.45, 0.45]) for (const sz of [-1, 1]) {
+        seats.push({ kind: 'messChair', x: at.x + sx, z: at.z + sz * 0.8, rotY: sz > 0 ? Math.PI : 0 });
+      }
+    } else if (f.kind === 'desk') {
+      seats.push({ kind: 'officeChair', x: at.x + Math.sin(at.rotY) * 0.8, z: at.z + Math.cos(at.rotY) * 0.8, rotY: at.rotY + Math.PI - 0.2 });
+    } else if (f.kind === 'workbench') {
+      for (const s of [-0.4, 0.4]) {
+        // Along the bench (its local x), a little out in front of it.
+        const c = Math.cos(at.rotY), sn = Math.sin(at.rotY);
+        seats.push({ kind: 'stool', x: at.x + c * s + sn * 0.75, z: at.z - sn * s + c * 0.75, rotY: 0 });
+      }
+    }
+  }
+  return seats;
+}
+
+// Windows onto the planet, on the middle of a room wall.
+export function windowPlacements(layout) {
+  return WINDOWS.map(([roomId, side]) => ({ ...wallSpot(layout.room(roomId), side), y: 1.6, room: roomId }));
+}
+
+// Wayfinding signs on the corridor wall just outside some doors. Each lists rooms with an arrow
+// that points along the first step of the real route there. rot: faces into the corridor.
+export const SIGN_ROOMS = [['control', 'CONTROL'], ['teleporter', 'RESEARCH LAB'], ['generator', 'GENERATOR'], ['comms', 'COMMS'],
+  ['pod', 'ESCAPE POD BAY'], ['storage', 'STORAGE'], ['crew', 'CREW QUARTERS'], ['airlock', 'AIRLOCK']];
+export function signPlacements(layout) {
+  const grid = { w: layout.w, h: layout.h, passable: (x, z) => layout.isOpen(x, z), cost: () => 1 };
+  const signs = [];
+  for (const [dcx, dcz] of SIGN_DOORS) {
+    // The corridor cell just outside the door, and the room the door belongs to.
+    const n4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const out = n4.map(([dx, dz]) => [dcx + dx, dcz + dz]).find(([x, z]) => layout.isCorridor(x, z) && !layout.roomAt(x, z));
+    const here = n4.map(([dx, dz]) => layout.roomAt(dcx + dx, dcz + dz)).find((r) => r && layout.isFloor(...[dcx, dcz]));
+    if (!out) continue;
+    const door = layout.doors.find((d) => d.cx === dcx && d.cz === dcz);
+    // The sign hangs on a side wall of the corridor: across the direction you walk through the door.
+    const [sx, sz] = door.axis === 'x' ? [0, -1] : [-1, 0];
+    const ox = cellCenter(out[0]), oz = cellCenter(out[1]);
+    let t = 0;
+    while (t < 2.5 && layout.walkDistance(ox + sx * t, oz + sz * t) > 0) t += 0.02;
+    const nx = -sx, nz = -sz; // into the corridor, toward you
+    // Your right as you face the sign.
+    const rx = -(-nz), rz = -nx; // forward is -n; right = (-forward.z, forward.x)
+    const entries = [];
+    for (const [id, label] of SIGN_ROOMS) {
+      if (id === here?.id) continue;
+      const room = layout.room(id);
+      const path = findPathTo(grid, out, room.spot);
+      if (!path || !path.length) continue;
+      const [fx, fz] = [path[0][0] - out[0], path[0][1] - out[1]];
+      const side = fx * rx + fz * rz;
+      const arrow = side > 0.5 ? '→' : side < -0.5 ? '←' : (fx * nx + fz * nz) > 0.5 ? '↓' : '↑';
+      entries.push({ id, label, arrow, steps: path.length });
+    }
+    entries.sort((a, b) => a.steps - b.steps);
+    signs.push({ x: ox + sx * (t - 0.03), y: 1.75, z: oz + sz * (t - 0.03), rot: Math.atan2(nx, nz), door: [dcx, dcz], entries: entries.slice(0, 5) });
+  }
+  return signs;
+}
+
+const findPathTo = (grid, [sx, sz], [gx, gz]) => findPath(grid, sx, sz, gx, gz);

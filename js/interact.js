@@ -1,6 +1,6 @@
 // What you're looking at, and thrown noise-makers. Engine-free: vectors are plain {x, y, z},
 // the camera is a CameraRig (js/rig.js), and each ball's mesh comes from the renderer.
-import { WALL_H, cellOf } from './layout.js';
+import { WALL_H } from './layout.js';
 
 const fwd = { x: 0, y: 0, z: 0 };
 
@@ -23,9 +23,10 @@ export function findTarget(rig, items) {
 
 // makeBall(): the renderer's ball mesh { position: {x, y, z, set()}, glow(l), remove() }.
 export class Throwables {
-  constructor(makeBall, isBlockedCell) {
+  // blockedAt(x, z): true where a ball would hit a wall, prop or closed door.
+  constructor(makeBall, blockedAt) {
     this.makeBall = makeBall;
-    this.isBlockedCell = isBlockedCell;
+    this.blockedAt = blockedAt;
     this.items = [];
   }
 
@@ -50,7 +51,7 @@ export class Throwables {
       }
       it.vel.y -= 9.8 * dt;
       const nx = p.x + it.vel.x * dt, ny = p.y + it.vel.y * dt, nz = p.z + it.vel.z * dt;
-      if (this.isBlockedCell(cellOf(nx), cellOf(nz))) {
+      if (this.blockedAt(nx, nz)) {
         it.landed = true;
         p.y = Math.max(0.09, p.y * 0.2);
       } else if (ny <= 0.09) {

@@ -1,6 +1,10 @@
 // Where the station's wear and tear goes: pipes, faults, broken lights, patches and clutter.
-// Plain data from the layout (no three.js), seeded so it's the same every load and testable in Node.
-import { TILE, WALL_H, cellCenter } from './layout.js';
+// Plain data from the layout (no engine), seeded so it's the same every load and testable in Node.
+// Corridor decor follows the corridor centrelines (so it bends with curves); wall decor sits on the
+// traced wall outline (js/walls.js), so it hangs flat on angled and curved walls too.
+import { TILE, WALL_H, cellCenter, cellOf } from './layout.js';
+import { wallSegments } from './walls.js';
+import { furniturePlacement, signPlacements, windowPlacements, EMBLEM } from './worldplan.js';
 
 // Densities and counts, all in one place for tuning.
 export const DECOR = {
@@ -16,63 +20,78 @@ export const DECOR = {
 };
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-const HALF = TILE / 2;
 
 function seeded(seed) {
   return () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
 }
 
+// Corridor stretches to decorate: runs of centreline points that are in corridor cells (not rooms
+// or doors), with side branches trimmed where they overlap the corridor they join.
+function corridorRuns(L) {
+  const runs = [];
+  for (const c of L.corridors) {
+    const others = L.corridors.filter((o) => o !== c);
+    const inOther = (p) => others.some((o) => o.pts.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < q.r + 0.3));
+    const branch = !L.roomAt(cellOf(c.pts[0].x), cellOf(c.pts[0].z)) || !L.roomAt(cellOf(c.pts[c.pts.length - 1].x), cellOf(c.pts[c.pts.length - 1].z));
+    let run = [];
+    for (const p of c.pts) {
+      const ok = L.isCorridor(cellOf(p.x), cellOf(p.z)) && !(branch && inOther(p));
+      if (ok) run.push(p);
+      else if (run.length) { runs.push({ corridor: c.id, pts: run }); run = []; }
+    }
+    if (run.length) runs.push({ corridor: c.id, pts: run });
+  }
+  return runs.filter((r) => r.pts[r.pts.length - 1].s - r.pts[0].s > 0.5);
+}
+
+// Points every `step` metres along a run, pushed sideways by `offset` (left of travel).
+function along(run, step, offset = 0) {
+  const out = [];
+  let next = run.pts[0].s;
+  for (const p of run.pts) {
+    if (p.s + 1e-6 < next) continue;
+    next = p.s + step;
+    out.push({ x: p.x - p.tz * offset, z: p.z + p.tx * offset, tx: p.tx, tz: p.tz, s: p.s, r: p.r });
+  }
+  const last = run.pts[run.pts.length - 1];
+  if (out.length && last.s - out[out.length - 1].s > step * 0.4) out.push({ x: last.x - last.tz * offset, z: last.z + last.tx * offset, tx: last.tx, tz: last.tz, s: last.s, r: last.r });
+  return out;
+}
+
 export function planDecor(layout, seed = 1234) {
   const rand = seeded(seed);
-  const pick = (arr) => arr[Math.floor(rand() * arr.length)];
   const shuffle = (arr) => { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; };
   const L = layout;
-  const corridor = [];
-  const floorCells = [];
-  for (let z = 0; z < L.h; z++) {
-    for (let x = 0; x < L.w; x++) {
-      if (L.isCorridor(x, z)) corridor.push([x, z]);
-      if (L.isFloor(x, z) && !L.isDoor(x, z)) floorCells.push([x, z]);
-    }
-  }
+  const runs = corridorRuns(L);
+  const yawOf = (p) => Math.atan2(-p.tz, p.tx); // turn about Y so a part's length runs along the corridor
+  const cellAt = (p) => [cellOf(p.x), cellOf(p.z)];
   const nextToDoor = (x, z) => DIRS.some(([dx, dz]) => L.isDoor(x + dx, z + dz));
-  const solid = (x, z) => !L.isFloor(x, z);
-  const axisOf = (x, z) => (L.isFloor(x - 1, z) || L.isFloor(x + 1, z) ? 'x' : 'z');
-  // A point on the wall face of cell (x, z) toward (dx, dz), nudged in by `inset`.
-  const face = (x, z, dx, dz, y, inset = 0.015) => ({
-    x: cellCenter(x) + dx * (HALF - inset), y, z: cellCenter(z) + dz * (HALF - inset),
-    rot: Math.atan2(-dx, -dz), cell: [x, z],
-  });
-  const wallFaces = (cells) => cells.flatMap(([x, z]) => DIRS.filter(([dx, dz]) => solid(x + dx, z + dz)).map(([dx, dz]) => ({ x, z, dx, dz })));
 
-  // Pipes: in each corridor cell, each pipe line meets at a junction point J offset from the
-  // centre, with a half-segment from J out to each open side. Toward a door it stops with a flange,
-  // because doors slide up into the ceiling.
-  const pipes = [], flanges = [], brackets = [];
-  for (const line of DECOR.pipes) {
-    for (const [x, z] of corridor) {
-      const J = { x: cellCenter(x) + line.offset, y: line.y, z: cellCenter(z) + line.offset };
-      let bracket = false;
-      for (const [dx, dz] of DIRS) {
-        const nx = x + dx, nz = z + dz;
-        if (!L.isFloor(nx, nz)) continue;
-        const toDoor = L.isDoor(nx, nz) || L.roomAt(nx, nz);
-        const reach = toDoor ? HALF - 0.08 : HALF;
-        const end = {
-          x: dx ? cellCenter(x) + dx * reach : J.x,
-          y: line.y,
-          z: dz ? cellCenter(z) + dz * reach : J.z,
-        };
-        // On the axis we're travelling, the segment runs from J's coordinate to the cell edge.
-        pipes.push({ a: { ...J }, b: end, r: line.r, kind: line.kind, cell: [x, z] });
-        if (toDoor) flanges.push({ ...end, axis: dx ? 'x' : 'z', r: line.r });
-        bracket = true;
+  // Pipes: two lines following every corridor, near the ceiling. They stop short of doors (which
+  // slide up into the ceiling) with a flange, and get a joint wherever they bend.
+  const pipes = [], flanges = [], brackets = [], joints = [];
+  const pipePoints = { copper: [], green: [] };
+  for (const run of runs) {
+    for (const line of DECOR.pipes) {
+      const pts = along(run, 0.5, line.offset);
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = { x: pts[i].x, y: line.y, z: pts[i].z }, b = { x: pts[i + 1].x, y: line.y, z: pts[i + 1].z };
+        pipes.push({ a, b, r: line.r, kind: line.kind, cell: cellAt(a), corridor: run.corridor });
+        if (i > 0) {
+          const turn = Math.abs(Math.atan2(pts[i].tx * pts[i - 1].tz - pts[i].tz * pts[i - 1].tx, pts[i].tx * pts[i - 1].tx + pts[i].tz * pts[i - 1].tz));
+          if (turn > 0.12) joints.push({ ...a, r: line.r });
+        }
       }
-      if (bracket && (x + z) % 2 === 0) brackets.push({ x: J.x, y: line.y, z: J.z, len: WALL_H - line.y });
+      for (const [p, sign] of [[pts[0], -1], [pts[pts.length - 1], 1]]) {
+        flanges.push({ x: p.x, y: line.y, z: p.z, dir: { x: p.tx * sign, y: 0, z: p.tz * sign }, r: line.r });
+      }
+      for (const p of along(run, 2, line.offset).slice(1, -1)) brackets.push({ x: p.x, y: line.y, z: p.z, len: WALL_H - line.y });
+      pipePoints[line.kind].push(...pts.map((p) => ({ ...p, run })));
     }
   }
 
-  // Rooms: one run along a wall with no door, near the ceiling, with a riser in one corner.
+  // Rooms: one run along a wall with no door, near the ceiling, between any cut-off corners,
+  // with a riser coming up from the floor at its start.
   const risers = [];
   for (const room of L.rooms) {
     if (room.safe) continue;
@@ -81,115 +100,150 @@ export function planDecor(layout, seed = 1234) {
       { side: 's', cells: range(room.x, room.w).map((x) => [x, room.y + room.h]) },
       { side: 'w', cells: range(room.y, room.h).map((z) => [room.x - 1, z]) },
       { side: 'e', cells: range(room.y, room.h).map((z) => [room.x + room.w, z]) },
-    ]).filter((s) => !s.cells.some(([x, z]) => L.isDoor(x, z) || L.isFloor(x, z)));
+    ]).filter((s) => !s.cells.some(([x, z]) => L.isDoor(x, z) || L.isFloor(x, z)))
+      .filter((s) => !(room.id === EMBLEM.room && s.side === EMBLEM.side)); // keep the emblem's wall bare
     if (!sides.length) continue;
-    const runs = room.id === 'generator' ? [DECOR.roomPipe, { ...DECOR.roomPipe, y: 2.42, inset: 0.5, r: 0.1 }] : [DECOR.roomPipe];
+    const runsHere = room.id === 'generator' ? [DECOR.roomPipe, { ...DECOR.roomPipe, y: 2.42, inset: 0.5, r: 0.1 }] : [DECOR.roomPipe];
     const s = sides[0];
-    for (const p of runs) {
+    const end = (room.chamfer ?? 0) * TILE + (room.chamfer ? 0.35 : 0.1); // keep clear of an octagon's angled corners
+    for (const p of runsHere) {
       const x0 = room.x * TILE, x1 = (room.x + room.w) * TILE, z0 = room.y * TILE, z1 = (room.y + room.h) * TILE;
       let a, b;
       if (s.side === 'n' || s.side === 's') {
         const z = s.side === 'n' ? z0 + p.inset : z1 - p.inset;
-        a = { x: x0 + 0.1, y: p.y, z }; b = { x: x1 - 0.1, y: p.y, z };
+        a = { x: x0 + end, y: p.y, z }; b = { x: x1 - end, y: p.y, z };
       } else {
         const x = s.side === 'w' ? x0 + p.inset : x1 - p.inset;
-        a = { x, y: p.y, z: z0 + 0.1 }; b = { x, y: p.y, z: z1 - 0.1 };
+        a = { x, y: p.y, z: z0 + end }; b = { x, y: p.y, z: z1 - end };
       }
-      pipes.push({ a, b, r: p.r, kind: p === DECOR.roomPipe ? 'copper' : 'green', room: room.id });
-      // The riser comes down into the corner near `a`.
-      const rx = s.side === 'e' ? x1 - p.inset : x0 + p.inset, rz = s.side === 's' ? z1 - p.inset : z0 + p.inset;
+      pipes.push({ a, b, r: p.r, kind: p === DECOR.roomPipe ? 'copper' : 'green', room: room.id, cell: cellAt(a) });
       if (p === DECOR.roomPipe) {
-        risers.push({ a: { x: rx, y: 0, z: rz }, b: { x: rx, y: p.y, z: rz }, r: p.r, kind: 'copper', room: room.id });
-        flanges.push({ x: rx, y: 0.04, z: rz, axis: 'y', r: p.r });
+        risers.push({ a: { x: a.x, y: 0, z: a.z }, b: { x: a.x, y: p.y, z: a.z }, r: p.r, kind: 'copper', room: room.id, cell: cellAt(a) });
+        flanges.push({ x: a.x, y: 0.04, z: a.z, dir: { x: 0, y: 1, z: 0 }, r: p.r });
+        joints.push({ ...a, r: p.r });
       }
       for (let t = 0.2; t < 1; t += 0.3) brackets.push({ x: a.x + (b.x - a.x) * t, y: p.y, z: a.z + (b.z - a.z) * t, len: WALL_H - p.y });
     }
   }
 
-  // Broken ceiling lights in corridors, spread apart. A couple are dying rather than dead.
+  // Broken ceiling lights along corridors, spread apart. A couple are dying rather than dead.
   const lights = [];
-  for (const [x, z] of shuffle(corridor.slice())) {
+  const lightSpots = shuffle(runs.flatMap((run) => along(run, 1).slice(1, -1)));
+  for (const p of lightSpots) {
     if (lights.length >= DECOR.brokenLights) break;
-    if (lights.some((l) => Math.abs(l.cell[0] - x) + Math.abs(l.cell[1] - z) < DECOR.lightSpacing)) continue;
-    lights.push({ x: cellCenter(x), y: WALL_H - 0.06, z: cellCenter(z), axis: axisOf(x, z), cell: [x, z], dying: lights.length < DECOR.dyingLights });
+    if (lights.some((l) => Math.hypot(l.x - p.x, l.z - p.z) < DECOR.lightSpacing * TILE)) continue;
+    lights.push({ x: p.x, y: WALL_H - 0.06, z: p.z, yaw: yawOf(p), cell: cellAt(p), dying: lights.length < DECOR.dyingLights });
   }
 
   // Faults: steam, drips and clanks on the copper line; sparks from junction boxes on corridor walls.
   const faults = [];
   const line = DECOR.pipes[0];
-  const pipeCells = shuffle(corridor.slice());
+  const faultSpots = shuffle(pipePoints.copper.filter((p) => p.s - p.run.pts[0].s > 1 && p.run.pts[p.run.pts.length - 1].s - p.s > 1));
+  const usedFault = [];
   for (const kind of ['steam', 'drip', 'clank']) {
-    for (let i = 0; i < DECOR.faults[kind] && pipeCells.length; i++) {
-      const [x, z] = pipeCells.pop();
-      faults.push({ kind, x: cellCenter(x) + line.offset, y: line.y - line.r, z: cellCenter(z) + line.offset, cell: [x, z] });
+    for (let i = 0; i < DECOR.faults[kind] && faultSpots.length; ) {
+      const p = faultSpots.pop();
+      if (usedFault.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < 4)) continue;
+      usedFault.push(p);
+      faults.push({ kind, x: p.x, y: line.y - line.r, z: p.z, cell: cellAt(p) });
+      i++;
     }
   }
-  const corridorFaces = shuffle(wallFaces(corridor));
-  for (let i = 0; i < DECOR.faults.spark && corridorFaces.length; i++) {
-    const f = corridorFaces.pop();
-    faults.push({ kind: 'spark', ...face(f.x, f.z, f.dx, f.dz, 1.75, 0.08), cell: [f.x, f.z] });
+
+  // Spots on the walls (from the traced outline), every metre, clear of doors and of the middle of
+  // each room wall (posters, the wall map and the emblem hang there).
+  const wallMids = L.rooms.flatMap((r) => [
+    [(r.x + r.w / 2) * TILE, r.y * TILE], [(r.x + r.w / 2) * TILE, (r.y + r.h) * TILE],
+    [r.x * TILE, (r.y + r.h / 2) * TILE], [(r.x + r.w) * TILE, (r.y + r.h / 2) * TILE],
+  ]);
+  // Also keep clear of anything standing against or hung on a wall.
+  const occupied = [
+    ...L.furniture.filter((f) => f.solid).map((f) => furniturePlacement(L, f)),
+    ...signPlacements(L), ...windowPlacements(L),
+  ];
+  const spots = [];
+  for (const seg of wallSegments(L.shape)) {
+    if (seg.len < 1) continue;
+    const n = Math.floor((seg.len - 0.7) / 1) + 1;
+    for (let k = 0; k < n; k++) {
+      const t = (0.35 + k + (seg.len - 0.7 - (n - 1)) / 2) / seg.len;
+      const x = seg.ax + (seg.bx - seg.ax) * t, z = seg.az + (seg.bz - seg.az) * t;
+      const inside = cellAt({ x: x + seg.nx * 0.5, z: z + seg.nz * 0.5 });
+      if (!L.isFloor(...inside) || L.isDoor(...inside) || nextToDoor(...inside)) continue;
+      if (wallMids.some(([mx, mz]) => Math.hypot(mx - x, mz - z) < 1.2)) continue;
+      if (occupied.some((o) => Math.hypot(o.x - x, o.z - z) < 1.3)) continue;
+      const room = L.roomAt(...inside);
+      spots.push({ x, z, nx: seg.nx, nz: seg.nz, rot: Math.atan2(seg.nx, seg.nz), cell: inside, corridor: L.isCorridor(...inside) && !room });
+    }
+  }
+  // Each spot is used once: `take` hands out the next free one from a shuffled list.
+  const at = (sp, y, inset) => ({ x: sp.x + sp.nx * inset, y, z: sp.z + sp.nz * inset, rot: sp.rot, cell: sp.cell, along: 0 });
+  const taken = new Set();
+  const take = (list) => { while (list.length) { const sp = list.pop(); if (!taken.has(sp)) { taken.add(sp); return sp; } } return null; };
+  const corridorSpots = shuffle(spots.filter((sp) => sp.corridor));
+  for (let i = 0; i < DECOR.faults.spark; i++) {
+    const sp = take(corridorSpots);
+    if (sp) faults.push({ kind: 'spark', ...at(sp, 1.75, 0.08) });
+  }
+  // Boarded-up sections go on corridor walls.
+  const boards = [];
+  for (let i = 0; i < DECOR.boards; i++) {
+    const sp = take(corridorSpots);
+    if (sp) boards.push({ ...at(sp, 1.1, 0.06), planks: 3 + Math.floor(rand() * 2), angle: (rand() - 0.5) * 0.25 });
   }
 
-  // Patchwork on the walls: plates, hazard tape, boarded-up sections.
-  const faces = shuffle(wallFaces(floorCells).filter((f) => {
-    const room = L.roomAt(f.x, f.z);
-    if (!room) return true;
-    // Keep the middle of each room wall clear for posters and the wall map.
-    return f.dx ? f.z !== room.y + (room.h >> 1) : f.x !== room.x + (room.w >> 1);
-  }));
-  const plates = [], tape = [], boards = [];
-  for (let i = 0; i < DECOR.plates && faces.length; i++) {
-    const f = faces.pop();
-    const w = 0.35 + rand() * 0.6, h = 0.3 + rand() * 0.6;
-    const p = face(f.x, f.z, f.dx, f.dz, 0.35 + h / 2 + rand() * (1.9 - h), 0.012 + (i % 3) * 0.002);
-    plates.push({ ...p, along: (rand() - 0.5) * (TILE - w - 0.2), w, h, variant: i % 4, tilt: (rand() - 0.5) * 0.12 });
+  // Patchwork on any wall: plates and hazard tape.
+  const wallSpots = shuffle(spots.slice());
+  const plates = [], tape = [];
+  for (let i = 0; i < DECOR.plates; i++) {
+    const sp = take(wallSpots);
+    if (!sp) break;
+    const w = 0.35 + rand() * 0.55, h = 0.3 + rand() * 0.6;
+    plates.push({ ...at(sp, 0.35 + h / 2 + rand() * (1.9 - h), 0.012 + (i % 3) * 0.002), w, h, variant: i % 4, tilt: (rand() - 0.5) * 0.12 });
   }
-  for (let i = 0; i < DECOR.tape && faces.length; i++) {
-    const f = faces.pop();
-    tape.push({ ...face(f.x, f.z, f.dx, f.dz, 0.8 + rand() * 1.2, 0.01), along: (rand() - 0.5) * 0.8, len: 0.6 + rand() * 0.7, angle: (rand() - 0.5) * 1.2 });
-  }
-  const corridorFaces2 = corridorFaces.slice();
-  for (let i = 0; i < DECOR.boards && corridorFaces2.length; i++) {
-    const f = corridorFaces2.pop();
-    boards.push({ ...face(f.x, f.z, f.dx, f.dz, 1.1, 0.06), planks: 3 + Math.floor(rand() * 2), angle: (rand() - 0.5) * 0.25 });
+  for (let i = 0; i < DECOR.tape; i++) {
+    const sp = take(wallSpots);
+    if (!sp) break;
+    tape.push({ ...at(sp, 0.8 + rand() * 1.2, 0.01), len: 0.6 + rand() * 0.6, angle: (rand() - 0.5) * 1.2 });
   }
 
-  // Cables sagging between the high green pipe's junctions, along straight runs.
+  // Cables sagging below the high green pipe, on fairly straight 4 m stretches.
   const cables = [];
   const high = DECOR.pipes[1];
-  for (const [x, z] of shuffle(corridor.slice())) {
+  for (const p of shuffle(pipePoints.green.slice())) {
     if (cables.length >= DECOR.cables) break;
-    const ax = axisOf(x, z), [dx, dz] = ax === 'x' ? [1, 0] : [0, 1];
-    if (![1, 2].every((k) => L.isCorridor(x + dx * k, z + dz * k))) continue;
-    if (cables.some((c) => c.cell[0] === x && c.cell[1] === z)) continue;
-    const a = { x: cellCenter(x) + high.offset, y: high.y - 0.04, z: cellCenter(z) + high.offset };
-    const b = { x: a.x + dx * 2 * TILE, y: a.y, z: a.z + dz * 2 * TILE };
+    const q = pipePoints.green.find((o) => o.run === p.run && Math.abs(o.s - p.s - 4) < 0.3);
+    if (!q || p.tx * q.tx + p.tz * q.tz < 0.97) continue;
+    if (cables.some((c) => Math.hypot(c.a.x - p.x, c.a.z - p.z) < 4)) continue;
     const sag = 0.2 + rand() * 0.18; // lowest point stays above overheadMin
-    cables.push({ a, b, sag, cell: [x, z] });
+    cables.push({ a: { x: p.x, y: high.y - 0.04, z: p.z }, b: { x: q.x, y: high.y - 0.04, z: q.z }, sag, cell: cellAt(p) });
   }
 
-  // Grates in some corridor cells, hanging ceiling panels in a few rooms.
-  const grates = corridor.filter(() => rand() < DECOR.gratesChance).map(([x, z]) => ({ x: cellCenter(x), z: cellCenter(z), cell: [x, z], axis: axisOf(x, z) }));
+  // Grates every couple of metres along some corridors, hanging ceiling panels in a few rooms.
+  const grates = runs.flatMap((run) => along(run, 2).slice(1, -1))
+    .filter(() => rand() < DECOR.gratesChance)
+    .map((p) => ({ x: p.x, z: p.z, yaw: yawOf(p), cell: cellAt(p) }));
   const panels = [];
-  const roomCells = floorCells.filter(([x, z]) => L.roomAt(x, z) && !L.roomAt(x, z).safe && !L.isSolid(x, z));
+  const roomCells = [];
+  for (let z = 0; z < L.h; z++) for (let x = 0; x < L.w; x++) if (L.isOpen(x, z) && L.roomAt(x, z) && !L.roomAt(x, z).safe && !L.isDoor(x, z)) roomCells.push([x, z]);
   for (const [x, z] of shuffle(roomCells.slice())) {
     if (panels.length >= DECOR.panels) break;
     if (panels.some((p) => L.roomAt(...p.cell) === L.roomAt(x, z))) continue;
     panels.push({ x: cellCenter(x), z: cellCenter(z), cell: [x, z], size: 1.2, tilt: 0.42, rot: Math.floor(rand() * 4) * Math.PI / 2 });
   }
 
-  // Barrels and debris tucked into room corners, away from doors and props.
+  // Barrels and debris tucked into room corners, away from doors and props (octagons have no corners).
   const clutter = [];
   for (const room of L.rooms) {
     if (room.safe) continue;
     for (const [x, z] of [[room.x, room.y], [room.x + room.w - 1, room.y], [room.x, room.y + room.h - 1], [room.x + room.w - 1, room.y + room.h - 1]]) {
-      if (L.isSolid(x, z) || nextToDoor(x, z) || rand() > DECOR.clutterChance) continue;
+      if (!L.isOpen(x, z) || nextToDoor(x, z) || rand() > DECOR.clutterChance) continue;
       const sx = x === room.x ? -1 : 1, sz = z === room.y ? -1 : 1; // which corner walls
       clutter.push({ kind: rand() < 0.65 ? 'barrel' : 'debris', x: cellCenter(x) + sx * 0.55, z: cellCenter(z) + sz * 0.55, cell: [x, z], spin: rand() * Math.PI * 2, tipped: rand() < 0.2 });
     }
   }
 
-  return { pipes: [...pipes, ...risers], risers, flanges, brackets, lights, faults, plates, tape, boards, cables, grates, panels, clutter };
+  return { pipes: [...pipes, ...risers], risers, joints, flanges, brackets, lights, faults, plates, tape, boards, cables, grates, panels, clutter };
 }
 
 function range(start, n) { return Array.from({ length: n }, (_, i) => start + i); }

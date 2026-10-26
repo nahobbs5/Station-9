@@ -5,14 +5,14 @@ const B = () => window.BABYLON;
 // The station has about 18 lights (rooms, teleporter, light pool, flashlight, Hat Man, alien glow).
 // Babylon materials only use 4 by default, so every lit material takes more.
 export const MAX_LIGHTS = 20;
-// Babylon and three.js measure light differently; these even them out (tuned against three.js screenshots).
-// light: rooms, teleporter, flickers, glows. flash: the flashlight.
+// Overall brightness. light: rooms, teleporter, flickers, glows. flash: the flashlight.
+// (Matched by eye to the earlier three.js build; raise or lower to taste.)
 export const TUNING = { light: 1.6, flash: 3.6 };
 
 export const hexString = (hex) => '#' + hex.toString(16).padStart(6, '0');
 // A colour as written (sRGB): for unlit materials and the UI.
 export const srgb = (hex) => B().Color3.FromHexString(hexString(hex));
-// The same colour converted for lighting maths (linear), as three.js does for lit materials and lights.
+// The same colour converted for lighting maths (linear), for lit materials and lights.
 export const linear = (hex) => srgb(hex).toLinearSpace();
 
 // A lit, metal/rough material (like three's MeshStandardMaterial).
@@ -50,20 +50,33 @@ export function basic(scene, hex, { map = null, opacity = null, alpha = 1, addit
 
 // A shared canvas recipe (js/textures.js) as a Babylon texture. Hints on the canvas:
 // wrap / repeat (tiling), flipY === false (don't flip), linear (data rather than colour).
-// flipV: turn it upside down (Babylon's box faces map textures the other way up from three.js).
+// flipV: turn it upside down (Babylon's box faces need it for the canvases to stand upright).
 // mirror: flip it left to right (wall-facing planes need it, so writing reads the right way round).
 export function toTexture(scene, c, { anisotropy = 1, flipV = false, mirror = false } = {}) {
   const BABYLON = B();
   const t = new BABYLON.DynamicTexture('canvas', { width: c.width, height: c.height }, scene, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
   const g = t.getContext();
+  g.save();
   if (mirror) { g.translate(c.width, 0); g.scale(-1, 1); }
   g.drawImage(c, 0, 0);
+  g.restore(); // so a later redraw starts from a clean transform
   t.update((c.flipY !== false) !== flipV);
   t.wrapU = t.wrapV = c.wrap ? BABYLON.Texture.WRAP_ADDRESSMODE : BABYLON.Texture.CLAMP_ADDRESSMODE;
   if (c.repeat) { t.uScale = c.repeat[0]; t.vScale = c.repeat[1]; }
   if (c.linear) t.gammaSpace = false;
   t.anisotropicFilteringLevel = anisotropy;
   return t;
+}
+
+// Draw a new canvas onto an existing canvas texture (for screens that change).
+export function redraw(t, c, { mirror = false } = {}) {
+  const g = t.getContext();
+  g.save();
+  g.clearRect(0, 0, c.width, c.height);
+  if (mirror) { g.translate(c.width, 0); g.scale(-1, 1); }
+  g.drawImage(c, 0, 0);
+  g.restore();
+  t.update(c.flipY !== false);
 }
 
 // Position + rotation (quaternion [x, y, z, w] or Euler in Y-X-Z order) + scale, as a Babylon matrix.

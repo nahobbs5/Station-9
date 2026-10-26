@@ -1,4 +1,4 @@
-// The camera as plain data, shared by both renderers: where you stand, where you look, and the
+// The camera as plain data, kept apart from the engine: where you stand, where you look, and the
 // flashlight. The player and the title screen write to it; each renderer copies it onto its camera.
 export class CameraRig {
   constructor() {

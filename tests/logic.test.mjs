@@ -9,8 +9,10 @@ import { parseIntro, parseLore, tapeScript, speakerOf } from '../js/textfiles.js
 import { VOICES } from '../js/tapes.js';
 import { planDecor, DECOR } from '../js/decorplan.js';
 import { CameraRig } from '../js/rig.js';
+import { wallOutlines, wallSegments } from '../js/walls.js';
+import { CONSOLE_SCREENS, LIVE_SCREENS } from '../js/textures.js';
 import { alienRig } from '../js/alienshape.js';
-import { wallCells, looseItems } from '../js/worldplan.js';
+import { wallPanels, looseItems, furniturePlacement, signPlacements, emblemClearCells } from '../js/worldplan.js';
 import {
   Alien, inSight, SPEED, HUNT_TIMEOUT, LOSE_TRACK_AFTER, DOOR_FORCE_TIME, WARN_TIME, WARN_TIME_CLOSE,
 } from '../js/alien.js';
@@ -473,12 +475,7 @@ test('decor: clutter stays in room corners, clear of doors and props', () => {
   }
 });
 
-// Shared between the three.js and Babylon.js builds ---------------------------------
-
-test('both builds have the same menus and HUD (same element ids)', () => {
-  const ids = (file) => [...readFileSync(new URL(`../${file}`, import.meta.url), 'utf8').matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]).sort();
-  assert.deepEqual(ids('babylon.html'), ids('index.html'));
-});
+// Camera, shared plans --------------------------------------------------------------
 
 test('camera rig: forward and up point the right way', () => {
   const r = new CameraRig();
@@ -494,7 +491,7 @@ test('camera rig: forward and up point the right way', () => {
 });
 
 test('shared plans are the same every load (both engines build the same station)', () => {
-  assert.deepEqual(wallCells(layout), wallCells(layout));
+  assert.deepEqual(wallPanels(layout), wallPanels(layout));
   const rigA = alienRig(), rigB = alienRig();
   assert.deepEqual(rigA, rigB);
   assert.equal(rigA.tentacles.length, 14);
@@ -503,4 +500,119 @@ test('shared plans are the same every load (both engines build the same station)
   const items = looseItems(layout, clutter);
   assert.ok(items.length > 0);
   for (const it of items) assert.equal(layout.isSafe(Math.floor(it.x / TILE), Math.floor(it.z / TILE)), false);
+});
+
+// Shapes: octagon rooms, curved corridors, traced walls, consoles ------------------------
+
+test('octagon rooms: corners are cut off, the middle is open', () => {
+  for (const id of ['control', 'teleporter', 'crew']) {
+    const r = layout.room(id);
+    const x0 = r.x * TILE, z0 = r.y * TILE;
+    assert.ok(layout.walkDistance(x0 + 0.3, z0 + 0.3) < 0, `${id}: outer corner should be wall`);
+    assert.ok(layout.walkDistance(cellCenter(r.cx), cellCenter(r.cz)) > 3, `${id}: middle should be open`);
+    assert.equal(layout.isOpen(r.x, r.y), false, `${id}: corner cell isn't standable`);
+  }
+  // A square room keeps its corners.
+  const g = layout.room('generator');
+  assert.ok(layout.walkDistance(g.x * TILE + 0.3, g.y * TILE + 0.3) > 0);
+});
+
+test('curved corridors: the whole centreline has clearance, and open cells are truly open', () => {
+  for (const c of layout.corridors.filter((c) => c.parts.some((p) => p.curve))) {
+    for (const p of c.pts) assert.ok(layout.walkDistance(p.x, p.z) >= 0.9, `${c.id} pinches at ${p.x.toFixed(1)},${p.z.toFixed(1)}`);
+  }
+  for (let z = 0; z < layout.h; z++) for (let x = 0; x < layout.w; x++) {
+    if (layout.isFloor(x, z)) assert.ok(layout.walkDistance(cellCenter(x), cellCenter(z)) > 0, `cell ${x},${z} centre is in a wall`);
+  }
+});
+
+test('the alien can reach every room, terminal and console through the curves', () => {
+  const [sx, sz] = layout.room('airlock').spot;
+  for (const r of layout.rooms) assert.ok(findPath(grid(), sx, sz, r.spot[0], r.spot[1]), `no path to ${r.id}`);
+  for (const p of layout.props.filter((p) => p.kind === 'log' || p.kind === 'console')) {
+    const n = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => [p.cell[0] + dx, p.cell[1] + dz]).find(([x, z]) => layout.isOpen(x, z));
+    assert.ok(n, `${p.id} has no open side`);
+    assert.ok(findPath(grid(), sx, sz, n[0], n[1]), `${p.id} is unreachable`);
+  }
+});
+
+test('sight is blocked across the inside of a curve', () => {
+  // From the control room's west door to the generator door: the curve bends round, so no straight view.
+  assert.equal(lineClear(layout, at([10, 3]), at([3, 6]), allOpen), false);
+  // Along a straight corridor it's clear.
+  assert.ok(lineClear(layout, at([3, 11]), at([3, 13]), allOpen));
+});
+
+test('traced walls: closed outlines, every segment has open floor on exactly one side', () => {
+  const loops = wallOutlines(layout.shape);
+  assert.ok(loops.length >= 1);
+  for (const loop of loops) {
+    const [a, b] = [loop[0], loop[loop.length - 1]];
+    assert.ok(Math.hypot(a[0] - b[0], a[1] - b[1]) < 0.4, 'outline is closed');
+  }
+  for (const s of wallSegments(layout.shape)) {
+    const mx = (s.ax + s.bx) / 2, mz = (s.az + s.bz) / 2;
+    assert.ok(layout.walkDistance(mx + s.nx * 0.2, mz + s.nz * 0.2) > 0 && layout.walkDistance(mx - s.nx * 0.2, mz - s.nz * 0.2) < 0);
+  }
+});
+
+test('consoles: every screen recipe exists, live ones change with progress', () => {
+  const used = new Set(layout.props.filter((p) => p.screen).map((p) => p.screen));
+  for (const s of used) assert.ok(CONSOLE_SCREENS.includes(s), `no screen recipe for ${s}`);
+  assert.equal(layout.props.filter((p) => p.kind === 'console').length, 6);
+  for (const s of LIVE_SCREENS) assert.ok(CONSOLE_SCREENS.includes(s));
+});
+
+// Furniture and signs --------------------------------------------------------------------
+
+test('furniture never blocks a door, and every door is still reachable', () => {
+  const [sx, sz] = layout.room('airlock').spot;
+  for (const d of layout.doors) {
+    if (d.safe) continue; // the alien's grid isn't relevant; safe hatches are checked below with the player's
+    assert.ok(findPath(grid(), sx, sz, d.cx, d.cz), `door ${d.cx},${d.cz} unreachable`);
+  }
+  const seen = new Set(layout.props.map((p) => p.cell.join(',')));
+  for (const f of layout.furniture) {
+    const [x, z] = f.cell;
+    assert.equal(layout.roomAt(x, z)?.id, f.room, `${f.kind} at ${f.cell} is not in ${f.room}`);
+    assert.ok(layout.isFloor(x, z) && !layout.isDoor(x, z), `${f.kind} on a non-floor or door cell`);
+    assert.ok(![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => layout.isDoor(x + dx, z + dz)), `${f.kind} at ${f.cell} is next to a door`);
+    if (f.solid) {
+      assert.ok(!seen.has(f.cell.join(',')), `two solid things share ${f.cell}`);
+      seen.add(f.cell.join(','));
+      assert.equal(layout.isOpen(x, z), false, 'solid furniture blocks its cell');
+    }
+  }
+});
+
+test('wall furniture stands inside its room, against a wall', () => {
+  for (const f of layout.furniture) {
+    const at = furniturePlacement(layout, f);
+    assert.ok(layout.walkDistance(at.x, at.z) > 0, `${f.kind} at ${f.cell} is inside a wall`);
+  }
+});
+
+test('wayfinding signs point along the real route', () => {
+  const signs = signPlacements(layout);
+  assert.equal(signs.length, 5);
+  const outside = signs.find((s) => s.door[0] === 8 && s.door[1] === 21); // the airlock's west door
+  assert.ok(!outside.entries.some((e) => e.id === 'airlock'), "a sign outside the airlock doesn't list the airlock");
+  assert.equal(outside.entries.find((e) => e.id === 'storage').arrow, '←', 'storage is back round the curve, to the left');
+  assert.equal(outside.entries.find((e) => e.id === 'pod').arrow, '→', 'the pod bay is through the airlock, to the right');
+  for (const s of signs) assert.ok(layout.walkDistance(s.x, s.z) > -0.05 && layout.walkDistance(s.x, s.z) < 0.2, 'sign hangs on a wall');
+});
+
+test('nothing stands in front of the Station 9 emblem in the airlock', () => {
+  const clear = emblemClearCells(layout);
+  assert.equal(clear.size, 2);
+  const taken = [
+    ...layout.props.map((p) => p.cell), ...layout.furniture.map((f) => f.cell),
+    ...planDecor(layout).clutter.map((c) => c.cell),
+  ].map((c) => c.join(','));
+  for (const k of clear) assert.ok(!taken.includes(k), `something is in front of the emblem at ${k}`);
+  const clutter = new Set(planDecor(layout).clutter.map((c) => c.cell.join(',')));
+  for (const it of looseItems(layout, clutter)) {
+    assert.ok(!clear.has(`${Math.floor(it.x / TILE)},${Math.floor(it.z / TILE)}`), 'a loose chair or box in front of the emblem');
+    for (const [x, z] of it.spots) assert.ok(!clear.has(`${x},${z}`), 'the prop trick could move something in front of the emblem');
+  }
 });

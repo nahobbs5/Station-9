@@ -1,5 +1,5 @@
 // The HUD minimap: only shows the parts of the station you've seen.
-// No three.js here, so the reveal logic can be tested in Node.
+// No engine here, so the reveal logic can be tested in Node.
 import { TILE, cellOf, cellCenter, lineClear, REPAIRS } from './layout.js';
 
 const CELL = 6; // pixels per grid cell
@@ -104,6 +104,27 @@ export function revealAround(layout, explored, pos, isDoorClosed, radius = 4) {
   }
 }
 
+// The walkable shape sampled k times per cell side, for drawing maps with curves and angled
+// corners. Each sample: its sub-grid spot, the grid cell it's in, what kind of floor it is, and
+// which sides border a wall.
+export function floorSamples(layout, k = 3) {
+  const L = layout;
+  const step = TILE / k;
+  const walk = (sx, sz) => sx >= 0 && sz >= 0 && sx < L.w * k && sz < L.h * k &&
+    L.walkDistance((sx + 0.5) * step, (sz + 0.5) * step) > 0;
+  const list = [];
+  for (let sz = 0; sz < L.h * k; sz++) {
+    for (let sx = 0; sx < L.w * k; sx++) {
+      if (!walk(sx, sz)) continue;
+      const cx = Math.floor(sx / k), cz = Math.floor(sz / k);
+      const room = L.roomAt(cx, cz);
+      const kind = L.isSafe(cx, cz) || room?.safe ? 'safe' : L.isDoor(cx, cz) ? 'door' : room ? 'room' : 'corridor';
+      list.push({ sx, sz, cx, cz, kind, n: !walk(sx, sz - 1), s: !walk(sx, sz + 1), w: !walk(sx - 1, sz), e: !walk(sx + 1, sz) });
+    }
+  }
+  return { k, list };
+}
+
 export class Minimap {
   constructor(canvas, layout) {
     this.canvas = canvas;
@@ -117,6 +138,7 @@ export class Minimap {
     canvas.style.width = this.width + 'px';
     canvas.style.height = this.height + 'px';
     this.g = canvas.getContext('2d');
+    this.floor = floorSamples(layout, 3);
   }
 
   // s: { player, explored, doors, terminals: [{ id, cell }], loreRead: Set, stage, gotCrate, time }
@@ -126,23 +148,23 @@ export class Minimap {
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     g.clearRect(0, 0, this.width, this.height);
 
-    // Floor, then wall edges wherever seen floor meets solid wall.
-    for (let z = 0; z < L.h; z++) {
-      for (let x = 0; x < L.w; x++) {
-        if (!seen(x, z)) continue;
-        g.fillStyle = L.isSafe(x, z) ? COLORS.safe : L.isCorridor(x, z) || L.isDoor(x, z) ? COLORS.corridor : COLORS.room;
-        g.fillRect(x * CELL, z * CELL, CELL, CELL);
-      }
+    // Floor (the real shape, so curves and angled corners show), then wall edges. A bit of floor
+    // shows once its cell, or for floor outside the grid's cells a neighbouring cell, has been seen.
+    const { k, list } = this.floor;
+    const sub = CELL / k;
+    const shown = (f) => seen(f.cx, f.cz) ||
+      (!L.isFloor(f.cx, f.cz) && (seen(f.cx + 1, f.cz) || seen(f.cx - 1, f.cz) || seen(f.cx, f.cz + 1) || seen(f.cx, f.cz - 1)));
+    const visible = list.filter(shown);
+    for (const f of visible) {
+      g.fillStyle = f.kind === 'safe' ? COLORS.safe : f.kind === 'room' ? COLORS.room : COLORS.corridor;
+      g.fillRect(f.sx * sub, f.sz * sub, sub + 0.05, sub + 0.05);
     }
     g.fillStyle = COLORS.wall;
-    for (let z = 0; z < L.h; z++) {
-      for (let x = 0; x < L.w; x++) {
-        if (!seen(x, z)) continue;
-        if (!L.isFloor(x, z - 1)) g.fillRect(x * CELL, z * CELL, CELL, 1);
-        if (!L.isFloor(x, z + 1)) g.fillRect(x * CELL, (z + 1) * CELL - 1, CELL, 1);
-        if (!L.isFloor(x - 1, z)) g.fillRect(x * CELL, z * CELL, 1, CELL);
-        if (!L.isFloor(x + 1, z)) g.fillRect((x + 1) * CELL - 1, z * CELL, 1, CELL);
-      }
+    for (const f of visible) {
+      if (f.n) g.fillRect(f.sx * sub, f.sz * sub, sub, 0.8);
+      if (f.s) g.fillRect(f.sx * sub, (f.sz + 1) * sub - 0.8, sub, 0.8);
+      if (f.w) g.fillRect(f.sx * sub, f.sz * sub, 0.8, sub);
+      if (f.e) g.fillRect((f.sx + 1) * sub - 0.8, f.sz * sub, 0.8, sub);
     }
 
     // Doors, as a bar across the doorway.

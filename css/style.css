@@ -1,3 +1,6 @@
+/* Caveat (SIL Open Font License, fonts/OFL.txt): the handwriting on the Suite B graffiti. */
+@font-face { font-family: 'Caveat'; src: url('../fonts/Caveat.woff2') format('woff2'); font-weight: 400 700; font-display: block; }
+
 :root {
   --ink: #d9d4c7;
   --dim: #8a867c;
@@ -28,10 +31,6 @@ h1 {
 h1 span { color: var(--red); letter-spacing: 0; }
 h2 { font-family: var(--display); font-size: clamp(36px, 6vw, 64px); letter-spacing: 0.15em; margin: 0 0 12px; }
 #caught h2 { color: var(--red); }
-/* Switching between the three.js and Babylon.js builds. */
-.engine-link { display: block; margin-top: 10px; font-size: 12px; letter-spacing: 0.12em; color: var(--dim); }
-.engine-link:hover { color: var(--teal); }
-.engine-note { margin: 2px 0 0; font-size: 12px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--teal); }
 #splash { cursor: pointer; background: rgba(0,0,0,0.92); }
 #splash .press { margin-top: 32px; color: var(--dim); letter-spacing: 0.3em; text-transform: uppercase; font-size: 14px; animation: blink 2.4s ease-in-out infinite; }
 @keyframes blink { 50% { opacity: 0.25; } }

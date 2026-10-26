@@ -1,5 +1,5 @@
 // Sound: the recorded effects, menu music, a few synthesized ones, positional playback and the heartbeat.
-// Plain Web Audio (no engine), so both renderers share it. Positional sounds follow an "anchor":
+// Plain Web Audio, independent of the 3D engine. Positional sounds follow an "anchor":
 // any live {x, y, z} object, such as a mesh's position. The listener follows the camera rig.
 
 const FILES = {

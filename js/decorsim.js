@@ -1,4 +1,4 @@
-// What the station's faults are doing right now, shared by both renderers: steam puffs, drips,
+// What the station's faults are doing right now, kept apart from the renderer: steam puffs, drips,
 // spark bursts, broken lights stuttering, and which few real lights go where. No drawing here:
 // each renderer reads this state every frame and moves its own meshes to match.
 

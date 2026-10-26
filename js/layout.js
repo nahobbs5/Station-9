@@ -1,5 +1,8 @@
-// Station layout: a tile grid plus room, door and prop data.
-// No three.js imports here, so Node tests can load it.
+// Station layout: rooms, corridors, doors and props. The walkable space is a smooth shape
+// (js/shape.js: octagon rooms, curved corridors); a 2 m grid derived from it is what the alien
+// paths on and what most game logic reads. No engine imports here, so Node tests can load it.
+import { buildShape, sampleCorridor } from './shape.js';
+import { SUITE_SOLIDS } from './suiteplan.js';
 
 export const TILE = 2;      // metres per grid cell
 export const WALL_H = 3;    // ceiling height in metres
@@ -9,17 +12,18 @@ export const H = 25;
 export const VOID = 0, ROOM = 1, CORRIDOR = 2, DOOR = 3;
 
 // Eight rooms in a loop, plus two small safe rooms the alien can't enter.
+// chamfer: 1 cuts each corner off diagonally (one cell), making the room an octagon.
 export const ROOMS = [
-  { id: 'control',    name: 'Control Room',    x: 12, y: 1,  w: 5, h: 5 },
+  { id: 'control',    name: 'Control Room',    x: 12, y: 1,  w: 5, h: 5, chamfer: 1 },
   { id: 'generator',  name: 'Generator Room',  x: 1,  y: 6,  w: 5, h: 5 },
-  { id: 'teleporter', name: 'Teleporter Lab',  x: 23, y: 6,  w: 5, h: 5 },
+  { id: 'teleporter', name: 'Teleporter Lab',  x: 23, y: 6,  w: 5, h: 5, chamfer: 1 },
   { id: 'storage',    name: 'Storage',         x: 1,  y: 14, w: 5, h: 5 },
   { id: 'comms',      name: 'Comms Room',      x: 23, y: 14, w: 5, h: 5 },
   { id: 'airlock',    name: 'Arrival Airlock', x: 9,  y: 19, w: 5, h: 5 },
   { id: 'pod',        name: 'Escape Pod Bay',  x: 17, y: 19, w: 5, h: 5 },
-  { id: 'crew',       name: 'Crew Quarters',   x: 12, y: 10, w: 5, h: 5 },
-  { id: 'wellness',   name: 'Wellness Room',   x: 7,  y: 6,  w: 3, h: 3, safe: true },
-  { id: 'quiet',      name: 'Quiet Room',      x: 19, y: 11, w: 3, h: 3, safe: true },
+  { id: 'crew',       name: 'Crew Quarters',   x: 12, y: 10, w: 5, h: 5, chamfer: 1 },
+  { id: 'wellness',   name: 'Wellness Room',   x: 7,  y: 6,  w: 4, h: 4, safe: true }, // Suite A (js/suiteplan.js)
+  { id: 'quiet',      name: 'Quiet Room',      x: 19, y: 11, w: 3, h: 3, safe: true }, // Suite B
 ];
 
 // The three repairs, in the order you have to do them.
@@ -28,20 +32,26 @@ export const REPAIRS = ['generator', 'comms', 'pod'];
 // The alien's patrol loop, in walking order.
 export const ROUTE = ['teleporter', 'control', 'generator', 'storage', 'airlock', 'crew', 'pod', 'comms'];
 
-// Each corridor is a polyline of cells. An end inside a room gets a door on that room's wall.
-// An end that starts in an existing corridor is a side branch, with no door at the junction.
-const CORRIDOR_PATHS = [
-  [[12, 3], [3, 3], [3, 6]],      // control -> generator
-  [[16, 3], [25, 3], [25, 6]],    // control -> teleporter
-  [[3, 10], [3, 14]],             // generator -> storage
-  [[25, 10], [25, 14]],           // teleporter -> comms
-  [[3, 18], [3, 21], [9, 21]],    // storage -> airlock
-  [[25, 18], [25, 21], [21, 21]], // comms -> pod bay
-  [[13, 21], [17, 21]],           // airlock -> pod bay
-  [[14, 5], [14, 10]],            // control -> crew quarters
-  [[13, 14], [13, 19]],           // crew quarters -> airlock
-  [[8, 3], [8, 7]],               // north corridor -> wellness room (safe)
-  [[25, 12], [21, 12]],           // east corridor -> quiet room (safe)
+// Corridors, in cell coordinates. Each is made of straight runs between cell centres (`line`) and
+// cubic curves (`curve`: start, two control points, end). An end inside a room gets a door on that
+// room's wall (the straight cell just outside it). An end that starts in another corridor is a side
+// branch, with no door at the junction. width is the half-width in metres; curves widen to curveWidth.
+export const CORRIDORS = [
+  // control -> generator: out of the west door, then a long sweep up and round to the generator.
+  { id: 'north-west', parts: [{ line: [[12, 3], [10, 3]] }, { curve: [[10, 3], [7, 3], [3, -0.5], [3, 5]] }, { line: [[3, 5], [3, 6]] }], curveWidth: 1.6 },
+  // control -> teleporter: the mirror image to the east.
+  { id: 'north-east', parts: [{ line: [[16, 3], [18, 3]] }, { curve: [[18, 3], [21, 3], [25, -0.5], [25, 5]] }, { line: [[25, 5], [25, 6]] }], curveWidth: 1.6 },
+  { id: 'gen-storage', parts: [{ line: [[3, 10], [3, 14]] }] },
+  { id: 'tele-comms', parts: [{ line: [[25, 10], [25, 14]] }] },
+  // storage -> airlock: out of the storage door, a dip south-west, then up into the airlock.
+  { id: 'storage-airlock', parts: [{ line: [[3, 18], [3, 20]] }, { curve: [[3, 20], [3, 24], [4.5, 21], [7, 21]] }, { line: [[7, 21], [9, 21]] }], curveWidth: 1.6 },
+  { id: 'comms-pod', parts: [{ line: [[25, 18], [25, 21], [21, 21]] }] },
+  { id: 'airlock-pod', parts: [{ line: [[13, 21], [17, 21]] }] },
+  { id: 'control-crew', parts: [{ line: [[14, 5], [14, 10]] }] },
+  { id: 'crew-airlock', parts: [{ line: [[13, 14], [13, 19]] }] },
+  // Side branches to the safe rooms.
+  { id: 'wellness', parts: [{ line: [[8, 2.6], [8, 7]] }] },
+  { id: 'quiet', parts: [{ line: [[25, 12], [21, 12]] }] },
 ];
 
 // Things you can use. Each fills one cell and blocks movement.
@@ -51,22 +61,70 @@ export const PROPS = [
   { id: 'pod',            kind: 'repair',  room: 'pod',        cell: [19, 20], label: 'Prep escape pod',  duration: 6 },
   { id: 'crate',          kind: 'crate',   room: 'storage',    cell: [1, 16],  label: 'Take noise-makers' },
   { id: 'teleporter',     kind: 'scenery', room: 'teleporter', cell: [25, 8] },
-  // Lore terminals: each plays an audio log (text in text/lore.txt). A few steps off the direct routes.
+  // Lore terminals: desk consoles that each play an audio log (text in text/lore.txt), a few steps
+  // off the direct routes. screen: what the console shows (js/textures.js consoleScreen).
+  // note: a sticky note on the bezel. mug: a Skipper mug on the desk.
   ...[
-    ['t01', 'airlock',    [9, 23]],
-    ['t02', 'control',    [12, 1]],
-    ['t11', 'control',    [16, 1]],
-    ['t03', 'teleporter', [27, 6]],
-    ['t07', 'teleporter', [27, 10]],
-    ['t04', 'crew',       [12, 10]],
-    ['t06', 'crew',       [16, 10]],
-    ['t08', 'crew',       [16, 14]],
-    ['t05', 'storage',    [1, 18]],
-    ['t10', 'generator',  [1, 10]],
-    ['t09', 'comms',      [27, 18]],
-    ['t12', 'pod',        [21, 23]],
-  ].map(([id, room, cell]) => ({ id, kind: 'log', room, cell, label: 'Play tape' })),
+    ['t01', 'airlock',    [9, 23],  'doors',          'Check door\nseals!\n– W.C.'],
+    ['t02', 'control',    [13, 1],  'system',         null, true],
+    ['t11', 'control',    [15, 1],  'marigold'],
+    ['t03', 'teleporter', [27, 7],  'research'],
+    ['t07', 'teleporter', [27, 9],  'trial31',        '11 sec\nearly.\nAGAIN.\n– I.O.'],
+    ['t04', 'crew',       [12, 11], 'personnel-lena', null, true],
+    ['t06', 'crew',       [16, 11], 'personnel-jun'],
+    ['t08', 'crew',       [16, 13], 'personnel-sam'],
+    ['t05', 'storage',    [1, 18],  'inventory',      'Walk.\nDon\'t run.\n– P.R.'],
+    ['t10', 'generator',  [1, 10],  'power',          'Coolant ›\nPumps ›\nValves ›\nRestart'],
+    ['t09', 'comms',      [27, 18], 'comms',          'Re-align\nantenna,\nthen retune\n– A.W.'],
+    ['t12', 'pod',        [21, 23], 'pod'],
+  ].map(([id, room, cell, screen, note = null, mug = false]) => ({ id, kind: 'log', room, cell, label: 'Play tape', screen, note, mug })),
+  // More consoles, just for show (solid, but you can't use them).
+  ...[
+    ['generator', [5, 7],   'reactor'],
+    ['comms',     [23, 17], 'signal',      null, true],
+    ['control',   [16, 4],  'security'],
+    ['teleporter', [23, 7], 'calibration'],
+    ['crew',      [12, 13], 'roster',      'Skipper suit\nis by the\nfridge.\n– S.D.', true],
+    ['pod',       [17, 23], 'manifest'],
+  ].map(([room, cell, screen, note = null, mug = false], i) => ({ id: 'console' + (i + 1), kind: 'console', room, cell, screen, note, mug })),
 ];
+
+// Furniture (after the "Research Station Interiors" sheet). solid pieces block their cell like props;
+// the rest (chairs, plants, the cart) can be walked through. Pieces stand with their back to the
+// nearest wall unless `rot` turns them (radians, 0 = facing +z).
+export const FURNITURE = [
+  // Crew Quarters: bunks, lockers, a mess table with chairs.
+  { kind: 'bunk', room: 'crew', cell: [15, 10], solid: true },
+  { kind: 'bunk', room: 'crew', cell: [15, 14], solid: true },
+  { kind: 'lockers', room: 'crew', cell: [13, 10], solid: true },
+  { kind: 'messTable', room: 'crew', cell: [14, 12], solid: true, rot: 0 },
+  // Arrival Airlock: a waiting bench, lockers, a plant.
+  { kind: 'bench', room: 'airlock', cell: [11, 19], solid: true },
+  { kind: 'lockers', room: 'airlock', cell: [9, 20], solid: true }, // the back wall's middle stays clear for the emblem
+  { kind: 'plant', room: 'airlock', cell: [9, 19] },
+  // Storage: shelving, a big supply crate, the janitor's cart.
+  { kind: 'shelves', room: 'storage', cell: [5, 15], solid: true },
+  { kind: 'shelves', room: 'storage', cell: [5, 17], solid: true, medkit: true },
+  { kind: 'bigCrate', room: 'storage', cell: [1, 14], solid: true },
+  { kind: 'cart', room: 'storage', cell: [2, 18] },
+  // Generator Room: a workbench and a tool shelf.
+  { kind: 'workbench', room: 'generator', cell: [5, 9], solid: true },
+  { kind: 'shelves', room: 'generator', cell: [1, 7], solid: true },
+  // Comms Room: an office desk and a filing cabinet.
+  { kind: 'desk', room: 'comms', cell: [27, 15], solid: true },
+  { kind: 'cabinet', room: 'comms', cell: [23, 15], solid: true },
+  // Teleporter Lab.
+  { kind: 'cabinet', room: 'teleporter', cell: [23, 9], solid: true },
+  { kind: 'plant', room: 'teleporter', cell: [27, 8] },
+  // Escape Pod Bay.
+  { kind: 'bench', room: 'pod', cell: [18, 19], solid: true },
+  { kind: 'lockers', room: 'pod', cell: [21, 19], solid: true },
+  // The safe rooms (Wellness, Quiet) are furnished separately (js/suiteplan.js).
+];
+// Windows onto the planet: [room, wall side].
+export const WINDOWS = [['pod', 'n']];
+// Wayfinding signs on the corridor wall just outside these doors (cells).
+export const SIGN_DOORS = [[8, 21], [13, 18], [14, 6], [3, 11], [22, 21]];
 
 // Doors that start shut. The alien starts behind these.
 const START_CLOSED = ['25,5', '25,11'];
@@ -82,36 +140,30 @@ export function buildLayout() {
   const inBounds = (x, z) => x >= 0 && z >= 0 && x < W && z < H;
 
   const rooms = ROOMS.map((r, i) => {
-    for (let z = r.y; z < r.y + r.h; z++) {
-      for (let x = r.x; x < r.x + r.w; x++) {
-        type[idx(x, z)] = ROOM;
-        roomIdx[idx(x, z)] = i;
-      }
-    }
+    for (let z = r.y; z < r.y + r.h; z++) for (let x = r.x; x < r.x + r.w; x++) roomIdx[idx(x, z)] = i;
     return { ...r, index: i, cx: r.x + (r.w >> 1), cz: r.y + (r.h >> 1) };
   });
 
-  const doors = [];
-  for (const path of CORRIDOR_PATHS) {
-    const cells = [];
-    for (let i = 0; i < path.length - 1; i++) {
-      const [ax, az] = path[i];
-      const [bx, bz] = path[i + 1];
-      const dx = Math.sign(bx - ax), dz = Math.sign(bz - az);
-      let x = ax, z = az;
-      for (;;) {
-        const last = cells[cells.length - 1];
-        if (!last || last[0] !== x || last[1] !== z) cells.push([x, z]);
-        if (x === bx && z === bz) break;
-        x += dx; z += dz;
-      }
+  // The smooth walkable shape, then the grid from it: a cell is open if its centre is well inside.
+  const corridors = CORRIDORS.map((c) => ({ ...c, pts: sampleCorridor(c, TILE) }));
+  const shape = buildShape({ w: W, h: H, tile: TILE, rooms, corridors });
+  const OPEN_MARGIN = 0.1;
+  for (let z = 0; z < H; z++) {
+    for (let x = 0; x < W; x++) {
+      if (shape.distance(cellCenter(x), cellCenter(z)) < OPEN_MARGIN) continue;
+      type[idx(x, z)] = roomIdx[idx(x, z)] >= 0 ? ROOM : CORRIDOR;
     }
-    const outside = cells.filter(([x, z]) => roomIdx[idx(x, z)] < 0 && type[idx(x, z)] !== DOOR);
-    for (const [x, z] of outside) if (type[idx(x, z)] === VOID) type[idx(x, z)] = CORRIDOR;
-    // [end of the polyline, corridor cell next to it]
-    for (const [end, [x, z]] of [[path[0], outside[0]], [path[path.length - 1], outside[outside.length - 1]]]) {
-      const room = rooms[roomIdx[idx(end[0], end[1])]];
-      if (!room) continue;
+  }
+
+  // Doors: where a corridor leaves a room, the first open cell outside it.
+  const doors = [];
+  for (const c of corridors) {
+    for (const ends of [c.pts, c.pts.slice().reverse()]) {
+      const room = rooms[roomIdx[idx(cellOf(ends[0].x), cellOf(ends[0].z))]];
+      if (!room) continue; // a side branch starting in another corridor
+      const p = ends.find((q) => roomIdx[idx(cellOf(q.x), cellOf(q.z))] < 0);
+      const [x, z] = [cellOf(p.x), cellOf(p.z)];
+      if (type[idx(x, z)] === DOOR) continue;
       type[idx(x, z)] = DOOR;
       doors.push({ cx: x, cz: z, safe: !!room.safe });
     }
@@ -124,7 +176,8 @@ export function buildLayout() {
     d.startClosed = START_CLOSED.includes(key(d.cx, d.cz));
   }
 
-  const solid = new Set(PROPS.map((p) => key(p.cell[0], p.cell[1])));
+  const solid = new Set([...PROPS, ...FURNITURE.filter((f) => f.solid)].map((p) => key(p.cell[0], p.cell[1])));
+  for (const [x, z] of SUITE_SOLIDS) solid.add(key(x, z)); // the suites' gurneys
   // Safe rooms and their hatches: the alien never goes in.
   const safe = new Set();
   for (const r of rooms) {
@@ -135,8 +188,12 @@ export function buildLayout() {
   const doorIndex = new Map(doors.map((d, i) => [key(d.cx, d.cz), i]));
 
   const layout = {
-    w: W, h: H, type, rooms, doors,
+    w: W, h: H, type, rooms, doors, corridors, shape,
+    // Distance (m) from a point to the nearest wall: negative inside walls. Ignores doors and props.
+    walkDistance: (x, z) => shape.distance(x, z),
+    isWalkable: (x, z) => shape.distance(x, z) >= 0,
     props: PROPS.map((p) => ({ ...p })),
+    furniture: FURNITURE.map((f) => ({ ...f })),
     inBounds,
     isFloor,
     isDoor: (x, z) => inBounds(x, z) && type[idx(x, z)] === DOOR,
@@ -146,6 +203,7 @@ export function buildLayout() {
     // Floor you can stand on (doors count, whatever their state).
     isOpen: (x, z) => isFloor(x, z) && !solid.has(key(x, z)),
     doorIndexAt: (x, z) => doorIndex.get(key(x, z)) ?? -1,
+    // The room whose rectangle holds this cell (including an octagon's cut-off corners).
     roomAt: (x, z) => (inBounds(x, z) && roomIdx[idx(x, z)] >= 0 ? rooms[roomIdx[idx(x, z)]] : null),
     room: (id) => rooms.find((r) => r.id === id),
     // Closest standable cell (that also passes `ok`, if given), searching outward in rings.
@@ -193,11 +251,16 @@ export function traceCells(ax, az, bx, bz) {
   return out;
 }
 
-// True when nothing solid (walls or closed doors) sits between a and b.
+// True when nothing solid (walls or closed doors) sits between a and b. Checks the smooth shape
+// every 0.2 m, so angled and curved walls block sight exactly.
 export function lineClear(layout, a, b, isDoorClosed) {
-  for (const [x, z] of traceCells(a.x, a.z, b.x, b.z)) {
-    if (!layout.isFloor(x, z)) return false;
-    if (layout.isDoor(x, z) && isDoorClosed(x, z)) return false;
+  const dx = b.x - a.x, dz = b.z - a.z;
+  const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.2));
+  for (let i = 0; i <= n; i++) {
+    const x = a.x + (dx * i) / n, z = a.z + (dz * i) / n;
+    if (layout.walkDistance(x, z) < 0) return false;
+    const cx = cellOf(x), cz = cellOf(z);
+    if (layout.isDoor(cx, cz) && isDoorClosed(cx, cz)) return false;
   }
   return true;
 }

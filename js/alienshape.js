@@ -1,4 +1,4 @@
-// The alien's shape and motion, shared by both renderers: a black, wet mass with a crown of long
+// The alien's shape and motion, kept apart from the renderer: a black, wet mass with a crown of long
 // stringy tentacles (after the "Colossal Alien" concept art). Pure data and maths, no engine.
 import { seeded } from './textures.js';
 

@@ -205,7 +205,7 @@ export class HatMan {
       while (d < 14) {
         const x = from.x + dx * d, z = from.z + dz * d;
         const cx = cellOf(x), cz = cellOf(z);
-        if (!this.layout.isOpen(cx, cz) || (this.layout.isDoor(cx, cz) && this.isDoorClosed(cx, cz))) break;
+        if (this.layout.walkDistance(x, z) < 0.4 || this.layout.isSolid(cx, cz) || (this.layout.isDoor(cx, cz) && this.isDoorClosed(cx, cz))) break;
         d += 0.5;
       }
       d -= 0.9;

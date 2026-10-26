@@ -1,6 +1,6 @@
 // Babylon.js renderer for the station's wear and tear: pipes, patched walls, cables, clutter,
 // broken corridor lights, steam, drips and sparks. Placement comes from js/decorplan.js and the
-// moving parts mirror js/decorsim.js, so it matches the three.js version.
+// moving parts mirror js/decorsim.js.
 import { WALL_H } from '../layout.js';
 import { planDecor } from '../decorplan.js';
 import { DecorSim, FX, TUBE_ON, TUBE_OFF, mixHex } from '../decorsim.js';
@@ -15,7 +15,7 @@ export function buildDecor(scene, layout, { onEvent = () => {} } = {}) {
   const plan = planDecor(layout);
   const T = (c) => toTexture(scene, c);
   const thin = (mesh, items, place) => { if (!items.length) { mesh.dispose(); return null; } return instances(mesh, items.map(place)); };
-  // Babylon planes face -Z (three.js planes face +Z), so wall-facing planes get an extra half turn.
+  // Wall spots face into the room for a +Z-facing plane; Babylon planes face -Z, so they get an extra half turn.
   const wallQ = (rot, tilt) => [0, rot + Math.PI, tilt];
 
   // Pipes, in two mismatched finishes.
@@ -32,20 +32,13 @@ export function buildDecor(scene, layout, { onEvent = () => {} } = {}) {
       return compose(mid, q, [pp.r, Math.max(0.01, len), pp.r]);
     });
   }
-  // Joints where corridor pipe segments meet, then flanges and ceiling brackets.
-  const joints = [];
-  const seen = new Set();
-  for (const pp of plan.pipes) {
-    if (pp.room) continue;
-    const k = `${pp.a.x.toFixed(2)},${pp.a.y},${pp.a.z.toFixed(2)}`;
-    if (!seen.has(k)) { seen.add(k); joints.push(pp); }
-  }
+  // Joints where pipes bend, flanges where they end (turned along the pipe), and ceiling brackets.
   const jointMesh = MeshBuilder.CreateSphere('joint', { diameter: 2, segments: 4 }, scene);
   jointMesh.material = darkMetal;
-  thin(jointMesh, joints, (pp) => compose([pp.a.x, pp.a.y, pp.a.z], [0, 0, 0], [pp.r * 1.25, pp.r * 1.25, pp.r * 1.25]));
+  thin(jointMesh, plan.joints, (j) => compose([j.x, j.y, j.z], [0, 0, 0], [j.r * 1.25, j.r * 1.25, j.r * 1.25]));
   const flangeMesh = MeshBuilder.CreateCylinder('flange', { diameter: 2, height: 1, tessellation: 14 }, scene);
   flangeMesh.material = darkMetal;
-  thin(flangeMesh, plan.flanges, (f) => compose([f.x, f.y, f.z], [f.axis === 'z' ? Math.PI / 2 : 0, 0, f.axis === 'x' ? Math.PI / 2 : 0], [f.r * 1.75, 0.07, f.r * 1.75]));
+  thin(flangeMesh, plan.flanges, (f) => compose([f.x, f.y, f.z], segment(f, { x: f.x + f.dir.x, y: f.y + f.dir.y, z: f.z + f.dir.z }).q, [f.r * 1.75, 0.07, f.r * 1.75]));
   const bracketMesh = MeshBuilder.CreateBox('bracket', { size: 1 }, scene);
   bracketMesh.material = darkMetal;
   thin(bracketMesh, plan.brackets, (b) => compose([b.x, b.y + b.len / 2, b.z], [0, 0, 0], [0.04, b.len, 0.07]));
@@ -81,7 +74,7 @@ export function buildDecor(scene, layout, { onEvent = () => {} } = {}) {
   // Floor grates, barrels and debris.
   const grateMesh = MeshBuilder.CreateGround('grate', { width: 1.5, height: 1.5 }, scene);
   grateMesh.material = pbr(scene, { map: T(grateTexture()), roughness: 0.6, metalness: 0.7, zOffset: -1 });
-  thin(grateMesh, plan.grates, (g) => compose([g.x, 0.004, g.z], [0, g.axis === 'x' ? Math.PI / 2 : 0, 0], [1, 1, 1]));
+  thin(grateMesh, plan.grates, (g) => compose([g.x, 0.004, g.z], [0, g.yaw + Math.PI / 2, 0], [1, 1, 1]));
   const barrelMesh = MeshBuilder.CreateCylinder('barrel', { diameter: 0.6, height: 0.88, tessellation: 14 }, scene);
   barrelMesh.material = pbr(scene, { map: T(barrelTexture()), roughness: 0.7, metalness: 0.4 });
   thin(barrelMesh, plan.clutter.filter((c) => c.kind === 'barrel'), (c) =>
@@ -125,10 +118,12 @@ export function buildDecor(scene, layout, { onEvent = () => {} } = {}) {
   // Broken corridor lights: a dark housing and a tube whose brightness each light sets itself.
   const housing = MeshBuilder.CreateBox('housing', { size: 1 }, scene);
   housing.material = darkMetal;
-  thin(housing, plan.lights, (l) => compose([l.x, l.y, l.z], [0, 0, 0], [l.axis === 'x' ? 1.5 : 0.26, 0.09, l.axis === 'x' ? 0.26 : 1.5]));
+  // Each fixture runs along the corridor (yaw turns its length to follow it).
+  thin(housing, plan.lights, (l) => compose([l.x, l.y, l.z], [0, l.yaw, 0], [1.5, 0.09, 0.26]));
   const tubes = plan.lights.map((l) => {
-    const tube = MeshBuilder.CreateBox('tube', { width: l.axis === 'x' ? 1.3 : 0.1, height: 0.04, depth: l.axis === 'x' ? 0.1 : 1.3 }, scene);
+    const tube = MeshBuilder.CreateBox('tube', { width: 1.3, height: 0.04, depth: 0.1 }, scene);
     tube.position.set(l.x, l.y - 0.055, l.z);
+    tube.rotation.y = l.yaw;
     tube.material = basic(scene, TUBE_OFF);
     return tube;
   });

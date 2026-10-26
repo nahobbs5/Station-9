@@ -15,7 +15,13 @@ export const LINES = {
   hunt: 'Please stay calm. A wellness check is on its way to you.',
   crate: 'Noise-makers! Throw one with Q to redirect unwanted attention. Attention is our most precious resource.',
   hatman: 'Please disregard any colleagues you may see in the corridors. Everyone is fine.',
-  safeRoom: 'Welcome to a wellness room, Technician. Nothing can reach you in here. Please stay as long as you like.',
+  // The wellness suites (reference files/wellness rooms.md). Inside, Marigold speaks only at the door.
+  suiteDoor: {
+    wellness: 'Welcome to your wellness suite. Please take a seat.',
+    quiet: 'You seem tired. Rest is available.',
+  },
+  suiteHunt: 'Please stay where you are. This is the safest place in the station.',
+  graffiti: 'That wall will be cleaned soon.',
   needPower: 'That system requires main power. Safety first!',
   needComms: 'Pod launch requires a confirmed rescue window. Please contact Comms first.',
   noDecoys: 'You are out of noise-makers. Storage has plenty. Storage has always had plenty.',
@@ -37,12 +43,14 @@ export class Intercom {
     this.voice = true;
     this.talking = false; // speech for the current line hasn't finished yet
     this.tape = null;     // the tape player, so we take turns speaking
+    this.muted = () => false; // true while you're in a wellness suite: only { suite: true } lines get through
   }
 
   // Marigold has a line queued or is still saying one.
   get busy() { return this.queue.length > 0 || this.talking; }
 
-  say(text, { priority = false } = {}) {
+  say(text, { priority = false, suite = false } = {}) {
+    if (this.muted() && !suite) return;
     if (priority) {
       this.queue = [];
       this.timer = 0;
@@ -50,7 +58,7 @@ export class Intercom {
       this.talking = false;
       if ('speechSynthesis' in window) speechSynthesis.cancel();
     }
-    this.queue.push(text);
+    this.queue.push({ text, suite });
   }
 
   update(dt) {
@@ -62,7 +70,9 @@ export class Intercom {
       return;
     }
     // Let a tape finish its sentence before speaking over it.
-    if (this.queue.length && !(this.voice && this.tape?.speaking)) this.show(this.queue.shift());
+    // Lines queued before you stepped into a suite are dropped there, unless they're the suite's own.
+    if (this.muted()) this.queue = this.queue.filter((l) => l.suite);
+    if (this.queue.length && !(this.voice && this.tape?.speaking)) this.show(this.queue.shift().text);
   }
 
   show(text) {

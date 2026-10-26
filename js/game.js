@@ -1,6 +1,5 @@
-// The game itself: rules, objectives, the alien, tapes, HUD and the main loop. It doesn't know
-// which 3D engine is drawing: startGame() takes a function that builds a "view" (js/three/view.js
-// or js/babylon/view.js) and talks to the engine only through it.
+// The game itself: rules, objectives, the alien, tapes, HUD and the main loop. All drawing goes
+// through a "view" (js/babylon/view.js) that startGame() builds, so this file knows nothing about the engine.
 import { buildLayout, cellOf, cellCenter, lineClear, REPAIRS } from './layout.js';
 import { createNoiseBus, heardLoudness, LOUDNESS } from './noise.js';
 import { Alien, inSight } from './alien.js';
@@ -14,6 +13,7 @@ import { Minimap, revealAround } from './minimap.js';
 import { parseIntro, parseLore } from './textfiles.js';
 import { TapePlayer } from './tapes.js';
 import { CameraRig } from './rig.js';
+import { inSuite, graffitiWall, GRAFFITI_RANGE } from './suiteplan.js';
 
 const $ = (id) => document.getElementById(id);
 const ORDER = REPAIRS;
@@ -36,10 +36,15 @@ export function startGame(createView) {
   const rig = new CameraRig();
   const world = view.world;
   const isDoorClosed = (x, z) => world.doorAt(x, z)?.closed ?? false;
-  const isBlockedCell = (x, z) => !layout.isOpen(x, z) || isDoorClosed(x, z);
+  // A circle of radius r at (x, z) is blocked by a wall (the smooth shape), a prop or a closed door.
+  const blockedAt = (x, z, r = 0) => layout.walkDistance(x, z) < r ||
+    [[-r, -r], [r, -r], [-r, r], [r, r]].some(([ox, oz]) => {
+      const cx = cellOf(x + ox), cz = cellOf(z + oz);
+      return layout.isSolid(cx, cz) || isDoorClosed(cx, cz);
+    });
 
   const spawn = layout.room('airlock');
-  const player = new Player(rig, { x: cellCenter(spawn.cx), z: cellCenter(spawn.cz) }, isBlockedCell);
+  const player = new Player(rig, { x: cellCenter(spawn.cx), z: cellCenter(spawn.cz) }, blockedAt);
   player.update(0, 0);
 
   const alien = new Alien(layout, { start: 'teleporter', dormant: DORMANT });
@@ -48,11 +53,12 @@ export function startGame(createView) {
   const audio = new GameAudio(rig);
   world.onDecorEvent = (type, at) => { if (state === 'playing') audio.decorSound(type, at); };
   const intercom = new Intercom($('subtitle'));
+  intercom.muted = () => suiteNow !== null; // silent inside the suites, except at the door
   const tapes = new TapePlayer({
     audio, intercom,
     el: { box: $('tape'), head: $('tape-head'), speaker: $('tape-speaker'), line: $('tape-line') },
   });
-  const throwables = new Throwables(view.makeBall, isBlockedCell);
+  const throwables = new Throwables(view.makeBall, (x, z) => blockedAt(x, z, 0.05));
   const hatman = new HatMan(view.hatman, layout, rig, isDoorClosed, world);
 
   const fwd = { x: 0, y: 0, z: 0 };
@@ -85,7 +91,11 @@ export function startGame(createView) {
   let wasHunting = false;
   let revealTimer = 0;
   let toastTimer = 0;
-  let saidSafe = false;
+  // The wellness suites: which one you're in, the exposure fade, and when Marigold last spoke at each door.
+  let suiteNow = null, exposureK = 1, saidGraffiti = false;
+  const lastDoorLine = { wellness: -Infinity, quiet: -Infinity };
+  const DOOR_LINE_GAP = 20; // seconds before she repeats a door line
+  const graffiti = graffitiWall(layout);
   const stats = { hunts: 0, decoys: 0 };
 
   // Lore terminals and the opening announcements come from text/lore.txt and text/intro.txt,
@@ -296,6 +306,7 @@ export function startGame(createView) {
   function finishRepair(id, target) {
     stage++;
     world.setStatus(id, 0x2aff7a);
+    world.setProgress(stage); // console screens: power online, signal sent, launch window open
     if (id === 'generator') {
       world.setPower(true);
       audio.playAt('flicker', target.pos, { volume: 1.2 });
@@ -388,6 +399,33 @@ export function startGame(createView) {
   const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
   // Per-frame update -------------------------------------------------------------
+  // Stepping into a wellness suite: Marigold's line at the door, and your eyes adjusting to the light
+  // (exposure from 0.6 to 1.0 of normal over 1.5 s). In Suite B she comments if you get close to the wall.
+  function updateSuite(dt) {
+    const suite = inSuite(layout, player.pos);
+    if (suite !== suiteNow) {
+      // Leaving: anything she was about to say about the room no longer makes sense outside it.
+      if (suiteNow && !suite) intercom.queue = intercom.queue.filter((l) => !l.suite);
+      suiteNow = suite;
+      if (suite) {
+        exposureK = 0.6;
+        saidGraffiti = false;
+        if (elapsed - lastDoorLine[suite] > DOOR_LINE_GAP) {
+          lastDoorLine[suite] = elapsed;
+          intercom.say(alien.state === 'hunt' ? LINES.suiteHunt : LINES.suiteDoor[suite], { suite: true, priority: true });
+        }
+      }
+    }
+    if (exposureK < 1) {
+      exposureK = Math.min(1, exposureK + (dt * 0.4) / 1.5);
+      view.setExposureScale?.(exposureK);
+    }
+    if (suite === 'quiet' && !saidGraffiti && Math.abs(player.pos.x - graffiti.x) < GRAFFITI_RANGE) {
+      saidGraffiti = true;
+      intercom.say(LINES.graffiti, { suite: true });
+    }
+  }
+
   function update(dt) {
     elapsed += dt;
     nagTimer -= dt;
@@ -441,7 +479,7 @@ export function startGame(createView) {
     view.alien.update(alien, elapsed);
     audio.update(dt, { alienDist: alien.dormant > 0 ? 99 : d, alienMoving: alien.moving, alienState: alien.state });
     if (alien.dormant <= 0 && !safe && d < CATCH_DIST) { caught(); return; }
-    if (safe && !saidSafe) { saidSafe = true; intercom.say(LINES.safeRoom); }
+    updateSuite(dt);
 
     tricks.update(dt);
     hatman.update(dt);
@@ -531,7 +569,7 @@ export function startGame(createView) {
 
   // Handy for debugging in the browser console.
   window.station9 = {
-    alien, player, world, layout, hatman, tricks, progress, loreRead, explored, tapes, audio, decor: world.decor,
+    alien, player, world, layout, hatman, tricks, progress, loreRead, explored, tapes, audio, intercom, decor: world.decor,
     renderer: view.renderer, view, rig, engine: view.name,
     get lore() { return lore; }, get state() { return state; }, get stage() { return stage; },
   };

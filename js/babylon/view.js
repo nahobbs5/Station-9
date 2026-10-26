@@ -1,5 +1,5 @@
-// The Babylon.js renderer. js/game.js runs the game and talks to this through the same small
-// "view" as the three.js version: world, alien, Hat Man figure, thrown balls, and render(rig).
+// The Babylon.js renderer. js/game.js runs the game and talks to this through a small "view":
+// the world, the alien, the Hat Man figure, thrown balls, and render(rig) to draw a frame.
 import { buildWorld } from './world.js';
 import { makeAlienView } from './alien.js';
 import { makeHatmanFigure, ballMaker } from './props.js';
@@ -20,7 +20,7 @@ export function createBabylonView(container, layout) {
   engine.disableUniformBuffers = true;
 
   const scene = new BABYLON.Scene(engine);
-  scene.useRightHandedSystem = true; // same coordinates as three.js, so all the shared maths works unchanged
+  scene.useRightHandedSystem = true; // the game's maths assumes right-handed coordinates (-Z is forward)
   scene.clearColor = new Color4(0, 0, 0, 1);
   scene.ambientColor = Color3.Black();
   scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
@@ -31,8 +31,9 @@ export function createBabylonView(container, layout) {
   ip.toneMappingEnabled = true;
   ip.toneMappingType = BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
   ip.exposure = 1.15;
+  const baseExposure = ip.exposure;
 
-  // Every light fades out smoothly at its range, like three.js (Babylon's glTF falloff is the same formula).
+  // Every light fades out smoothly at its range (Babylon's glTF falloff).
   scene.onNewLightAddedObservable.add((l) => { l.falloffType = BABYLON.Light.FALLOFF_GLTF; });
 
   const hemi = new BABYLON.HemisphericLight('sky', new Vector3(0, 1, 0), scene);
@@ -42,7 +43,7 @@ export function createBabylonView(container, layout) {
   hemi.intensity = 0.12;
 
   const camera = new BABYLON.UniversalCamera('camera', new Vector3(0, 1.6, 0), scene);
-  camera.fov = (70 * Math.PI) / 180; // vertical, like three.js
+  camera.fov = (70 * Math.PI) / 180; // vertical
   camera.minZ = 0.05;
   camera.maxZ = 90;
   camera.inputs.clear(); // the shared Player handles input
@@ -86,6 +87,8 @@ export function createBabylonView(container, layout) {
       scene.render();
     },
     resize() { engine.resize(); },
+    // Scale the scene's exposure (1 = normal). Used for the eyes-adjusting fade in the wellness suites.
+    setExposureScale(k) { ip.exposure = baseExposure * k; },
     tuning: TUNING,
   };
 }

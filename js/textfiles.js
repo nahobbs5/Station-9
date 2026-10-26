@@ -1,4 +1,4 @@
-// Parsers for the editable text files in text/. No three.js, so tests can use them.
+// Parsers for the editable text files in text/. No engine, so tests can use them.
 // In both files, lines starting with # are comments.
 
 const lines = (src) => src.replace(/\r\n?/g, '\n').split('\n');

@@ -1,7 +1,6 @@
 // First-person movement, mouse look, sprint/crouch, stamina and the flashlight.
 // Engine-free: it writes the camera pose and flashlight strength to a CameraRig (js/rig.js),
 // and the renderer copies that onto its own camera and spotlight.
-import { cellOf } from './layout.js';
 import { STEP_LOUDNESS } from './noise.js';
 
 // Sprint is the only way to outpace a hunting alien (5.5 m/s), and it is loud.
@@ -14,10 +13,11 @@ const RADIUS = 0.3;
 const LOOK = 0.0022;
 
 export class Player {
-  constructor(rig, spawn, isBlockedCell) {
+  // blockedAt(x, z, r): true if a circle of radius r at (x, z) hits a wall, prop or closed door.
+  constructor(rig, spawn, blockedAt) {
     this.camera = rig;
     this.pos = { x: spawn.x, z: spawn.z };
-    this.isBlockedCell = isBlockedCell;
+    this.blockedAt = blockedAt;
     this.yaw = 0;
     this.pitch = 0;
     this.eye = EYE.stand;
@@ -52,12 +52,7 @@ export class Player {
 
   get crouching() { return this.mode === 'crouch'; }
 
-  blocked(x, z) {
-    for (const [ox, oz] of [[-RADIUS, -RADIUS], [RADIUS, -RADIUS], [-RADIUS, RADIUS], [RADIUS, RADIUS]]) {
-      if (this.isBlockedCell(cellOf(x + ox), cellOf(z + oz))) return true;
-    }
-    return false;
-  }
+  blocked(x, z) { return this.blockedAt(x, z, RADIUS); }
 
   // Returns { loudness, mode } on the frame a footstep lands, otherwise null.
   update(dt, time) {

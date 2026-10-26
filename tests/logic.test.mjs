@@ -4,7 +4,10 @@ import { readFileSync } from 'node:fs';
 import { buildLayout, ROOMS, cellCenter, lineClear, traceCells, TILE } from '../js/layout.js';
 import { findPath } from '../js/pathfind.js';
 import { heardLoudness, STEP_LOUDNESS } from '../js/noise.js';
-import { revealAround } from '../js/minimap.js';
+import { revealAround, mapMarkers } from '../js/minimap.js';
+import { parseIntro, parseLore, tapeScript, speakerOf } from '../js/textfiles.js';
+import { VOICES } from '../js/tapes.js';
+import { planDecor, DECOR } from '../js/decorplan.js';
 import {
   Alien, inSight, SPEED, HUNT_TIMEOUT, LOSE_TRACK_AFTER, DOOR_FORCE_TIME, WARN_TIME, WARN_TIME_CLOSE,
 } from '../js/alien.js';
@@ -47,8 +50,17 @@ test('every terminal can be reached and read', () => {
   }
 });
 
-test('lore.json has an entry for every terminal', () => {
-  const lore = JSON.parse(readFileSync(new URL('../data/lore.json', import.meta.url), 'utf8'));
+const readText = (name) => readFileSync(new URL(`../text/${name}`, import.meta.url), 'utf8');
+
+test('intro.txt has the opening announcements, without comments or blank lines', () => {
+  const intro = parseIntro(readText('intro.txt'));
+  assert.ok(intro.length >= 1);
+  for (const line of intro) assert.ok(line && !line.startsWith('#'));
+  assert.deepEqual(parseIntro('# note\n\nOne.\r\n  Two.  \n'), ['One.', 'Two.']);
+});
+
+test('lore.txt has an entry for every terminal', () => {
+  const lore = parseLore(readText('lore.txt'));
   assert.equal(lore.length, 12);
   const ids = layout.props.filter((p) => p.kind === 'log').map((p) => p.id).sort();
   assert.deepEqual(lore.map((e) => e.id).sort(), ids);
@@ -294,7 +306,7 @@ test('every audio file exists and is credited', async () => {
   // audio.js imports three from a CDN, so read its file names as text.
   const src = readFileSync(new URL('js/audio.js', root), 'utf8');
   const used = [...src.matchAll(/'([\w-]+\.(?:wav|mp3))'/g)].map((m) => 'sound_effects/' + m[1]);
-  used.push(src.match(/MENU_MUSIC = '([^']+)'/)[1]);
+  used.push(...[...src.matchAll(/'(music\/[\w-]+\.mp3)'/g)].map((m) => m[1]));
   const credited = new Set(CREDITS.map((c) => c.file));
   for (const f of used) assert.ok(credited.has(f), `no credit for ${f}`);
   assert.equal(used.length, CREDITS.length);
@@ -341,4 +353,119 @@ test('minimap: walking to crew quarters maps the way, not the rest', () => {
   for (const cell of [[sx, sz], ...findPath(grid(), sx, sz, gx, gz)]) revealAround(layout, explored, at(cell), allOpen);
   assert.ok(seenRoom(explored, 'crew'));
   for (const id of ['pod', 'generator', 'teleporter']) assert.equal(anySeen(explored, id), false, id);
+});
+
+const exploreRooms = (...ids) => {
+  const explored = new Uint8Array(layout.w * layout.h);
+  for (const id of ids) {
+    const r = layout.room(id);
+    for (let z = r.y; z < r.y + r.h; z++) for (let x = r.x; x < r.x + r.w; x++) explored[z * layout.w + x] = 1;
+  }
+  return explored;
+};
+const mapTerminals = layout.props.filter((p) => p.kind === 'log');
+
+test('minimap symbols: nothing but the airlock terminal at the start', () => {
+  const explored = new Uint8Array(layout.w * layout.h);
+  const a = layout.room('airlock');
+  revealAround(layout, explored, at([a.cx, a.cz]), allOpen);
+  const kinds = mapMarkers(layout, explored, { terminals: mapTerminals }).map((m) => m.kind);
+  assert.deepEqual(kinds, ['terminal']);
+});
+
+test('minimap symbols: S marks a safe room once you have seen it', () => {
+  const m = mapMarkers(layout, exploreRooms('wellness')).filter((x) => x.kind === 'safe');
+  const r = layout.room('wellness');
+  assert.deepEqual(m, [{ kind: 'safe', x: r.x + r.w / 2, z: r.y + r.h / 2 }]);
+});
+
+test('minimap symbols: each repair room has its own symbol, marked by progress', () => {
+  const m = mapMarkers(layout, exploreRooms('generator', 'comms', 'pod'), { stage: 1 });
+  const state = Object.fromEntries(m.map((x) => [x.kind, x.state]));
+  assert.deepEqual(state, { generator: 'done', comms: 'now', pod: 'later' });
+});
+
+test('minimap symbols: the crate shows until you take the noise-makers', () => {
+  const explored = exploreRooms('storage');
+  assert.ok(mapMarkers(layout, explored, { gotCrate: false }).some((x) => x.kind === 'crate'));
+  assert.ok(!mapMarkers(layout, explored, { gotCrate: true }).some((x) => x.kind === 'crate'));
+});
+
+test('minimap symbols: a terminal appears once seen, and turns read once heard', () => {
+  const t = mapTerminals.find((x) => x.id === 't04');
+  const none = mapMarkers(layout, new Uint8Array(layout.w * layout.h), { terminals: mapTerminals });
+  assert.equal(none.length, 0);
+  const explored = exploreRooms('crew');
+  const find = (read) => mapMarkers(layout, explored, { terminals: mapTerminals, loreRead: new Set(read) })
+    .find((x) => x.kind === 'terminal' && x.x === t.cell[0] + 0.5 && x.z === t.cell[1] + 0.5);
+  assert.equal(find([]).state, 'unread');
+  assert.equal(find(['t04']).state, 'read');
+});
+
+// Audio logs ------------------------------------------------------------------
+
+test('tapes: one line per sentence, and a "Name:" paragraph switches speaker', () => {
+  const lore = parseLore(readText('lore.txt'));
+  const script = tapeScript(lore.find((e) => e.id === 't11'), Object.keys(VOICES));
+  assert.equal(script[0].speaker, 'Tomas');
+  assert.equal(script[script.length - 1].speaker, 'Marigold');
+  assert.equal(script[script.length - 1].text, 'Everyone is fine.');
+  for (const l of script) assert.ok(/^[^.!?]+[.!?]+["”']?$/.test(l.text), `not one sentence: ${l.text}`);
+  // A colon that isn't a known speaker stays part of the line.
+  assert.equal(tapeScript({ author: 'Wes', text: 'Note: be quiet.' }, ['Marigold'])[0].text, 'Note: be quiet.');
+});
+
+test('tapes: every speaker in every log has a voice', () => {
+  for (const e of parseLore(readText('lore.txt'))) {
+    for (const l of tapeScript(e, Object.keys(VOICES))) assert.ok(VOICES[l.speaker], `${e.id}: no voice for ${l.speaker}`);
+  }
+  assert.equal(speakerOf('Dr. Imani Okafor, lead physicist'), 'Imani');
+});
+
+test('lore.txt reads the optional voice and audio lines', () => {
+  const [e] = parseLore('=== t99: Test\nroom: crew\nauthor: Sam Doyle\ndate: 2091-01-01\nvoice: pitch 0.8, rate 1.1\naudio: tapes/t99.mp3\n\nHello. Bye.\n');
+  assert.deepEqual(e.voice, { pitch: 0.8, rate: 1.1 });
+  assert.equal(e.audio, 'tapes/t99.mp3');
+  assert.equal(e.text, 'Hello. Bye.');
+});
+
+// Wear and tear -----------------------------------------------------------------
+
+const cellAt = (pt) => [Math.floor(pt.x / TILE), Math.floor(pt.z / TILE)];
+
+test('decor: the same plan every load', () => {
+  assert.deepEqual(planDecor(layout), planDecor(layout));
+});
+
+test('decor: nothing overhead hangs below head height, and no pipe passes through a door', () => {
+  const plan = planDecor(layout);
+  for (const p of plan.pipes) {
+    if (plan.risers.includes(p)) continue;
+    assert.ok(Math.min(p.a.y, p.b.y) - p.r >= DECOR.overheadMin, `pipe too low at ${cellAt(p.a)}`);
+    for (const pt of [p.a, p.b]) assert.equal(layout.isDoor(...cellAt(pt)), false, `pipe in a door at ${cellAt(pt)}`);
+  }
+  for (const c of plan.cables) assert.ok(c.a.y - c.sag - 0.03 >= DECOR.overheadMin, 'cable sags too low');
+  for (const pn of plan.panels) assert.ok(3 - pn.size * Math.sin(pn.tilt) >= DECOR.overheadMin, 'ceiling panel hangs too low');
+  for (const l of plan.lights) assert.equal(layout.isDoor(...l.cell), false);
+});
+
+test('decor: every corridor cell has pipes, and faults and lights sit on floor cells', () => {
+  const plan = planDecor(layout);
+  const piped = new Set(plan.pipes.filter((p) => p.cell).map((p) => p.cell.join(',')));
+  for (let z = 0; z < layout.h; z++) for (let x = 0; x < layout.w; x++) {
+    if (layout.isCorridor(x, z)) assert.ok(piped.has(`${x},${z}`), `no pipe in corridor ${x},${z}`);
+  }
+  for (const f of [...plan.faults, ...plan.lights]) {
+    assert.ok(layout.isFloor(...f.cell) && !layout.isDoor(...f.cell), `${f.kind ?? 'light'} at ${f.cell}`);
+  }
+  assert.equal(plan.lights.length, DECOR.brokenLights);
+});
+
+test('decor: clutter stays in room corners, clear of doors and props', () => {
+  for (const c of planDecor(layout).clutter) {
+    const [x, z] = c.cell;
+    assert.ok(layout.roomAt(x, z), 'clutter outside a room');
+    assert.equal(layout.isSolid(x, z), false, 'clutter on a prop');
+    assert.ok(![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => layout.isDoor(x + dx, z + dz)), 'clutter by a door');
+  }
 });

@@ -1,18 +1,20 @@
 import * as THREE from 'three';
-import { buildLayout, cellOf, cellCenter, lineClear } from './layout.js';
+import { buildLayout, cellOf, cellCenter, lineClear, REPAIRS } from './layout.js';
 import { createNoiseBus, heardLoudness, LOUDNESS } from './noise.js';
 import { Alien, inSight } from './alien.js';
 import { buildWorld, makeAlienMesh, animateAlienMesh } from './world.js';
 import { Player } from './player.js';
-import { GameAudio, MenuMusic } from './audio.js';
+import { GameAudio, Music, MENU_MUSIC, END_MUSIC } from './audio.js';
 import { renderCredits } from './credits.js';
 import { findTarget, Throwables } from './interact.js';
 import { Tricks, HatMan } from './tricks.js';
 import { Intercom, LINES } from './intercom.js';
 import { Minimap, revealAround } from './minimap.js';
+import { parseIntro, parseLore } from './textfiles.js';
+import { TapePlayer } from './tapes.js';
 
 const $ = (id) => document.getElementById(id);
-const ORDER = ['generator', 'comms', 'pod'];
+const ORDER = REPAIRS;
 const OBJECTIVES = {
   generator: 'Restore main power in the Generator Room',
   comms: 'Send a rescue call from the Comms Room',
@@ -21,8 +23,6 @@ const OBJECTIVES = {
 const DORMANT = 30;     // seconds of quiet before the alien wakes
 const CATCH_DIST = 1.3;
 const DECOYS_MAX = 3;
-const READ_TIME = 14;      // seconds a terminal stays open
-const READ_RANGE = 3;      // walk further than this and it closes
 const SCORE = { lore: 100, repair: 250, escape: 1000, timeBonusFrom: 900 };
 // ?debug lets automated tests play without pointer lock.
 const DEBUG = new URLSearchParams(location.search).has('debug');
@@ -58,7 +58,12 @@ scene.add(alienMesh);
 animateAlienMesh(alienMesh, alien, 0);
 
 const audio = new GameAudio(camera, scene);
+world.onDecorEvent = (type, at) => { if (state === 'playing') audio.decorSound(type, at); };
 const intercom = new Intercom($('subtitle'));
+const tapes = new TapePlayer({
+  audio, intercom,
+  el: { box: $('tape'), head: $('tape-head'), speaker: $('tape-speaker'), line: $('tape-line') },
+});
 const throwables = new Throwables(scene, isBlockedCell);
 const hatman = new HatMan(scene, layout, camera, isDoorClosed, world);
 
@@ -95,11 +100,12 @@ let toastTimer = 0;
 let saidSafe = false;
 const stats = { hunts: 0, decoys: 0 };
 
-// Lore terminals: text comes from data/lore.json, loaded when the shift starts.
+// Lore terminals and the opening announcements come from text/lore.txt and text/intro.txt,
+// loaded when the shift starts.
 let lore = new Map();
+let introLines = LINES.intro;
 const loreRead = new Set();
 const LORE_TOTAL = layout.props.filter((p) => p.kind === 'log').length;
-let reading = null; // { id, pos, timer, noiseTimer }
 const inSafeRoom = () => layout.isSafe(cellOf(player.pos.x), cellOf(player.pos.z));
 
 // Minimap: only what you've seen. M hides it.
@@ -125,6 +131,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyE') { if (!e.repeat) ePressed = true; eHeld = true; }
   if (e.code === 'KeyQ' && !e.repeat) throwDecoy();
   if (e.code === 'KeyM' && !e.repeat) $('map').hidden = !$('map').hidden;
+  if (e.code === 'KeyT' && !e.repeat) tapes.stop();
 });
 addEventListener('keyup', (e) => { if (e.code === 'KeyE') eHeld = false; });
 
@@ -150,13 +157,16 @@ document.addEventListener('pointerlockchange', () => {
     player.keys.clear();
     audio.suspend();
     if ('speechSynthesis' in window) speechSynthesis.pause();
+    tapes.pause();
   }
   if (locked && 'speechSynthesis' in window) speechSynthesis.resume();
+  if (locked) tapes.resume();
 });
 
 // Splash screen: browsers only allow sound after a click or key, so the first
 // click here starts the title theme and reveals the main menu.
-const music = new MenuMusic();
+const music = new Music(MENU_MUSIC);
+const endMusic = new Music(END_MUSIC);
 const leaveSplash = () => {
   if ($('splash').hidden) return;
   $('splash').hidden = true;
@@ -167,27 +177,36 @@ $('splash').addEventListener('click', leaveSplash);
 document.addEventListener('keydown', leaveSplash);
 
 renderCredits($('credits-list'));
+renderCredits($('win-credits'));
 $('credits-open').addEventListener('click', () => { $('title').hidden = true; $('credits').hidden = false; });
 $('credits-back').addEventListener('click', () => { $('credits').hidden = true; $('title').hidden = false; });
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Fetch a text file, giving up after 5 s. Returns null if it can't be loaded.
+async function loadText(url) {
+  const res = await Promise.race([fetch(url), wait(5000).then(() => null)]);
+  return res?.ok ? res.text() : null;
+}
 
 async function start() {
   if (state !== 'title') return;
   state = 'loading';
   music.fadeOut(1500);
   intercom.voice = $('voice').checked;
+  tapes.voice = intercom.voice;
   $('start').textContent = 'Loading…';
   lock();
   await Promise.race([audio.resume().catch((e) => console.warn('Audio could not start', e)), wait(1000)]);
   // Never let sound loading block the game: give it a few seconds, then go anyway.
   if (await Promise.race([audio.load(), wait(8000).then(() => 'timeout')]) === 'timeout') console.warn('Sound loading timed out; starting anyway.');
   try {
-    const res = await Promise.race([fetch('data/lore.json'), wait(5000).then(() => null)]);
-    if (res?.ok) lore = new Map((await res.json()).map((e) => [e.id, e]));
+    const [loreText, introText] = await Promise.all(['text/lore.txt', 'text/intro.txt'].map(loadText));
+    if (loreText) lore = new Map(parseLore(loreText).map((e) => [e.id, e]));
     else console.warn('Lore did not load; terminals will show as offline.');
+    const intro = introText && parseIntro(introText);
+    if (intro?.length) introLines = intro;
   } catch (e) {
-    console.warn('Lore did not load', e);
+    console.warn('Text files did not load', e);
   }
   try {
     audio.startAmbience(world.props.teleporter);
@@ -200,7 +219,7 @@ async function start() {
   player.pitch = 0;
   $('title').hidden = true;
   $('hud').hidden = false;
-  for (const line of LINES.intro) intercom.say(line);
+  for (const line of introLines) intercom.say(line);
   state = DEBUG || document.pointerLockElement === canvas ? 'playing' : 'paused';
   $('pause').hidden = state === 'playing';
 }
@@ -229,30 +248,23 @@ function press(target) {
     gotCrate = true;
     audio.playAt('clatter', target.pos, { volume: 0.5 });
   } else if (target.kind === 'log') {
-    if (reading?.id === target.id) closeTerminal();
-    else openTerminal(target);
+    if (tapes.id === target.id) tapes.stop();
+    else playTape(target);
   }
 }
 
-function openTerminal(target) {
+// A terminal's audio log plays in your earpiece, so you can keep moving. Only the button press makes noise.
+function playTape(target) {
   const entry = lore.get(target.id);
-  const n = target.id.slice(1);
-  $('log-head').textContent = entry ? `TERMINAL ${n} · ${entry.title}` : `TERMINAL ${n}`;
-  $('log-meta').textContent = entry ? `${entry.author} · ${entry.date}` : '';
-  $('log-body').textContent = entry ? entry.text : 'TERMINAL OFFLINE.\n\nPlease contact Marigold for assistance.';
-  $('log').hidden = false;
-  reading = { id: target.id, pos: target.pos, timer: READ_TIME, noiseTimer: 0 };
   audio.playAt('click', target.pos, { volume: 0.4 });
-  if (entry && !loreRead.has(target.id)) {
+  makeNoise(target.pos, LOUDNESS.terminal);
+  if (!entry) { toast('TAPE DAMAGED'); return; }
+  tapes.play(entry);
+  if (!loreRead.has(target.id)) {
     loreRead.add(target.id);
     world.markRead(target.id);
     toast(`Lore ${loreRead.size}/${LORE_TOTAL}  +${SCORE.lore}`);
   }
-}
-
-function closeTerminal() {
-  reading = null;
-  $('log').hidden = true;
 }
 
 function toast(text) {
@@ -343,6 +355,7 @@ function caught() {
   player.lookAt(alien.pos.x, alien.pos.z);
   audio.play2D('teleporter', { volume: 1.5, rate: 1.6, duration: 2.5 });
   audio.play2D('clicks', { volume: 1.5, rate: 1.8, duration: 2 });
+  tapes.stop(false);
   intercom.stop();
   intercom.say(LINES.caught, { priority: true });
   intercom.update(0);
@@ -359,7 +372,7 @@ function caught() {
 function win() {
   state = 'won';
   const allLore = loreRead.size === LORE_TOTAL;
-  closeTerminal();
+  tapes.stop(false);
   intercom.stop();
   if (allLore) {
     intercom.say(LINES.winAll[0], { priority: true });
@@ -370,6 +383,8 @@ function win() {
   intercom.update(0);
   audio.play2D('teleporter', { volume: 1.0, rate: 0.5 });
   audio.play2D('rumble', { volume: 1.0 });
+  audio.play2D('whoosh', { volume: 1.0 });
+  endMusic.play(3000);
   setTimeout(() => {
     $('hud').hidden = true;
     $('win').hidden = false;
@@ -416,13 +431,7 @@ function update(dt) {
     makeNoise(pos, LOUDNESS.decoy, 'decoy');
   });
 
-  // A terminal you're reading: quiet, but not silent.
-  if (reading) {
-    reading.timer -= dt;
-    reading.noiseTimer -= dt;
-    if (reading.noiseTimer <= 0) { reading.noiseTimer = 2; makeNoise(reading.pos, LOUDNESS.terminal); }
-    if (reading.timer <= 0 || Math.hypot(reading.pos.x - player.pos.x, reading.pos.z - player.pos.z) > READ_RANGE) closeTerminal();
-  }
+  tapes.update(dt);
 
   // The alien.
   const d = Math.hypot(alien.pos.x - player.pos.x, alien.pos.z - player.pos.z);
@@ -467,9 +476,8 @@ function drawMap(dt) {
   if (mapTimer > 0 || $('map').hidden) return;
   mapTimer = 0.1;
   minimap.draw({
-    player, explored, terminals, loreRead,
+    player, explored, terminals, loreRead, stage, gotCrate,
     doors: world.doors,
-    objective: stage < 3 ? layout.props.find((p) => p.id === ORDER[stage]).cell : null,
     time: elapsed,
   });
 }
@@ -499,7 +507,7 @@ function drawHud(dt, target, repairing) {
       else if (!canRepair(target.id)) prompt = target.id === 'pod' && stage < 2 ? 'Needs main power and a rescue call' : 'Needs main power';
       else prompt = `[Hold E] ${target.label}`;
     } else if (target.kind === 'log') {
-      prompt = reading?.id === target.id ? '[E] Close terminal' : `[E] Read terminal${loreRead.has(target.id) ? ' (read)' : ''}`;
+      prompt = tapes.id === target.id ? '[E] Stop tape' : `[E] Play tape${loreRead.has(target.id) ? ' (heard)' : ''}`;
     } else prompt = `[E] ${target.label}`;
   }
   $('prompt').textContent = prompt;
@@ -519,7 +527,7 @@ function frame(now) {
   last = now;
   if (state === 'playing') update(dt);
   else if (state === 'caught' || state === 'won') intercom.update(dt);
-  world.update(state === 'playing' || state === 'title' ? dt : 0, performance.now() / 1000, alien.dormant > 0 ? null : alien);
+  world.update(state === 'playing' || state === 'title' ? dt : 0, performance.now() / 1000, alien.dormant > 0 ? null : alien, player.pos);
   if (state === 'title') {
     // Slow look around the airlock behind the title screen.
     player.yaw = Math.sin(now / 6000) * 0.6;
@@ -537,6 +545,6 @@ addEventListener('resize', () => {
 
 // Handy for debugging in the browser console.
 window.station9 = {
-  alien, player, world, layout, hatman, tricks, progress, loreRead, explored,
+  alien, player, world, layout, hatman, tricks, progress, loreRead, explored, tapes, decor: world.decor, renderer,
   get lore() { return lore; }, get state() { return state; }, get stage() { return stage; },
 };

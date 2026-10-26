@@ -123,7 +123,7 @@ export class Tricks {
     let s = null;
     return {
       update: (dt, t) => {
-        if (!s) s = audio.playAt('footsteps', pos, { volume: 1.4, ref: 3, duration: 6 });
+        if (!s) s = audio.playAt('footsteps', pos, { volume: 1.4, ref: 3, loop: true, duration: 6 });
         if (!s) return true;
         if (t < 1.5) s.setPlaybackRate(1 + Math.sin(t * 20) * 0.08);
         else s.setPlaybackRate(1);

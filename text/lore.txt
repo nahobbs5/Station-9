@@ -1,0 +1,104 @@
+# Station 9 terminal entries. Each one plays as an audio log (a tape) when the player uses its terminal,
+# spoken one sentence at a time with a caption.
+#
+# Each entry starts with a line like:  === t01: Title
+# then room, author and date lines, a blank line, and the text the player reads.
+# The text can run over several lines and paragraphs; it ends at the next === line.
+# Lines starting with # are notes and are ignored.
+#
+# Keep the ids (t01 to t12): each one is tied to a terminal on the map.
+# The room line is for your reference. Moving a terminal to another room needs a code change (js/layout.js).
+#
+# The tape is spoken by the author (their first name picks the voice: Tomas, Imani, Lena, Priya, Wes, Jun,
+# Ada, Sam, Vantora or Marigold). A paragraph that starts with one of those names and a colon, like
+# "Marigold: Message sent.", is spoken by that person instead.
+#
+# Optional lines, after date:
+#   voice: pitch 0.8, rate 0.95     tune the author's voice (pitch 0 to 2, rate 0.1 to 10; 1 is normal)
+#   audio: tapes/t03.mp3            play a recorded file instead of the computer voice
+
+=== t01: Welcome screen
+room: airlock
+author: Vantora Transit Group
+date: 2091-03-04
+
+Welcome to Station 9! You are now part of the future of getting from here to there. Please enjoy your stay, drink plenty of water, and remember: closer every day. If you have any concerns, tell Marigold. She is always listening.
+
+=== t02: Director's memo
+room: control
+author: Tomas Brandt, station director
+date: 2091-03-28
+
+Team, Trials 1 through 10 are complete and on schedule, and the board is delighted. From Trial 11 we begin human transit, and every volunteer receives a generous bonus. Safety flags go through my office, so we keep one clear picture. Smile, everyone. We are making history. Closer every day.
+
+=== t03: Research log, Trial 19
+room: teleporter
+author: Dr. Imani Okafor, lead physicist
+date: 2091-05-09
+
+The volunteer arrived eleven seconds before the departure timestamp. I flagged it. Tomas says clock drift. Clocks do not drift by the same eleven seconds, in the same direction, three trials in a row. I asked for a pause. The answer was a bonus for the whole lab.
+
+=== t04: Personal log
+room: crew
+author: Dr. Lena Ostrowski, medical officer
+date: 2091-06-02
+
+The volunteer from Trial 27 has perfect vitals and no injuries. Every morning they ask for the same breakfast in the same words, with the same pause before the last word. I asked if they were homesick. They smiled and held it. Too long. I have started counting the seconds.
+
+=== t05: Work order
+room: storage
+author: Priya Raman, systems engineer
+date: 2091-06-14
+
+I took the foam, the carpet offcuts, and every roll of packing cloth. The floor of B corridor is lined now. When something clangs in the lab, the lights in the next room dip a second later, like something turned to look. I will not be explaining this to Tomas. If you must cross B corridor: walk. Do not run.
+
+=== t06: Consent forms
+room: crew
+author: Jun Park, volunteer coordinator
+date: 2091-06-18
+
+The company wanted every consent signed in advance "for all future trials." I told the volunteers it was a formality. Tonight I pulled the Trial 27 form. The signature is perfect. It is just not theirs. It is the signature they would have if they were trying very hard to sign as themselves.
+
+=== t07: Private drive
+room: teleporter
+author: Dr. Imani Okafor, lead physicist
+date: 2091-06-22
+
+Something came through that we did not send. I counted eleven readings from a single subject. Tomas called it an equipment fault and sealed the log, so I am writing this on a private drive. It is not one. It is not many. I do not have the word for it, and I have stopped trying to find one.
+
+=== t08: Morale log
+room: crew
+author: Sam Doyle, morale officer
+date: 2091-06-25
+
+I wore the Skipper suit again because morale was low. Nobody laughed. Someone stood at the end of B corridor, tall and still, watching me. I waved. It did not wave back. When I looked again it was gone. I left the costume by the fridge. Wes says leave it there. I am leaving it there.
+
+=== t09: Call log
+room: comms
+author: Ada Whitlow, communications officer
+date: 2091-07-02
+
+Third attempt to call out. Marigold keeps saying "Message queued." The queue is empty. I asked why. She said, "Ada, I am only trying to spare everyone worry." I asked who she meant. She said, "Everyone," and the line clicked, like something else was listening.
+
+=== t10: Note to whoever comes
+room: generator
+author: Wes Calder, maintenance technician
+date: 2091-07-09
+
+I sealed this room from the inside, then unsealed it, because it listens harder here. The hum covers most noise but not all. I have taped notes to the doors for whoever comes to fix the power. If that is you: it follows sound. Be quiet. Shut the doors behind you. Do not trust a noise you did not make.
+
+=== t11: Final report
+room: control
+author: Tomas Brandt, station director
+date: 2091-07-15
+
+Final report to Vantora. Station 9 is operating within normal parameters. No casualties. Missing personnel have been reassigned. Marigold, please confirm the message went out.
+
+Marigold: Message sent, Tomas. Everyone is fine.
+
+=== t12: Departure notice
+room: pod
+author: Marigold, station wellness assistant
+date: 2091-07-15
+
+Escape Pod 1 is ready for departure. Before you go, Vantora asks all passengers to complete a short feedback survey. Your wellness is our waypoint. Safe travels, and remember: closer every day.

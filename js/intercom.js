@@ -2,6 +2,7 @@
 // Subtitles always show; speech synthesis reads them when the browser supports it.
 
 export const LINES = {
+  // The opening announcements are read from text/intro.txt; these are used only if it fails to load.
   intro: [
     'Welcome to Station 9! Your wellness is our waypoint.',
     'Good news, Technician: you are the only member of staff currently on board. That makes you employee of the month.',
@@ -34,24 +35,34 @@ export class Intercom {
     this.queue = [];
     this.timer = 0;
     this.voice = true;
+    this.talking = false; // speech for the current line hasn't finished yet
+    this.tape = null;     // the tape player, so we take turns speaking
   }
+
+  // Marigold has a line queued or is still saying one.
+  get busy() { return this.queue.length > 0 || this.talking; }
 
   say(text, { priority = false } = {}) {
     if (priority) {
       this.queue = [];
       this.timer = 0;
+      this.tape?.interrupt(); // the tape repeats its sentence afterwards
+      this.talking = false;
       if ('speechSynthesis' in window) speechSynthesis.cancel();
     }
     this.queue.push(text);
   }
 
   update(dt) {
+    // Some browsers never report the end of speech; don't let that block tapes for good.
+    if (this.talking && (this.talkLimit -= dt) <= 0) this.talking = false;
     if (this.timer > 0) {
       this.timer -= dt;
       if (this.timer <= 0) this.el.hidden = true;
       return;
     }
-    if (this.queue.length) this.show(this.queue.shift());
+    // Let a tape finish its sentence before speaking over it.
+    if (this.queue.length && !(this.voice && this.tape?.speaking)) this.show(this.queue.shift());
   }
 
   show(text) {
@@ -63,11 +74,15 @@ export class Intercom {
     u.pitch = 0.6 + Math.random() * 0.2; // never quite the same voice twice
     u.rate = 0.95;
     u.volume = 0.8;
+    this.talking = true;
+    this.talkLimit = this.timer + 4;
+    u.onend = u.onerror = () => { this.talking = false; };
     speechSynthesis.speak(u);
   }
 
   stop() {
     this.queue = [];
+    this.talking = false;
     if ('speechSynthesis' in window) speechSynthesis.cancel();
   }
 }

@@ -1,6 +1,7 @@
 // Builds the station's meshes and lights from the layout, and animates doors and lights.
 import * as THREE from 'three';
 import { TILE, WALL_H, cellCenter, key } from './layout.js';
+import { buildDecor } from './decor.js';
 
 const EMERGENCY = { color: 0xff3a22, intensity: 5 };
 const POWERED = { color: 0xd8e2ff, intensity: 16 };
@@ -34,39 +35,175 @@ function grime(g, w, h, rand, n, alpha) {
   }
 }
 
-function wallTexture() {
-  const rand = seeded(7);
+// A few scratches: thin light lines.
+function scratches(g, w, h, rand, n, alpha = 0.18) {
+  g.lineWidth = 1;
+  for (let i = 0; i < n; i++) {
+    g.strokeStyle = `rgba(220,220,210,${alpha * (0.4 + rand())})`;
+    const x = rand() * w, y = rand() * h, a = (rand() - 0.5) * 0.8, len = 8 + rand() * 50;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len); g.stroke();
+  }
+}
+
+function rust(g, w, h, rand, n, fromY, alpha = 0.4) {
+  for (let i = 0; i < n; i++) {
+    const x = rand() * w, len = 20 + rand() * 120;
+    const grad = g.createLinearGradient(0, fromY, 0, fromY + len);
+    grad.addColorStop(0, `rgba(120,55,22,${alpha})`);
+    grad.addColorStop(1, 'rgba(120,55,22,0)');
+    g.fillStyle = grad;
+    g.fillRect(x, fromY, 2 + rand() * 4, len);
+  }
+}
+
+// Wall panels in three states of decay, so neighbouring walls don't match.
+function wallTexture(variant) {
+  const rand = seeded(7 + variant * 31);
   return canvasTexture(256, 384, (g, w, h) => {
-    g.fillStyle = '#4b5056'; g.fillRect(0, 0, w, h);
-    grime(g, w, h, rand, 40, 0.25);
+    g.fillStyle = ['#4b5056', '#464a4b', '#4e4b47'][variant]; g.fillRect(0, 0, w, h);
+    grime(g, w, h, rand, 60, 0.35);
+    // Grime gathers toward the floor.
+    const low = g.createLinearGradient(0, h * 0.55, 0, h);
+    low.addColorStop(0, 'rgba(15,12,8,0)'); low.addColorStop(1, 'rgba(15,12,8,0.55)');
+    g.fillStyle = low; g.fillRect(0, h * 0.55, w, h * 0.45);
+    scratches(g, w, h, rand, 40);
     g.strokeStyle = '#25282c'; g.lineWidth = 6;
     g.strokeRect(3, 3, w - 6, h - 6);
     g.beginPath(); g.moveTo(0, h * 0.62); g.lineTo(w, h * 0.62); g.stroke();
     g.fillStyle = '#2f3237'; g.fillRect(0, h * 0.86, w, h * 0.14); // kick plate
-    g.fillStyle = '#6a6f75';
-    for (const [x, y] of [[14, 14], [w - 14, 14], [14, h * 0.62 - 12], [w - 14, h * 0.62 - 12]]) {
-      g.beginPath(); g.arc(x, y, 4, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(0,0,0,0.35)'; // dents in it
+    for (let i = 0; i < 4; i++) { g.beginPath(); g.ellipse(rand() * w, h * 0.92, 8 + rand() * 16, 4 + rand() * 6, 0, 0, 7); g.fill(); }
+    // Rivets: mismatched, some missing.
+    for (const [x, y] of [[14, 14], [w - 14, 14], [14, h * 0.62 - 12], [w - 14, h * 0.62 - 12], [w / 2, 14], [w / 2, h * 0.62 - 12]]) {
+      if (rand() < 0.2) continue;
+      g.fillStyle = rand() < 0.3 ? '#8a6a4a' : '#6a6f75';
+      g.beginPath(); g.arc(x, y, 3 + rand() * 2, 0, Math.PI * 2); g.fill();
     }
-    g.fillStyle = 'rgba(90,40,20,0.35)'; // rust drips
-    for (let i = 0; i < 5; i++) g.fillRect(rand() * w, h * 0.62, 3, 20 + rand() * 80);
+    rust(g, w, h, rand, 5, h * 0.62, 0.35);
+    if (variant === 1) {
+      rust(g, w, h, rand, 10, 0, 0.45);
+      // A welded-on patch plate in a different metal.
+      const px = 40 + rand() * 90, py = 150 + rand() * 60, pw = 55 + rand() * 40, ph = 35 + rand() * 30;
+      g.fillStyle = '#3d3b37'; g.fillRect(px, py, pw, ph);
+      grime(g, pw, ph, rand, 6, 0.4);
+      g.strokeStyle = 'rgba(20,15,10,0.6)'; g.lineWidth = 2; g.strokeRect(px, py, pw, ph);
+      g.fillStyle = '#3a3836';
+      for (let i = 0; i < 8; i++) { g.beginPath(); g.arc(px + (i % 4) * pw / 3, py + (i < 4 ? 5 : ph - 5), 2.5, 0, 7); g.fill(); }
+      rust(g, w, h, rand, 4, py + ph, 0.5);
+    } else if (variant === 2) {
+      // Scorch mark.
+      const sx = 60 + rand() * 140, sy = 80 + rand() * 120;
+      const sc = g.createRadialGradient(sx, sy, 4, sx, sy, 90);
+      sc.addColorStop(0, 'rgba(5,4,3,0.85)'); sc.addColorStop(1, 'rgba(5,4,3,0)');
+      g.fillStyle = sc; g.fillRect(0, 0, w, h);
+      // Water stain running down from the top, with tide lines.
+      const wx = rand() * (w - 80);
+      for (let i = 0; i < 4; i++) {
+        g.strokeStyle = `rgba(150,120,80,${0.18 - i * 0.03})`; g.lineWidth = 2;
+        g.beginPath(); g.ellipse(wx + 40, 0, 40 + i * 10, 100 + i * 40, 0, 0, Math.PI); g.stroke();
+      }
+      // A panel pried open: exposed wiring.
+      const ox = 40 + rand() * 120, oy = h * 0.66;
+      g.fillStyle = '#0c0d0e'; g.fillRect(ox, oy, 70, 40);
+      for (const [c, k] of [['#b33', 0], ['#cc3', 1], ['#36c', 2], ['#2a2', 3]]) {
+        g.strokeStyle = c; g.lineWidth = 2;
+        g.beginPath(); g.moveTo(ox + 8 + k * 14, oy + 2); g.bezierCurveTo(ox + 20 + k * 6, oy + 30, ox + 50 - k * 4, oy + 10, ox + 62 - k * 8, oy + 38); g.stroke();
+      }
+    }
   });
 }
 
-function floorTexture(w, h) {
+// One big floor texture for the whole map, so stains and wet patches don't repeat.
+// Returns the colour map and a roughness map (wet patches are smooth and catch the flashlight).
+function floorTextures(layout) {
   const rand = seeded(3);
-  return canvasTexture(256, 256, (g, cw, ch) => {
-    g.fillStyle = '#2a2d30'; g.fillRect(0, 0, cw, ch);
-    g.strokeStyle = '#1a1c1e'; g.lineWidth = 3;
-    for (let i = 0; i <= cw; i += 32) {
-      g.beginPath(); g.moveTo(i, 0); g.lineTo(i, ch); g.stroke();
-      g.beginPath(); g.moveTo(0, i); g.lineTo(cw, i); g.stroke();
+  const P = 64; // pixels per cell
+  const W = layout.w * P, H = layout.h * P;
+  const wet = [];
+  for (let i = 0; i < 26; i++) wet.push([rand() * W, rand() * H, 20 + rand() * 60, 12 + rand() * 30, rand() * 3]);
+  const map = canvasTexture(W, H, (g) => {
+    g.fillStyle = '#2a2d30'; g.fillRect(0, 0, W, H);
+    for (let z = 0; z < layout.h; z++) {
+      for (let x = 0; x < layout.w; x++) {
+        // Four plates per cell, each a slightly different shade.
+        for (let k = 0; k < 4; k++) {
+          const t = 38 + Math.floor(rand() * 14);
+          g.fillStyle = `rgb(${t},${t + 3},${t + 6})`;
+          g.fillRect(x * P + (k % 2) * 32, z * P + (k >> 1) * 32, 32, 32);
+        }
+      }
     }
-    g.strokeStyle = '#3c4044'; g.lineWidth = 8; g.strokeRect(0, 0, cw, ch);
-    grime(g, cw, ch, rand, 25, 0.35);
-  }, [w, h]);
+    g.strokeStyle = '#1a1c1e'; g.lineWidth = 3;
+    for (let i = 0; i <= W; i += 32) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, H); g.stroke(); }
+    for (let i = 0; i <= H; i += 32) { g.beginPath(); g.moveTo(0, i); g.lineTo(W, i); g.stroke(); }
+    grime(g, W, H, rand, 500, 0.4);
+    // Oil stains and scuffs.
+    for (let i = 0; i < 90; i++) {
+      g.fillStyle = `rgba(8,6,4,${0.3 + rand() * 0.4})`;
+      g.beginPath(); g.ellipse(rand() * W, rand() * H, 6 + rand() * 26, 4 + rand() * 14, rand() * 3, 0, 7); g.fill();
+    }
+    g.lineWidth = 2;
+    for (let i = 0; i < 400; i++) {
+      g.strokeStyle = `rgba(150,150,140,${0.05 + rand() * 0.1})`;
+      const x = rand() * W, y = rand() * H;
+      g.beginPath(); g.arc(x, y, 10 + rand() * 40, rand() * 6, rand() * 6); g.stroke();
+    }
+    for (const [x, y, rx, ry, a] of wet) {
+      g.fillStyle = 'rgba(10,14,16,0.45)';
+      g.beginPath(); g.ellipse(x, y, rx, ry, a, 0, 7); g.fill();
+    }
+  });
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.fillStyle = '#c4c4c4'; g.fillRect(0, 0, W, H);
+  g.filter = 'blur(6px)';
+  for (const [x, y, rx, ry, a] of wet) {
+    g.fillStyle = '#1c1c1c';
+    g.beginPath(); g.ellipse(x, y, rx, ry, a, 0, 7); g.fill();
+  }
+  const rough = new THREE.CanvasTexture(c);
+  rough.colorSpace = THREE.NoColorSpace;
+  return { map, rough };
 }
 
-// Skipper, Vantora's mascot: a smiling star-shaped traveller.
+// Ceiling: one panel per cell, stained, with a few missing.
+function ceilingTexture(layout) {
+  const rand = seeded(19);
+  const P = 32;
+  const t = canvasTexture(layout.w * P, layout.h * P, (g, W, H) => {
+    g.fillStyle = '#16181a'; g.fillRect(0, 0, W, H);
+    for (let z = 0; z < layout.h; z++) {
+      for (let x = 0; x < layout.w; x++) {
+        if (rand() < 0.07) { g.fillStyle = '#050505'; g.fillRect(x * P + 2, z * P + 2, P - 4, P - 4); continue; } // missing tile
+        const v = 30 + Math.floor(rand() * 14);
+        g.fillStyle = `rgb(${v},${v + 2},${v + 4})`;
+        g.fillRect(x * P + 1, z * P + 1, P - 2, P - 2);
+        if (rand() < 0.25) { g.fillStyle = 'rgba(90,70,40,0.3)'; g.beginPath(); g.arc(x * P + rand() * P, z * P + rand() * P, 4 + rand() * 10, 0, 7); g.fill(); }
+        if (rand() < 0.1) { g.fillStyle = '#0d0e0f'; for (let i = 0; i < 4; i++) g.fillRect(x * P + 8, z * P + 8 + i * 5, P - 16, 2); } // vent
+      }
+    }
+  });
+  t.flipY = false; // canvas rows line up with world z on the upward-facing plane
+  return t;
+}
+
+// Doors: scratched paint, grime, and a worn hazard stripe along the bottom.
+function doorTexture(base) {
+  const rand = seeded(base.length * 13);
+  return canvasTexture(256, 384, (g, w, h) => {
+    g.fillStyle = base; g.fillRect(0, 0, w, h);
+    grime(g, w, h, rand, 40, 0.35);
+    scratches(g, w, h, rand, 60, 0.25);
+    g.fillStyle = '#1b1b1b'; g.fillRect(0, h * 0.86, w, h * 0.14);
+    g.fillStyle = '#c9a227';
+    for (let x = -60; x < w; x += 40) { g.beginPath(); g.moveTo(x, h); g.lineTo(x + 20, h); g.lineTo(x + 20 + h * 0.14, h * 0.86); g.lineTo(x + h * 0.14, h * 0.86); g.fill(); }
+    grime(g, w, h * 0.3, rand, 20, 0.5);
+    rust(g, w, h, rand, 6, h * 0.2, 0.35);
+    g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 5; g.strokeRect(6, 6, w - 12, h - 12);
+  });
+}
+
 function drawMascot(g, cx, cy, r) {
   g.save();
   g.lineWidth = r * 0.08;
@@ -164,9 +301,10 @@ export function buildWorld(scene, layout) {
   const std = (o) => new THREE.MeshStandardMaterial(o);
 
   // Floor and ceiling ------------------------------------------------------
+  const floorTex = floorTextures(layout);
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(w * TILE, h * TILE),
-    std({ map: floorTexture(w, h), roughness: 0.7, metalness: 0.4 }),
+    std({ map: floorTex.map, roughnessMap: floorTex.rough, roughness: 1, metalness: 0.45 }),
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.set((w * TILE) / 2, 0, (h * TILE) / 2);
@@ -174,7 +312,7 @@ export function buildWorld(scene, layout) {
 
   const ceiling = new THREE.Mesh(
     new THREE.PlaneGeometry(w * TILE, h * TILE),
-    std({ color: 0x1b1d20, roughness: 1 }),
+    std({ map: ceilingTexture(layout), roughness: 0.95 }),
   );
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set((w * TILE) / 2, WALL_H, (h * TILE) / 2);
@@ -191,14 +329,18 @@ export function buildWorld(scene, layout) {
       if (touches) wallCells.push([x, z]);
     }
   }
-  const walls = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(TILE, WALL_H, TILE),
-    std({ map: wallTexture(), roughness: 0.85, metalness: 0.25 }),
-    wallCells.length,
-  );
+  // Three wall finishes, mixed at random so it looks patched together over the years.
   const m = new THREE.Matrix4();
-  wallCells.forEach(([x, z], i) => walls.setMatrixAt(i, m.makeTranslation(cellCenter(x), WALL_H / 2, cellCenter(z))));
-  scene.add(walls);
+  const wallRand = seeded(41);
+  const wallSets = [[], [], []];
+  for (const c of wallCells) wallSets[wallRand() < 0.45 ? 0 : wallRand() < 0.5 ? 1 : 2].push(c);
+  const wallGeo = new THREE.BoxGeometry(TILE, WALL_H, TILE);
+  wallSets.forEach((cells, v) => {
+    if (!cells.length) return;
+    const walls = new THREE.InstancedMesh(wallGeo, std({ map: wallTexture(v), roughness: 0.85, metalness: 0.25 }), cells.length);
+    cells.forEach(([x, z], i) => walls.setMatrixAt(i, m.makeTranslation(cellCenter(x), WALL_H / 2, cellCenter(z))));
+    scene.add(walls);
+  });
 
   // Corridor guide strips: emissive only, so they cost no lighting ----------
   const strips = [];
@@ -226,8 +368,8 @@ export function buildWorld(scene, layout) {
   scene.add(stripMesh);
 
   // Doors -------------------------------------------------------------------
-  const doorMat = std({ color: 0x5d6166, roughness: 0.5, metalness: 0.7 });
-  const hatchMat = std({ color: 0x2f6e6a, roughness: 0.4, metalness: 0.75 }); // safe-room hatches
+  const doorMat = std({ map: doorTexture('#62666b'), roughness: 0.55, metalness: 0.6 });
+  const hatchMat = std({ map: doorTexture('#2f6e6a'), roughness: 0.45, metalness: 0.65 }); // safe-room hatches
   const lampRed = new THREE.MeshBasicMaterial({ color: 0xff2a1a });
   const lampGreen = new THREE.MeshBasicMaterial({ color: 0x2aff7a });
   const doorGeo = new THREE.BoxGeometry(1, 1, 1);
@@ -266,7 +408,7 @@ export function buildWorld(scene, layout) {
     const fixture = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.06, 0.3), fixtureMat);
     fixture.position.set(light.position.x, WALL_H - 0.03, light.position.z);
     scene.add(fixture);
-    return { room, light, fixtureMat, base: { ...base }, mult: 1, beat: 0, haunt: 0 };
+    return { room, light, fixtureMat, base: { ...base }, mult: 1, beat: 0, haunt: 0, glitch: 0 };
   });
   let powered = false;
   const setPower = (on) => {
@@ -397,13 +539,17 @@ export function buildWorld(scene, layout) {
   };
   const makeBox = () => { const b = new THREE.Mesh(boxGeo, boxMat); b.position.y = 0.22; const g = new THREE.Group(); g.add(b); return g; };
   // Spots near the walls of a room, away from doors and fixed props.
+  // Pipes, patches, broken lights and leaks. Its sounds go to whoever sets world.onDecorEvent.
+  let onDecorEvent = null;
+  const decor = buildDecor(scene, layout, { onEvent: (type, at) => onDecorEvent?.(type, at) });
+  const clutterCells = new Set(decor.plan.clutter.map((c) => key(c.cell[0], c.cell[1])));
   const looseSpots = (room) => {
     const spots = [];
     for (let z = room.y; z < room.y + room.h; z++) {
       for (let x = room.x; x < room.x + room.w; x++) {
         const edge = x === room.x || z === room.y || x === room.x + room.w - 1 || z === room.y + room.h - 1;
         const nearDoor = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => layout.isDoor(x + dx, z + dz));
-        if (edge && !nearDoor && layout.isOpen(x, z)) spots.push([x, z]);
+        if (edge && !nearDoor && layout.isOpen(x, z) && !clutterCells.has(key(x, z))) spots.push([x, z]);
       }
     }
     return spots;
@@ -442,7 +588,8 @@ export function buildWorld(scene, layout) {
 
   // Per-frame animation -----------------------------------------------------
   // alien: { pos, state } so a room's light can stutter as it passes through (the patrol tell).
-  function update(dt, time, alien = null) {
+  function update(dt, time, alien = null, player = null) {
+    decor.update(dt, time, player);
     for (const d of doors) {
       const target = d.closed ? 1 : 0;
       d.t += Math.sign(target - d.t) * Math.min(Math.abs(target - d.t), dt * 2.2);
@@ -451,6 +598,9 @@ export function buildWorld(scene, layout) {
     for (const r of rooms) {
       let k = r.mult;
       if (r.beat > 0) { r.beat -= dt; k *= 0.25; }
+      // Now and then a room's light stutters on its own (about once a minute each).
+      if (!r.room.safe && dt > 0 && r.glitch <= 0 && Math.random() < dt / 60) r.glitch = 0.3 + Math.random() * 0.9;
+      if (r.glitch > 0) { r.glitch -= dt; if (Math.random() < 0.55) k *= 0.15 + Math.random() * 0.3; }
       // Emergency lights hum and stutter a little on their own.
       if (!r.room.safe && (!powered || r.room.id === 'pod')) k *= 0.85 + 0.15 * Math.sin(time * 3 + r.room.index * 1.7);
       const R = r.room;
@@ -469,7 +619,8 @@ export function buildWorld(scene, layout) {
   }
 
   return {
-    doors, rooms, props, interactables, loose, setDoor, setPower, update,
+    doors, rooms, props, interactables, loose, decor, setDoor, setPower, update,
+    set onDecorEvent(fn) { onDecorEvent = fn; },
     // A terminal you've read turns green.
     markRead(id) { props[id]?.status.material.color.set(0x2aff7a); },
     doorAt: (x, z) => doorByKey.get(key(x, z)),

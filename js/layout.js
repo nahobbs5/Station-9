@@ -22,6 +22,9 @@ export const ROOMS = [
   { id: 'quiet',      name: 'Quiet Room',      x: 19, y: 11, w: 3, h: 3, safe: true },
 ];
 
+// The three repairs, in the order you have to do them.
+export const REPAIRS = ['generator', 'comms', 'pod'];
+
 // The alien's patrol loop, in walking order.
 export const ROUTE = ['teleporter', 'control', 'generator', 'storage', 'airlock', 'crew', 'pod', 'comms'];
 
@@ -48,7 +51,7 @@ export const PROPS = [
   { id: 'pod',            kind: 'repair',  room: 'pod',        cell: [19, 20], label: 'Prep escape pod',  duration: 6 },
   { id: 'crate',          kind: 'crate',   room: 'storage',    cell: [1, 16],  label: 'Take noise-makers' },
   { id: 'teleporter',     kind: 'scenery', room: 'teleporter', cell: [25, 8] },
-  // Lore terminals (text in data/lore.json), a few steps off the direct routes.
+  // Lore terminals: each plays an audio log (text in text/lore.txt). A few steps off the direct routes.
   ...[
     ['t01', 'airlock',    [9, 23]],
     ['t02', 'control',    [12, 1]],
@@ -62,7 +65,7 @@ export const PROPS = [
     ['t10', 'generator',  [1, 10]],
     ['t09', 'comms',      [27, 18]],
     ['t12', 'pod',        [21, 23]],
-  ].map(([id, room, cell]) => ({ id, kind: 'log', room, cell, label: 'Read terminal' })),
+  ].map(([id, room, cell]) => ({ id, kind: 'log', room, cell, label: 'Play tape' })),
 ];
 
 // Doors that start shut. The alien starts behind these.

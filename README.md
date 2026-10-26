@@ -18,11 +18,12 @@ Restore main power in the Generator Room, send a rescue call from Comms, then pr
 | F | Flashlight (it can only see you if you're moving or lit, and the click is a small noise) |
 | Q | Throw a noise-maker (pick them up in Storage) |
 | M | Show or hide the minimap (it only shows what you've seen) |
+| T | Stop the audio log that's playing |
 | Esc | Pause |
 
 Tips: every state sounds different. Slow clicks mean it's patrolling, quick clicks and a murmur mean it's investigating, and when the hum cuts out and the clicking stops, it's about to hunt. Closed doors slow it down and muffle your noise. A noise-maker thrown away from you pulls it off your trail. Teal hatches lead to two safe rooms it can never enter.
 
-**Bonus:** twelve staff terminals hold the station's story. Each one you read adds to your score, and reading all twelve changes the ending.
+**Bonus:** twelve staff terminals play audio logs that tell the station's story. They play in your earpiece, so you can keep moving while you listen. Each one you play adds to your score, and hearing all twelve changes the ending.
 
 ## Run it locally
 
@@ -58,10 +59,14 @@ Plain JavaScript modules and [three.js](https://threejs.org) 0.160 from a CDN. E
 | `js/noise.js` | The shared noise signal and how doors and walls muffle it |
 | `js/pathfind.js` | A* pathfinding on the grid |
 | `js/world.js` | Builds the 3D station, lights, doors, posters and the alien's mesh |
+| `js/decorplan.js` | Where the wear and tear goes: pipes, leaks, broken lights, patches, clutter. Counts and densities are at the top |
+| `js/decor.js` | Builds and animates it: steam, drips, sparks, stuttering lights |
 | `js/player.js` | Movement, mouse look, stamina, flashlight |
 | `js/tricks.js` | Environment tricks (lights, doors, phantom footsteps) and the Hat Man |
 | `js/intercom.js` | Marigold's lines (the station voice) |
-| `data/lore.json` | The twelve terminal entries. Edit the words here without touching code |
+| `js/tapes.js` | Plays the audio logs: a voice per speaker, captions, taking turns with Marigold |
+| `text/lore.txt` | The twelve audio logs. Edit the words, voices, or point one at a recording, without touching code |
+| `text/intro.txt` | Marigold's opening announcements, one per line |
 | `js/audio.js` | Positional sound, synthesized effects, heartbeat |
 | `js/main.js` | Game loop, objectives, HUD, screens |
 

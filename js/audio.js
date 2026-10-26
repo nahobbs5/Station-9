@@ -7,39 +7,53 @@ const FILES = {
   flicker: '03_lights_flicker_power_loss.wav',
   door: '04_bulkhead_door.wav',
   teleporter: '05_teleporter_instability.wav',
-  footsteps: '06_distant_corridor_footsteps.wav',
+  footsteps: 'AlienApproachingSound.wav', // the alien moving nearby (loops)
   engine: 'freesound_community-low-engine-hum-72529.mp3',
   rumble: 'freesound_community-rumble-002-26712.mp3',
+  sprint: 'u_3x9ga8wevj-walking-sound-effect-272246.mp3',
+  whoosh: 'dragon-studio-spaceship-whoosh-video-game-sound-320171.mp3',
 };
+// Where each footfall starts in the sprint clip (seconds); each is about 0.47s long.
+const SPRINT_STEPS = [0.09, 0.56, 1.04, 1.52, 1.99, 2.47, 2.94, 3.42, 3.9];
 export const SOUND_FILES = Object.values(FILES).map((f) => 'sound_effects/' + f);
 export const MENU_MUSIC = 'music/alex-morgan-dark-suspense-thriller-528314.mp3';
-const MENU_VOLUME = 0.5;
+export const END_MUSIC = 'music/sub_clair-suspense-tension-622546.mp3';
 
-// The title theme. A plain <audio> element, since the game's audio context stays
-// suspended until the shift starts. Browsers only let it play after a click or key.
-export class MenuMusic {
-  constructor() {
-    this.el = new Audio(MENU_MUSIC);
+// A looping music track (title theme, ending theme). A plain <audio> element, since the
+// game's audio context is suspended outside play. Browsers only let it play after a click or key.
+export class Music {
+  constructor(src, { volume = 0.5 } = {}) {
+    this.el = new Audio(src);
     this.el.loop = true;
-    this.el.volume = MENU_VOLUME;
+    this.volume = volume;
+    this.el.volume = volume;
     this.stopped = false;
   }
 
-  play() {
+  // Start playing, optionally fading in over fadeMs.
+  play(fadeMs = 0) {
     if (this.stopped || !this.el.paused) return;
+    if (fadeMs > 0) {
+      this.el.volume = 0;
+      this.ramp(0, this.volume, fadeMs);
+    }
     const p = this.el.play();
     if (p?.catch) p.catch(() => {});
   }
 
   fadeOut(ms) {
     this.stopped = true;
-    const from = this.el.volume;
+    this.ramp(this.el.volume, 0, ms, () => this.el.pause());
+  }
+
+  ramp(from, to, ms, done) {
     const t0 = performance.now();
     const step = (now) => {
+      if (this.stopped && to > 0) return; // a fade-out took over
       const k = Math.min(1, (now - t0) / ms);
-      this.el.volume = from * (1 - k);
+      this.el.volume = from + (to - from) * k;
       if (k < 1) requestAnimationFrame(step);
-      else this.el.pause();
+      else done?.();
     };
     requestAnimationFrame(step);
   }
@@ -130,6 +144,35 @@ export class GameAudio {
       const grind = 0.6 + 0.4 * Math.sin(t * 2 * Math.PI * 23);
       return { v: v * grind * Math.sin(Math.min(1, t / 0.9) * Math.PI) * 0.8, s: v };
     });
+    // A tape deck's clunk, for starting and stopping a tape.
+    this.buffers.tapeClick = make(0.12, (t) =>
+      (Math.sin(t * 2 * Math.PI * 140) * 0.8 + noise() * 0.5) * Math.exp(-t * 45) + (t > 0.05 ? noise() * 0.4 * Math.exp(-(t - 0.05) * 90) : 0));
+    // Tape hiss: soft high noise with a slow wobble. Loops for as long as a tape plays.
+    this.buffers.hiss = make(2, (t, st) => {
+      const v = noise() - st * 0.6; // tilt it toward the high end
+      return { v: v * (0.8 + 0.2 * Math.sin(t * 2 * Math.PI * 1.5)), s: v };
+    });
+    // Station faults: a steam leak, a drip, an electrical crackle, a dying light's buzz.
+    this.buffers.steamHiss = make(1.6, (t, st) => {
+      const v = noise() - st * 0.85; // high-passed noise
+      const env = Math.min(1, t / 0.05) * Math.exp(-Math.max(0, t - 0.3) * 2.2);
+      return { v: v * env * 0.7, s: v };
+    });
+    this.buffers.drip = make(0.25, (t) => {
+      const f = 1400 + 1800 * Math.exp(-t * 40); // a quick downward plink
+      return Math.sin(t * 2 * Math.PI * f) * Math.exp(-t * 30) * 0.6;
+    });
+    {
+      const pops = Array.from({ length: 14 }, () => [Math.random() * 0.5, 0.3 + Math.random() * 0.7]);
+      this.buffers.spark = make(0.6, (t) => {
+        let v = 0;
+        for (const [at, a] of pops) if (t >= at && t < at + 0.012) v += noise() * a * Math.exp(-(t - at) * 300);
+        return v + noise() * 0.06 * Math.exp(-t * 6);
+      });
+    }
+    this.buffers.tubeBuzz = make(0.9, (t) =>
+      (Math.sign(Math.sin(t * 2 * Math.PI * 120)) * 0.25 + Math.sin(t * 2 * Math.PI * 240) * 0.2 + noise() * 0.08) *
+      (Math.random() < 0.85 ? 1 : 0.2) * Math.min(1, t * 30) * Math.exp(-t * 2));
     // Heartbeat: lub-dub.
     this.buffers.beat = make(0.5, (t) => {
       const lub = t < 0.15 ? Math.sin(t * 2 * Math.PI * 55) * Math.sin((t / 0.15) * Math.PI) : 0;
@@ -247,11 +290,41 @@ export class GameAudio {
     for (const s of [...this.clicks]) { s.stop(); s.onEnded(); } // stop() clears the source's own callback
   }
 
+  tapeStart() {
+    this.play2D('tapeClick', { volume: 0.5 });
+    if (this.hiss) return;
+    this.hiss = this.make(false, 'hiss', { volume: 0.035, loop: true });
+    this.hiss?.play();
+  }
+
+  tapeStop() {
+    this.play2D('tapeClick', { volume: 0.4, rate: 0.85 });
+    if (this.hiss) { this.hiss.stop(); this.hiss.getOutput().disconnect(); this.hiss = null; }
+  }
+
+  // Scenery sounds from the decor (not noises the alien hears).
+  decorSound(type, at) {
+    const pos = { x: at.x, y: at.y ?? 1.5, z: at.z };
+    if (type === 'steam') this.playAt('steamHiss', pos, { volume: 0.9, ref: 2, rate: 0.85 + Math.random() * 0.3 });
+    else if (type === 'drip') this.playAt('drip', pos, { volume: 0.5, ref: 1.5, rate: 0.8 + Math.random() * 0.4 });
+    else if (type === 'spark') this.playAt('spark', pos, { volume: 1.0, ref: 2 });
+    else if (type === 'buzz') this.playAt('tubeBuzz', pos, { volume: 0.35, ref: 2 });
+    else if (type === 'clank') this.playAt('clank', pos, { volume: 0.8, ref: 2.5, rate: 0.45 + Math.random() * 0.15 });
+  }
+
   screech() {
     if (this.alienMesh) this.playOn('screech', this.alienMesh, { volume: 1.8, rate: 0.6, ref: 5, duration: 2.6 });
   }
 
   footstep(mode) {
+    // Sprinting: one real footfall from the clip, picked at random so it never sounds looped.
+    if (mode === 'sprint' && this.buffers.sprint) {
+      let i;
+      do i = Math.floor(Math.random() * SPRINT_STEPS.length); while (i === this.lastSprintStep && SPRINT_STEPS.length > 1);
+      this.lastSprintStep = i;
+      this.play2D('sprint', { volume: 0.7, rate: 0.95 + Math.random() * 0.1, offset: Math.max(0, SPRINT_STEPS[i] - 0.03), duration: 0.42 });
+      return;
+    }
     const v = { crouch: 0.015, walk: 0.05, sprint: 0.45 }[mode];
     this.play2D('step', { volume: v, rate: 0.85 + Math.random() * 0.3 });
   }

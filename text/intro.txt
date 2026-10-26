@@ -1,0 +1,8 @@
+# Marigold's opening announcements, played in order when the shift starts.
+# One line of text = one announcement. Blank lines and lines starting with # are ignored.
+
+Welcome to Station 9! Your wellness is our waypoint.
+Good news, Technician: you are the only member of staff currently on board. That makes you employee of the month.
+Your goals: restore power in the Generator Room, call for rescue from Comms, then prepare an escape pod.
+Staff terminals are available throughout the station. Reading is quiet, and entirely optional.
+And please, walk. Running is loud. Loud is... discouraged.

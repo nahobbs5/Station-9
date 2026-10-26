@@ -1,5 +1,6 @@
 // Sound: the recorded effects, menu music, a few synthesized ones, positional playback and the heartbeat.
-import * as THREE from 'three';
+// Plain Web Audio (no engine), so both renderers share it. Positional sounds follow an "anchor":
+// any live {x, y, z} object, such as a mesh's position. The listener follows the camera rig.
 
 const FILES = {
   hum: '01_failing_reactor_hum.wav',
@@ -60,12 +61,105 @@ export class Music {
 }
 const HUM_VOLUME = 0.35;
 
+// One playing (or playable) sound, with the small API the game uses:
+// play / pause / stop, setVolume, setPlaybackRate, onEnded, isPlaying.
+class Voice {
+  constructor(audio, buffer, { volume = 1, rate = 1, ref = 2.5, loop = false, duration, offset = 0, positional = false, anchor = null } = {}) {
+    this.audio = audio;
+    this.ctx = audio.ctx;
+    this.buffer = buffer;
+    this.loop = loop;
+    this.rate = rate;
+    this.duration = duration;
+    this.offset = offset;
+    this.isPlaying = false;
+    this.progress = 0;
+    this.source = null;
+    this.onEnded = () => this.dispose();
+    this.gain = this.ctx.createGain();
+    this.gain.gain.value = volume;
+    if (positional) {
+      // Same falloff as before: inverse distance from `ref`, rolloff 1.2.
+      this.panner = this.ctx.createPanner();
+      this.panner.panningModel = 'HRTF';
+      this.panner.distanceModel = 'inverse';
+      this.panner.refDistance = ref;
+      this.panner.rolloffFactor = 1.2;
+      this.panner.maxDistance = 10000;
+      this.gain.connect(this.panner).connect(audio.master);
+      this.anchor = anchor;
+      audio.voices.add(this);
+      this.place();
+    } else {
+      this.gain.connect(audio.master);
+    }
+  }
+
+  // Move the panner to the anchor.
+  place() {
+    const a = this.anchor;
+    if (!a || !this.panner) return;
+    const y = a.y ?? 1.2;
+    const p = this.panner;
+    if (p.positionX) { p.positionX.value = a.x; p.positionY.value = y; p.positionZ.value = a.z; }
+    else p.setPosition(a.x, y, a.z);
+  }
+
+  play() {
+    if (this.isPlaying) return this;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.buffer;
+    src.loop = this.loop;
+    src.playbackRate.value = this.rate;
+    src.connect(this.gain);
+    this.startedAt = this.ctx.currentTime;
+    src.start(this.startedAt, this.progress + this.offset, this.duration);
+    src.onended = () => { if (this.source === src) { this.isPlaying = false; this.onEnded(); } };
+    this.source = src;
+    this.isPlaying = true;
+    return this;
+  }
+
+  // Remember where we were, so play() carries on from there.
+  pause() {
+    if (!this.isPlaying) return;
+    this.progress += Math.max(this.ctx.currentTime - this.startedAt, 0) * this.rate;
+    if (this.loop) this.progress %= this.duration || this.buffer.duration;
+    this.halt();
+  }
+
+  stop() { this.progress = 0; this.halt(); }
+
+  halt() {
+    const src = this.source;
+    this.source = null;
+    this.isPlaying = false;
+    if (src) { src.onended = null; try { src.stop(); } catch { /* not started */ } }
+  }
+
+  setVolume(v) { this.gain.gain.setTargetAtTime(v, this.ctx.currentTime, 0.01); }
+
+  setPlaybackRate(r) {
+    this.rate = r;
+    if (this.source) this.source.playbackRate.setTargetAtTime(r, this.ctx.currentTime, 0.01);
+  }
+
+  getOutput() { return this.gain; }
+
+  dispose() {
+    this.halt();
+    this.gain.disconnect();
+    if (this.panner) { this.panner.disconnect(); this.audio.voices.delete(this); }
+  }
+}
+
 export class GameAudio {
-  constructor(camera, scene) {
-    this.scene = scene;
-    this.listener = new THREE.AudioListener();
-    camera.add(this.listener);
-    this.ctx = this.listener.context;
+  constructor(rig) {
+    this.rig = rig;
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.master = this.ctx.createGain();
+    this.master.connect(this.ctx.destination);
+    this.voices = new Set(); // positional sounds, re-placed each frame
     this.buffers = {};
     this.beatTimer = 0;
     this.humDip = false;
@@ -74,10 +168,12 @@ export class GameAudio {
   }
 
   async load() {
-    const loader = new THREE.AudioLoader();
     await Promise.all(Object.entries(FILES).map(async ([name, file]) => {
-      try { this.buffers[name] = await loader.loadAsync('sound_effects/' + file); }
-      catch (e) { console.warn('Could not load sound', file, e); }
+      try {
+        const res = await fetch('sound_effects/' + file);
+        if (!res.ok) throw new Error(res.status);
+        this.buffers[name] = await this.ctx.decodeAudioData(await res.arrayBuffer());
+      } catch (e) { console.warn('Could not load sound', file, e); }
     }));
     this.makeSynth();
     // The hunt screech: the teleporter whine played backwards.
@@ -182,49 +278,42 @@ export class GameAudio {
     });
   }
 
-  make(positional, name, { volume = 1, rate = 1, ref = 2.5, loop = false, duration, offset = 0 } = {}) {
+  // anchor: a live {x, y, z} for a positional sound (y defaults to 1.2), or null for a plain one.
+  make(positional, name, opts = {}, anchor = null) {
     const buf = this.buffers[name];
     if (!buf) return null;
-    const s = positional ? new THREE.PositionalAudio(this.listener) : new THREE.Audio(this.listener);
-    s.setBuffer(buf);
-    s.setVolume(volume);
-    s.setPlaybackRate(rate);
-    s.setLoop(loop);
-    if (duration) s.duration = duration;
-    if (offset) s.offset = offset;
-    if (positional) { s.setRefDistance(ref); s.setRolloffFactor(1.2); }
-    return s;
+    return new Voice(this, buf, { ...opts, positional, anchor });
   }
 
-  oneShot(s, holder) {
-    s.onEnded = () => {
-      s.isPlaying = false;
-      s.getOutput().disconnect();
-      s.removeFromParent();
-      if (holder) holder.removeFromParent();
-    };
-    s.play();
-    return s;
-  }
+  // Plays once, then tidies itself up.
+  oneShot(s) { return s.play(); }
 
   // Play at a fixed spot in the world.
   playAt(name, pos, opts) {
-    const s = this.make(true, name, opts);
-    if (!s) return null;
-    const holder = new THREE.Object3D();
-    holder.position.set(pos.x, pos.y ?? 1.2, pos.z);
-    holder.add(s);
-    this.scene.add(holder);
-    holder.updateMatrixWorld();
-    return this.oneShot(s, holder);
+    const s = this.make(true, name, opts, { x: pos.x, y: pos.y ?? 1.2, z: pos.z });
+    return s ? this.oneShot(s) : null;
   }
 
-  // Play attached to a moving object.
-  playOn(name, obj, opts) {
-    const s = this.make(true, name, opts);
-    if (!s) return null;
-    obj.add(s);
-    return this.oneShot(s);
+  // Play attached to something that moves (its anchor is read every frame).
+  playOn(name, anchor, opts) {
+    const s = this.make(true, name, opts, anchor);
+    return s ? this.oneShot(s) : null;
+  }
+
+  // Each frame: put the listener at the camera and move positional sounds to their anchors.
+  tick() {
+    const c = this.rig.position, f = this.rig.forward(), u = this.rig.up();
+    const L = this.ctx.listener;
+    if (L.positionX) {
+      const t = this.ctx.currentTime;
+      L.positionX.setValueAtTime(c.x, t); L.positionY.setValueAtTime(c.y, t); L.positionZ.setValueAtTime(c.z, t);
+      L.forwardX.setValueAtTime(f.x, t); L.forwardY.setValueAtTime(f.y, t); L.forwardZ.setValueAtTime(f.z, t);
+      L.upX.setValueAtTime(u.x, t); L.upY.setValueAtTime(u.y, t); L.upZ.setValueAtTime(u.z, t);
+    } else {
+      L.setPosition(c.x, c.y, c.z);
+      L.setOrientation(f.x, f.y, f.z, u.x, u.y, u.z);
+    }
+    for (const v of this.voices) v.place();
   }
 
   play2D(name, opts) {
@@ -232,18 +321,17 @@ export class GameAudio {
     return s ? this.oneShot(s) : null;
   }
 
-  startAmbience(teleporterObj) {
+  startAmbience(teleporterAnchor) {
     this.hum = this.make(false, 'hum', { volume: HUM_VOLUME, loop: true });
     this.hum?.play();
-    const tele = this.make(true, 'teleporter', { volume: 0.5, loop: true, ref: 2 });
-    if (tele) { teleporterObj.add(tele); tele.play(); }
+    this.make(true, 'teleporter', { volume: 0.5, loop: true, ref: 2 }, teleporterAnchor)?.play();
   }
 
   // The generator's engine, once it's running again.
-  startEngine(obj) {
+  startEngine(anchor) {
     if (this.engine) return;
-    this.engine = this.make(true, 'engine', { volume: 0.6, loop: true, ref: 2 });
-    if (this.engine) { obj.add(this.engine); this.engine.play(); }
+    this.engine = this.make(true, 'engine', { volume: 0.6, loop: true, ref: 2 }, anchor);
+    this.engine?.play();
   }
 
   // The tell before a light trick: the hum drops away.
@@ -256,12 +344,12 @@ export class GameAudio {
     this.hum.gain.gain.setTargetAtTime(v, this.ctx.currentTime, speed);
   }
 
-  attachAlien(mesh) {
-    this.alienMesh = mesh;
-    this.alienSteps = this.make(true, 'footsteps', { volume: 1.2, loop: true, ref: 3 });
-    if (this.alienSteps) mesh.add(this.alienSteps);
-    this.murmur = this.make(true, 'murmur', { volume: 0, loop: true, ref: 2.5 });
-    if (this.murmur) { mesh.add(this.murmur); this.murmur.play(); }
+  // anchor: the alien's live position; its looping sounds follow it.
+  attachAlien(anchor) {
+    this.alienAnchor = anchor;
+    this.alienSteps = this.make(true, 'footsteps', { volume: 1.2, loop: true, ref: 3 }, anchor);
+    this.murmur = this.make(true, 'murmur', { volume: 0, loop: true, ref: 2.5 }, anchor);
+    this.murmur?.play();
     this.murmurVol = 0;
   }
 
@@ -272,22 +360,16 @@ export class GameAudio {
       investigate: { volume: 1.2, rate: 1.35, duration: 0.7 },
       lost: { volume: 0.8, rate: 0.7, duration: 0.6 },
     }[state] ?? { volume: 1, rate: 1, duration: 1 };
-    if (!this.alienMesh) return;
-    const s = this.make(true, 'clicks', { ref: 3, offset: Math.random() * 3, ...opts });
+    if (!this.alienAnchor) return;
+    const s = this.make(true, 'clicks', { ref: 3, offset: Math.random() * 3, ...opts }, this.alienAnchor);
     if (!s) return;
-    this.alienMesh.add(s);
     this.clicks.add(s);
-    s.onEnded = () => {
-      this.clicks.delete(s);
-      s.isPlaying = false;
-      s.getOutput().disconnect();
-      s.removeFromParent();
-    };
+    s.onEnded = () => { this.clicks.delete(s); s.dispose(); };
     s.play();
   }
 
   stopAlienClicks() {
-    for (const s of [...this.clicks]) { s.stop(); s.onEnded(); } // stop() clears the source's own callback
+    for (const s of [...this.clicks]) { s.stop(); s.onEnded(); }
   }
 
   tapeStart() {
@@ -299,7 +381,7 @@ export class GameAudio {
 
   tapeStop() {
     this.play2D('tapeClick', { volume: 0.4, rate: 0.85 });
-    if (this.hiss) { this.hiss.stop(); this.hiss.getOutput().disconnect(); this.hiss = null; }
+    if (this.hiss) { this.hiss.dispose(); this.hiss = null; }
   }
 
   // Scenery sounds from the decor (not noises the alien hears).
@@ -313,7 +395,7 @@ export class GameAudio {
   }
 
   screech() {
-    if (this.alienMesh) this.playOn('screech', this.alienMesh, { volume: 1.8, rate: 0.6, ref: 5, duration: 2.6 });
+    if (this.alienAnchor) this.playOn('screech', this.alienAnchor, { volume: 1.8, rate: 0.6, ref: 5, duration: 2.6 });
   }
 
   footstep(mode) {

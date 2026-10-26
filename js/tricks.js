@@ -2,7 +2,6 @@
 // Rules from the Alien Behavior doc: one trick at a time, only while it patrols or investigates,
 // only on a spot within 25 m that you can't see, never in the first 90 s, and every trick
 // has a faint tell first. The cool-down shortens as you finish repairs.
-import * as THREE from 'three';
 import { cellOf, cellCenter, lineClear } from './layout.js';
 import { LINES } from './intercom.js';
 
@@ -174,43 +173,21 @@ export class Tricks {
 }
 
 // A still silhouette down the corridor. Gone once you've looked straight at it for a couple of seconds.
+// figure: the renderer's mesh { place(x, z, faceYaw, lightX, lightZ), setBacklight(k), hide(), position }
+// rig: the camera (js/rig.js).
 export class HatMan {
-  constructor(scene, layout, camera, isDoorClosed, world) {
+  constructor(figure, layout, rig, isDoorClosed, world) {
+    this.figure = figure;
     this.layout = layout;
-    this.camera = camera;
+    this.camera = rig;
     this.isDoorClosed = isDoorClosed;
     this.world = world;
     this.cooldown = 0;
     this.visible = false;
     this.sightings = 0;
-
-    const black = new THREE.MeshBasicMaterial({ color: 0x000000 });
-    const g = new THREE.Group();
-    const coat = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.42, 1.55, 10), black);
-    coat.position.y = 0.78;
-    const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), black);
-    shoulders.scale.set(1.3, 0.6, 0.8);
-    shoulders.position.y = 1.55;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), black);
-    head.position.y = 1.78;
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.03, 16), black);
-    brim.position.y = 1.9;
-    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.17, 0.22, 12), black);
-    crown.position.y = 2.02;
-    g.add(coat, shoulders, head, brim, crown);
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffd9c0 });
-    for (const s of [-0.05, 0.05]) {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 4), eyeMat);
-      eye.position.set(s, 1.8, 0.13);
-      g.add(eye);
-    }
-    // A red glow behind it turns it into a silhouette.
-    this.backlight = new THREE.PointLight(0xff2010, 0, 7, 2);
-    scene.add(this.backlight);
-    g.visible = false;
-    scene.add(g);
-    this.mesh = g;
   }
+
+  get position() { return this.figure.position; }
 
   ready() { return !this.visible && this.cooldown <= 0; }
 
@@ -218,8 +195,7 @@ export class HatMan {
   tryShow() {
     if (!this.ready()) return false;
     const cam = this.camera;
-    const dir = new THREE.Vector3();
-    cam.getWorldDirection(dir);
+    const dir = cam.forward();
     const base = Math.atan2(dir.x, dir.z);
     const from = { x: cam.position.x, z: cam.position.z };
     for (const off of [0, 0.3, -0.3, 0.6, -0.6]) {
@@ -235,11 +211,9 @@ export class HatMan {
       d -= 0.9;
       if (d < 5) continue;
       const x = from.x + dx * d, z = from.z + dz * d;
-      this.mesh.position.set(x, 0, z);
-      this.mesh.rotation.y = Math.atan2(from.x - x, from.z - z);
-      this.backlight.position.set(x + dx * 0.9, 1.6, z + dz * 0.9);
-      this.backlight.intensity = 7;
-      this.mesh.visible = true;
+      // A red glow behind it turns it into a silhouette.
+      this.figure.place(x, z, Math.atan2(from.x - x, from.z - z), x + dx * 0.9, z + dz * 0.9);
+      this.figure.setBacklight(1);
       this.visible = true;
       this.life = 4;
       this.looked = 0;
@@ -251,9 +225,8 @@ export class HatMan {
   }
 
   hide() {
-    this.mesh.visible = false;
+    this.figure.hide();
     this.visible = false;
-    this.backlight.intensity = 0;
     this.cooldown = 40;
   }
 
@@ -261,14 +234,15 @@ export class HatMan {
     if (!this.visible) { this.cooldown -= dt; return; }
     this.life -= dt;
     const cam = this.camera;
-    const dir = new THREE.Vector3();
-    cam.getWorldDirection(dir);
-    const to = new THREE.Vector3(this.mesh.position.x - cam.position.x, 1.5 - cam.position.y, this.mesh.position.z - cam.position.z).normalize();
-    const looking = dir.dot(to) > Math.cos(0.18) &&
-      lineClear(this.layout, cam.position, this.mesh.position, this.isDoorClosed);
+    const dir = cam.forward();
+    const p = this.figure.position;
+    const tx = p.x - cam.position.x, ty = 1.5 - cam.position.y, tz = p.z - cam.position.z;
+    const len = Math.hypot(tx, ty, tz) || 1;
+    const looking = (dir.x * tx + dir.y * ty + dir.z * tz) / len > Math.cos(0.18) &&
+      lineClear(this.layout, cam.position, p, this.isDoorClosed);
     if (looking) this.looked += dt;
     // Slight flicker just before it goes.
-    this.backlight.intensity = this.looked > 1.6 ? (Math.random() < 0.5 ? 0 : 7) : 7;
+    this.figure.setBacklight(this.looked > 1.6 ? (Math.random() < 0.5 ? 0 : 1) : 1);
     if (this.looked >= 2 || this.life <= 0) this.hide();
   }
 }

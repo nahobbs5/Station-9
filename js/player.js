@@ -1,5 +1,6 @@
 // First-person movement, mouse look, sprint/crouch, stamina and the flashlight.
-import * as THREE from 'three';
+// Engine-free: it writes the camera pose and flashlight strength to a CameraRig (js/rig.js),
+// and the renderer copies that onto its own camera and spotlight.
 import { cellOf } from './layout.js';
 import { STEP_LOUDNESS } from './noise.js';
 
@@ -13,8 +14,8 @@ const RADIUS = 0.3;
 const LOOK = 0.0022;
 
 export class Player {
-  constructor(camera, spawn, isBlockedCell) {
-    this.camera = camera;
+  constructor(rig, spawn, isBlockedCell) {
+    this.camera = rig;
     this.pos = { x: spawn.x, z: spawn.z };
     this.isBlockedCell = isBlockedCell;
     this.yaw = 0;
@@ -30,12 +31,6 @@ export class Player {
     this.flashClicked = false; // set on toggle; main turns it into a small noise
     this.moving = false;
     this.idle = 0; // seconds since you last moved
-
-    camera.rotation.order = 'YXZ';
-    this.flashlight = new THREE.SpotLight(0xfff0d0, 30, 26, 0.42, 0.45, 1.6);
-    this.flashlight.position.set(0.18, -0.12, 0);
-    this.flashlight.target.position.set(0.12, -0.12, -1);
-    camera.add(this.flashlight, this.flashlight.target);
 
     addEventListener('keydown', (e) => {
       this.keys.add(e.code);
@@ -111,18 +106,18 @@ export class Player {
     const eyeTarget = this.crouching ? EYE.crouch : EYE.stand;
     this.eye += (eyeTarget - this.eye) * Math.min(1, dt * 10);
     const bobAmt = moving ? (this.mode === 'sprint' ? 0.06 : 0.035) : 0;
-    this.camera.position.set(this.pos.x, this.eye + Math.abs(Math.sin(this.bob)) * bobAmt, this.pos.z);
-    this.camera.rotation.set(this.pitch, this.yaw, 0);
+    this.camera.set(this.pos.x, this.eye + Math.abs(Math.sin(this.bob)) * bobAmt, this.pos.z, this.yaw, this.pitch);
 
     // Flashlight: change intensity, never visibility (that would recompile every shader).
     const flicker = Math.sin(time * 37) > 0.995 ? 0.4 : 1;
-    this.flashlight.intensity = this.flashlightOn ? 30 * flicker : 0;
+    this.camera.flashlight = this.flashlightOn ? 30 * flicker : 0;
     return step;
   }
 
   lookAt(x, z) {
     this.yaw = Math.atan2(-(x - this.pos.x), -(z - this.pos.z));
     this.pitch = 0.05;
-    this.camera.rotation.set(this.pitch, this.yaw, 0);
+    this.camera.yaw = this.yaw;
+    this.camera.pitch = this.pitch;
   }
 }

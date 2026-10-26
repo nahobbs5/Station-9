@@ -48,26 +48,56 @@ npm test
 2. Go to **Settings → Pages**, set **Source** to "Deploy from a branch", then pick `main` and `/ (root)`.
 3. Wait a minute. The game will be at `https://<user>.github.io/Station-9/`.
 
+## Two versions: three.js and Babylon.js
+
+The game runs on two 3D engines so you can compare them:
+
+- `index.html` uses [three.js](https://threejs.org) 0.160.
+- `babylon.html` uses [Babylon.js](https://www.babylonjs.com) 9.28. Add `?inspect` to its URL to open Babylon's Inspector for tuning lights and materials.
+
+Each start menu has a link to the other one. Both share the same game: rules, alien, tapes, HUD, minimap, sound and level layout all live in shared files. Only the drawing is engine-specific (`js/three/` and `js/babylon/`). A gameplay change made in the shared files works in both.
+
+The two engines measure light differently. Babylon's brightness is matched to three.js by `TUNING` at the top of `js/babylon/util.js`.
+
 ## How it's built
 
-Plain JavaScript modules and [three.js](https://threejs.org) 0.160 from a CDN. Everything is grey-box geometry and canvas-drawn textures, plus the sounds in `sound_effects/` and the title theme in `music/`. Every audio file is listed on the in-game Credits screen (`js/credits.js`).
+Plain JavaScript modules and canvas-drawn textures, with the engines loaded from a CDN, plus the sounds in `sound_effects/` and the title theme in `music/`. Every audio file is listed on the in-game Credits screen (`js/credits.js`).
+
+**Shared by both versions**
 
 | File | What it does |
 | --- | --- |
+| `js/game.js` | The game: objectives, alien events, tapes, score, HUD, screens and the main loop |
 | `js/layout.js` | The station map: rooms, corridors, doors, props, line-of-sight |
 | `js/alien.js` | The alien's patrol / investigate / hunt / lose-track logic |
 | `js/noise.js` | The shared noise signal and how doors and walls muffle it |
 | `js/pathfind.js` | A* pathfinding on the grid |
-| `js/world.js` | Builds the 3D station, lights, doors, posters and the alien's mesh |
-| `js/decorplan.js` | Where the wear and tear goes: pipes, leaks, broken lights, patches, clutter. Counts and densities are at the top |
-| `js/decor.js` | Builds and animates it: steam, drips, sparks, stuttering lights |
 | `js/player.js` | Movement, mouse look, stamina, flashlight |
-| `js/tricks.js` | Environment tricks (lights, doors, phantom footsteps) and the Hat Man |
+| `js/rig.js` | The camera as plain data, which each engine copies onto its own camera |
+| `js/interact.js` | What you're looking at, and thrown noise-makers |
+| `js/tricks.js` | Environment tricks (lights, doors, phantom footsteps, props) and the Hat Man |
+| `js/audio.js` | Positional sound (plain Web Audio), synthesized effects, heartbeat, music |
+| `js/worldplan.js` | Where walls, props, posters and loose chairs go; how doors and room lights behave |
+| `js/textures.js` | Every canvas-drawn texture (walls, floor, posters, pipes, ...) |
+| `js/alienshape.js` | The alien's shape and how it moves |
+| `js/decorplan.js` | Where the wear and tear goes: pipes, leaks, broken lights, patches, clutter. Counts and densities are at the top |
+| `js/decorsim.js` | Steam, drips, sparks and stuttering lights over time. Timings are at the top |
+| `js/minimap.js` | The explored-only minimap |
 | `js/intercom.js` | Marigold's lines (the station voice) |
 | `js/tapes.js` | Plays the audio logs: a voice per speaker, captions, taking turns with Marigold |
 | `text/lore.txt` | The twelve audio logs. Edit the words, voices, or point one at a recording, without touching code |
 | `text/intro.txt` | Marigold's opening announcements, one per line |
-| `js/audio.js` | Positional sound, synthesized effects, heartbeat |
-| `js/main.js` | Game loop, objectives, HUD, screens |
+
+**Per engine** (the same files in `js/three/` and `js/babylon/`)
+
+| File | What it does |
+| --- | --- |
+| `view.js` | Sets up the engine, camera and flashlight, and draws each frame |
+| `world.js` | Builds the station: walls, floor, doors, lights, props, posters |
+| `decor.js` | Builds the pipes, patches and clutter, and shows the steam, drips and sparks |
+| `alien.js` | Builds and animates the alien |
+| `props.js` | The Hat Man figure and thrown noise-makers |
+
+`js/main.js` starts the three.js version and `js/babylon/main.js` starts the Babylon.js one. Keep `babylon.html`'s markup in step with `index.html`; a test checks their element ids match.
 
 Add `?debug` to the URL to play without pointer lock (used by automated tests).

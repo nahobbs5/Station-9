@@ -8,6 +8,9 @@ import { revealAround, mapMarkers } from '../js/minimap.js';
 import { parseIntro, parseLore, tapeScript, speakerOf } from '../js/textfiles.js';
 import { VOICES } from '../js/tapes.js';
 import { planDecor, DECOR } from '../js/decorplan.js';
+import { CameraRig } from '../js/rig.js';
+import { alienRig } from '../js/alienshape.js';
+import { wallCells, looseItems } from '../js/worldplan.js';
 import {
   Alien, inSight, SPEED, HUNT_TIMEOUT, LOSE_TRACK_AFTER, DOOR_FORCE_TIME, WARN_TIME, WARN_TIME_CLOSE,
 } from '../js/alien.js';
@@ -468,4 +471,36 @@ test('decor: clutter stays in room corners, clear of doors and props', () => {
     assert.equal(layout.isSolid(x, z), false, 'clutter on a prop');
     assert.ok(![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => layout.isDoor(x + dx, z + dz)), 'clutter by a door');
   }
+});
+
+// Shared between the three.js and Babylon.js builds ---------------------------------
+
+test('both builds have the same menus and HUD (same element ids)', () => {
+  const ids = (file) => [...readFileSync(new URL(`../${file}`, import.meta.url), 'utf8').matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]).sort();
+  assert.deepEqual(ids('babylon.html'), ids('index.html'));
+});
+
+test('camera rig: forward and up point the right way', () => {
+  const r = new CameraRig();
+  const close = (a, b) => ['x', 'y', 'z'].forEach((k) => assert.ok(Math.abs(a[k] - b[k]) < 1e-9, `${k}: ${a[k]} vs ${b[k]}`));
+  close(r.forward(), { x: 0, y: 0, z: -1 });           // yaw 0 looks down -z
+  close(r.up(), { x: 0, y: 1, z: 0 });
+  r.yaw = Math.PI / 2;
+  close(r.forward(), { x: -1, y: 0, z: 0 });           // turning left faces -x
+  r.yaw = 0; r.pitch = Math.PI / 4;
+  const f = r.forward(), u = r.up();
+  assert.ok(f.y > 0.7 && u.y > 0.7 && u.z > 0.7, 'looking up tips "up" backwards');
+  assert.ok(Math.abs(f.x * u.x + f.y * u.y + f.z * u.z) < 1e-9, 'up is at right angles to forward');
+});
+
+test('shared plans are the same every load (both engines build the same station)', () => {
+  assert.deepEqual(wallCells(layout), wallCells(layout));
+  const rigA = alienRig(), rigB = alienRig();
+  assert.deepEqual(rigA, rigB);
+  assert.equal(rigA.tentacles.length, 14);
+  for (const t of rigA.tentacles) assert.ok(Math.abs(Math.hypot(...t.quat) - 1) < 1e-9, 'tentacle rotation is a unit quaternion');
+  const clutter = new Set(planDecor(layout).clutter.map((c) => c.cell.join(',')));
+  const items = looseItems(layout, clutter);
+  assert.ok(items.length > 0);
+  for (const it of items) assert.equal(layout.isSafe(Math.floor(it.x / TILE), Math.floor(it.z / TILE)), false);
 });

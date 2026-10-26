@@ -4,7 +4,7 @@
 // traced wall outline (js/walls.js), so it hangs flat on angled and curved walls too.
 import { TILE, WALL_H, cellCenter, cellOf } from './layout.js';
 import { wallSegments } from './walls.js';
-import { furniturePlacement, signPlacements, windowPlacements, EMBLEM } from './worldplan.js';
+import { furniturePlacement, signPlacements, windowPlacements, wallAlong, doorFrames, FRAME, EMBLEM } from './worldplan.js';
 
 // Densities and counts, all in one place for tuning.
 export const DECOR = {
@@ -16,8 +16,18 @@ export const DECOR = {
   roomPipe: { y: 2.62, r: 0.07, inset: 0.28 },
   brokenLights: 9, dyingLights: 2, lightSpacing: 3,
   faults: { steam: 4, drip: 4, spark: 3, clank: 3 },
+  ribSpacing: 2, rib: { width: 0.3, inset: 0.12, beam: 0.15 }, vents: 12, corridorStains: 6, sconces: 6,
   plates: 46, tape: 14, boards: 4, cables: 7, gratesChance: 0.3, panels: 3, clutterChance: 0.6,
 };
+
+// Stencilled wall markings: lines of text and paint colour. Deck codes are made per corridor.
+export const STENCILS = {
+  pressure: { lines: ['PRESSURE DOOR', 'KEEP CLEAR'], color: '#bdb7a6', w: 0.62, h: 0.31 },
+  voltage: { lines: ['DANGER', 'HIGH VOLTAGE'], color: '#c4952a', w: 0.5, h: 0.25 },
+  authorised: { lines: ['AUTHORISED', 'PERSONNEL ONLY'], color: '#b3332a', w: 0.7, h: 0.35 },
+  deck: { color: '#bdb7a6', w: 0.8, h: 0.4 },
+};
+export const deckCode = (i) => `B-${String(i + 1).padStart(2, '0')}`;
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
@@ -135,6 +145,32 @@ export function planDecor(layout, seed = 1234) {
     lights.push({ x: p.x, y: WALL_H - 0.06, z: p.z, yaw: yawOf(p), cell: cellAt(p), dying: lights.length < DECOR.dyingLights });
   }
 
+  // Also keep clear of anything standing against or hung on a wall.
+  const occupied = [
+    ...L.furniture.filter((f) => f.solid).map((f) => furniturePlacement(L, f)),
+    ...signPlacements(L), ...windowPlacements(L),
+  ];
+
+  // Structural ribs across the corridors every few metres, the station's frame showing through:
+  // a flat pillar on each wall and a beam across the ceiling, square to the corridor (so they fan
+  // round curves). Only where both walls are close (not at junctions), clear of doors (which slide
+  // up into the ceiling), corridor lights and signs. a, b: the wall points either side.
+  const ribs = [];
+  for (const run of runs) {
+    for (const p of along(run, DECOR.ribSpacing).slice(1, -1)) {
+      const [cx, cz] = cellAt(p);
+      if (L.isDoor(cx, cz) || L.doors.some((d) => Math.hypot(cellCenter(d.cx) - p.x, cellCenter(d.cz) - p.z) < 1.5)) continue;
+      if (lights.some((l) => Math.hypot(l.x - p.x, l.z - p.z) < 0.8)) continue;
+      const lx = -p.tz, lz = p.tx; // left of travel
+      const dl = wallAlong(L, p.x, p.z, lx, lz, p.r + 0.6), dr = wallAlong(L, p.x, p.z, -lx, -lz, p.r + 0.6);
+      if (dl == null || dr == null || dl + dr > 2 * p.r + 0.3) continue;
+      const a = { x: p.x + lx * dl, z: p.z + lz * dl }, b = { x: p.x - lx * dr, z: p.z - lz * dr };
+      if (occupied.some((o) => Math.min(Math.hypot(o.x - a.x, o.z - a.z), Math.hypot(o.x - b.x, o.z - b.z)) < 0.9)) continue;
+      ribs.push({ a, b, x: p.x, z: p.z, yaw: yawOf(p), nx: lx, nz: lz, cell: [cx, cz] });
+    }
+  }
+  const nearRib = (x, z, d) => ribs.some((r) => Math.hypot(r.a.x - x, r.a.z - z) < d || Math.hypot(r.b.x - x, r.b.z - z) < d);
+
   // Faults: steam, drips and clanks on the copper line; sparks from junction boxes on corridor walls.
   const faults = [];
   const line = DECOR.pipes[0];
@@ -156,11 +192,6 @@ export function planDecor(layout, seed = 1234) {
     [(r.x + r.w / 2) * TILE, r.y * TILE], [(r.x + r.w / 2) * TILE, (r.y + r.h) * TILE],
     [r.x * TILE, (r.y + r.h / 2) * TILE], [(r.x + r.w) * TILE, (r.y + r.h / 2) * TILE],
   ]);
-  // Also keep clear of anything standing against or hung on a wall.
-  const occupied = [
-    ...L.furniture.filter((f) => f.solid).map((f) => furniturePlacement(L, f)),
-    ...signPlacements(L), ...windowPlacements(L),
-  ];
   const spots = [];
   for (const seg of wallSegments(L.shape)) {
     if (seg.len < 1) continue;
@@ -172,6 +203,7 @@ export function planDecor(layout, seed = 1234) {
       if (!L.isFloor(...inside) || L.isDoor(...inside) || nextToDoor(...inside)) continue;
       if (wallMids.some(([mx, mz]) => Math.hypot(mx - x, mz - z) < 1.2)) continue;
       if (occupied.some((o) => Math.hypot(o.x - x, o.z - z) < 1.3)) continue;
+      if (nearRib(x, z, 0.6)) continue;
       const room = L.roomAt(...inside);
       spots.push({ x, z, nx: seg.nx, nz: seg.nz, rot: Math.atan2(seg.nx, seg.nz), cell: inside, corridor: L.isCorridor(...inside) && !room });
     }
@@ -192,14 +224,70 @@ export function planDecor(layout, seed = 1234) {
     if (sp) boards.push({ ...at(sp, 1.1, 0.06), planks: 3 + Math.floor(rand() * 2), angle: (rand() - 0.5) * 0.25 });
   }
 
-  // Patchwork on any wall: plates and hazard tape.
+  // A fire extinguisher standing against a wall in each room, and dead caged lamps high on the
+  // corridor walls, spread apart (both are models: js/modelplan.js).
+  const extinguishers = [];
+  for (const room of L.rooms) {
+    if (room.safe) continue;
+    const sp = take(shuffle(spots.filter((q) => !taken.has(q) && L.roomAt(...q.cell)?.id === room.id)));
+    if (sp) extinguishers.push({ ...at(sp, 0, 0.17), room: room.id });
+  }
+  const sconces = [];
+  for (const sp of spots.filter((q) => q.corridor)) {
+    if (sconces.length >= DECOR.sconces) break;
+    if (taken.has(sp) || sconces.some((q) => Math.hypot(q.x - sp.x, q.z - sp.z) < 5)) continue;
+    taken.add(sp);
+    sconces.push(at(sp, 2.1, 0.065));
+  }
+
+  // Stencilled markings. Beside each door on the corridor side (the wall opposite its wayfinding
+  // sign): PRESSURE DOOR / KEEP CLEAR, only where that wall carries on straight.
+  const stencils = [];
+  for (const f of doorFrames(L)) {
+    if (f.safe) continue;
+    const [ax, az] = f.across, px = az, pz = ax; // passage direction, one way or the other
+    const toCorridor = L.roomAt(cellOf(f.x + px * TILE), cellOf(f.z + pz * TILE)) ? -1 : 1;
+    const x = f.x + ax * f.hi + px * 1.05 * toCorridor, z = f.z + az * f.hi + pz * 1.05 * toCorridor;
+    const onWall = L.walkDistance(x - ax * 0.05, z - az * 0.05) > 0 && L.walkDistance(x + ax * 0.08, z + az * 0.08) <= 0;
+    const wallEnds = [-0.35, 0.35].some((t) => L.walkDistance(x + px * t + ax * 0.08, z + pz * t + az * 0.08) > 0);
+    if (!onWall || wallEnds) continue;
+    stencils.push({ kind: 'pressure', x: x - ax * 0.008, y: 1.45, z: z - az * 0.008, rot: Math.atan2(-ax, -az) });
+  }
+  // DANGER / HIGH VOLTAGE under every sparking junction box.
+  for (const fa of faults.filter((q) => q.kind === 'spark')) {
+    stencils.push({ kind: 'voltage', x: fa.x - Math.sin(fa.rot) * 0.07, y: 1.25, z: fa.z - Math.cos(fa.rot) * 0.07, rot: fa.rot });
+  }
+  const roomSpot = (id) => { const sp = wallSpotsByRoom(id); return sp ? at(sp, 1.5, 0.008) : null; };
+  const wallSpotsByRoom = (id) => take(shuffle(spots.filter((sp) => !taken.has(sp) && L.roomAt(...sp.cell)?.id === id)));
+  for (const id of ['generator', 'generator']) { const sp = roomSpot(id); if (sp) stencils.push({ kind: 'voltage', ...sp }); }
+  for (const id of ['comms', 'teleporter']) { const sp = roomSpot(id); if (sp) stencils.push({ kind: 'authorised', ...sp }); }
+  // Deck codes low on the corridor walls, one per corridor where there's room.
+  for (const [ci, c] of L.corridors.entries()) {
+    const mine = spots.filter((sp) => !taken.has(sp) && sp.corridor && c.pts.some((q) => Math.hypot(q.x - sp.x, q.z - sp.z) < q.r + 0.2));
+    const sp = take(shuffle(mine));
+    if (sp) stencils.push({ kind: 'deck', text: deckCode(ci), ...at(sp, 0.75, 0.008) });
+  }
+
+  // Patchwork on any wall: plates and hazard tape. Vents first: grilles high up, a few low down.
   const wallSpots = shuffle(spots.slice());
+  const vents = [];
+  for (let i = 0; i < DECOR.vents; i++) {
+    let sp = take(wallSpots);
+    while (sp && L.roomAt(...sp.cell)?.safe) sp = take(wallSpots); // not in the padded suites
+    if (!sp) break;
+    const low = i % 3 === 2;
+    vents.push({ ...at(sp, low ? 0.32 : 2.18, 0.03), w: low ? 0.7 : 0.55, h: low ? 0.22 : 0.34 });
+  }
   const plates = [], tape = [];
+  // Grime streaking down from the high vents.
+  const streaks = vents.filter((v) => v.y > 1).map((v) => ({ kind: 'grime', x: v.x - Math.sin(v.rot) * 0.024, y: v.y - v.h / 2 - 0.42, z: v.z - Math.cos(v.rot) * 0.024, rot: v.rot, w: v.w * 0.9, h: 0.8 }));
   for (let i = 0; i < DECOR.plates; i++) {
     const sp = take(wallSpots);
     if (!sp) break;
     const w = 0.35 + rand() * 0.55, h = 0.3 + rand() * 0.6;
     plates.push({ ...at(sp, 0.35 + h / 2 + rand() * (1.9 - h), 0.012 + (i % 3) * 0.002), w, h, variant: i % 4, tilt: (rand() - 0.5) * 0.12 });
+    const pl = plates[plates.length - 1];
+    if (i % 3 === 0 && pl.y - h / 2 > 0.7) streaks.push({ kind: 'rust', ...at(sp, pl.y - h / 2 - 0.25, 0.006), w: w * 0.7, h: 0.5 });
   }
   for (let i = 0; i < DECOR.tape; i++) {
     const sp = take(wallSpots);
@@ -243,7 +331,26 @@ export function planDecor(layout, seed = 1234) {
     }
   }
 
-  return { pipes: [...pipes, ...risers], risers, joints, flanges, brackets, lights, faults, plates, tape, boards, cables, grates, panels, clutter };
+  // Floor: hazard stripes either side of every door, and stains where things leak or stand.
+  const stripes = doorFrames(L).flatMap((f) => {
+    const [ax, az] = f.across, px = az, pz = ax;
+    const cx = f.x + ax * (f.hi - f.lo) / 2, cz = f.z + az * (f.hi - f.lo) / 2;
+    const off = FRAME.depth / 2 + 0.25;
+    return [-1, 1].map((sgn) => ({ x: cx + px * off * sgn, z: cz + pz * off * sgn, yaw: Math.atan2(-az, ax), len: f.lo + f.hi - 0.1, depth: 0.3, cell: [cellOf(f.x), cellOf(f.z)] }));
+  });
+  const stains = [];
+  for (const fa of faults.filter((q) => q.kind === 'drip')) stains.push({ kind: 'water', x: fa.x, z: fa.z, r: 0.6, rot: rand() * 6.28 });
+  for (const c of clutter.filter((q) => q.kind === 'barrel')) stains.push({ kind: 'oil', x: c.x, z: c.z, r: 0.55, rot: rand() * 6.28 });
+  const gen = L.props.find((q) => q.id === 'generator');
+  if (gen) stains.push({ kind: 'oil', x: cellCenter(gen.cell[0]), z: cellCenter(gen.cell[1]) + 0.3, r: 1.2, rot: 0.4 });
+  for (const p of shuffle(runs.flatMap((run) => along(run, 1).slice(1, -1)))) {
+    if (stains.filter((q) => q.corridor).length >= DECOR.corridorStains) break;
+    if (stains.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < 5)) continue;
+    const side = (rand() - 0.5) * 0.8;
+    stains.push({ kind: rand() < 0.6 ? 'oil' : 'water', x: p.x - p.tz * side, z: p.z + p.tx * side, r: 0.35 + rand() * 0.35, rot: rand() * 6.28, corridor: true });
+  }
+
+  return { pipes: [...pipes, ...risers], risers, joints, flanges, brackets, lights, faults, plates, tape, boards, cables, grates, panels, clutter, ribs, vents, stencils, streaks, stripes, stains, extinguishers, sconces };
 }
 
 function range(start, n) { return Array.from({ length: n }, (_, i) => start + i); }

@@ -15,8 +15,30 @@ export const srgb = (hex) => B().Color3.FromHexString(hexString(hex));
 // The same colour converted for lighting maths (linear), for lit materials and lights.
 export const linear = (hex) => srgb(hex).toLinearSpace();
 
+// Scanned surface detail (CC0, Poly Haven; see assets/LICENSES.md). Each set gives a normal map
+// (relief that catches the light) and a packed map: ambient occlusion (red), roughness (green),
+// metalness (blue). The colour still comes from the game's own canvas textures.
+export const SURFACES = {
+  panel: 'metal_plate', rust: 'rusty_painted_metal', floor: 'metal_plate_02', painted: 'blue_metal_plate',
+  pipe: 'rusty_metal_02', leather: 'brown_leather', grate: 'metal_grate_rusty', ceiling: 'concrete_floor_worn_001',
+};
+const surfaceTextures = new Map();
+function surfaceTexture(scene, set, map, tile) {
+  const k = `${set}/${map}/${tile}`;
+  if (!surfaceTextures.has(k)) {
+    const t = new (B().Texture)(`assets/textures/${set}/${map}.jpg`, scene);
+    t.gammaSpace = false; // data, not colour
+    t.uScale = tile[0]; t.vScale = tile[1];
+    surfaceTextures.set(k, t);
+  }
+  return surfaceTextures.get(k);
+}
+
 // A lit, metal/rough material (like three's MeshStandardMaterial).
-export function pbr(scene, { color = 0xffffff, map = null, roughness = 1, metalness = 0, transparent = false, zOffset = 0, twoSided = false } = {}) {
+// surface: a SURFACES name for scanned relief and roughness; tile: [u, v] repeats across the mesh's UVs;
+// bump: how strong the relief is; rough: false keeps this material's own roughness (just the relief).
+export function pbr(scene, { color = 0xffffff, map = null, roughness = 1, metalness = 0, transparent = false, zOffset = 0, twoSided = false,
+  surface = null, tile = [1, 1], bump = 1, rough = true } = {}) {
   const BABYLON = B();
   const m = new BABYLON.PBRMaterial('pbr', scene);
   m.albedoColor = linear(color);
@@ -27,6 +49,19 @@ export function pbr(scene, { color = 0xffffff, map = null, roughness = 1, metaln
   if (transparent && map) { map.hasAlpha = true; m.useAlphaFromAlbedoTexture = true; m.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND; }
   if (zOffset) m.zOffset = zOffset;
   if (twoSided) m.backFaceCulling = false;
+  if (surface) {
+    const set = SURFACES[surface] ?? surface;
+    m.bumpTexture = surfaceTexture(scene, set, 'nor_gl', tile);
+    m.bumpTexture.level = bump;
+    if (rough) {
+      // Roughness and occlusion from the scan; the material's roughness scales it.
+      m.metallicTexture = surfaceTexture(scene, set, 'arm', tile);
+      m.useRoughnessFromMetallicTextureGreen = true;
+      m.useAmbientOcclusionFromMetallicTextureRed = true;
+      m.useMetallnessFromMetallicTextureBlue = false;
+      m.roughness = Math.min(1, roughness * 1.15);
+    }
+  }
   return m;
 }
 
@@ -113,4 +148,60 @@ export function hsl(h, s, l) {
   const a = s * Math.min(l, 1 - l);
   const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
   return new (B().Color3)(f(0), f(8), f(4));
+}
+
+// A box with its edges chamfered off, so the edges catch the light instead of meeting in a hard
+// line. Same size, origin and face UVs as MeshBuilder.CreateBox; each face is pulled in by `bevel`
+// and the gaps are filled with 45° strips along the edges and small triangles at the corners.
+export function bevelBox(name, { width = 1, height = 1, depth = 1, bevel = 0.02 } = {}, scene) {
+  const BABYLON = B();
+  const h = [width / 2, height / 2, depth / 2];
+  const b = Math.min(bevel, ...h.map((v) => v * 0.45));
+  if (b < 0.004) return BABYLON.MeshBuilder.CreateBox(name, { width, height, depth }, scene);
+  const tpl = BABYLON.MeshBuilder.CreateBox(name + '-tpl', { width, height, depth }, scene);
+  const P = tpl.getVerticesData('position'), N = tpl.getVerticesData('normal'), U = tpl.getVerticesData('uv'), I = tpl.getIndices();
+  tpl.dispose();
+  const sub = (a, c) => [a[0] - c[0], a[1] - c[1], a[2] - c[2]];
+  const cross = (a, c) => [a[1] * c[2] - a[2] * c[1], a[2] * c[0] - a[0] * c[2], a[0] * c[1] - a[1] * c[0]];
+  const dot = (a, c) => a[0] * c[0] + a[1] * c[1] + a[2] * c[2];
+  const vec = (arr, i) => [arr[i * 3], arr[i * 3 + 1], arr[i * 3 + 2]];
+  // Which way round CreateBox winds its triangles, so the new faces match it.
+  const wind = Math.sign(dot(cross(sub(vec(P, I[1]), vec(P, I[0])), sub(vec(P, I[2]), vec(P, I[0]))), vec(N, I[0])));
+  const pos = [], nor = [], uv = [], idx = Array.from(I);
+  const cornerUV = new Map(); // face axis + corner signs -> that face corner's UV
+  const ck = (axis, s) => `${axis}:${s.join(',')}`;
+  for (let v = 0; v < P.length / 3; v++) {
+    const n = vec(N, v), p = vec(P, v);
+    const axis = n.findIndex((c) => Math.abs(c) > 0.5);
+    const s = p.map((c) => Math.sign(c));
+    cornerUV.set(ck(axis, s), [U[v * 2], U[v * 2 + 1]]);
+    for (let k = 0; k < 3; k++) if (k !== axis) p[k] = s[k] * (h[k] - b);
+    pos.push(...p); nor.push(...n); uv.push(U[v * 2], U[v * 2 + 1]);
+  }
+  const poly = (pts, n, uvs) => {
+    const base = pos.length / 3;
+    pts.forEach((p, i) => { pos.push(...p); nor.push(...n); uv.push(...uvs[i]); });
+    const flip = Math.sign(dot(cross(sub(pts[1], pts[0]), sub(pts[2], pts[0])), n)) !== wind;
+    for (let i = 1; i < pts.length - 1; i++) idx.push(base, base + (flip ? i + 1 : i), base + (flip ? i : i + 1));
+  };
+  const norm = (v) => { const l = Math.hypot(...v); return v.map((c) => c / l); };
+  // Where face `axis` meets the edge or corner with signs `s`.
+  const facePoint = (axis, s) => s.map((sk, k) => sk * (k === axis ? h[k] : h[k] - b));
+  // Edge strips: between faces a and c, running along the third axis m.
+  for (const [a, c, m] of [[0, 1, 2], [0, 2, 1], [1, 2, 0]]) {
+    for (const sa of [-1, 1]) for (const sc of [-1, 1]) {
+      const s = (sm) => { const r = [0, 0, 0]; r[a] = sa; r[c] = sc; r[m] = sm; return r; };
+      const n = [0, 0, 0]; n[a] = sa; n[c] = sc;
+      poly([facePoint(a, s(-1)), facePoint(a, s(1)), facePoint(c, s(1)), facePoint(c, s(-1))], norm(n),
+        [cornerUV.get(ck(a, s(-1))), cornerUV.get(ck(a, s(1))), cornerUV.get(ck(c, s(1))), cornerUV.get(ck(c, s(-1)))]);
+    }
+  }
+  // Corner triangles.
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+    const s = [sx, sy, sz];
+    poly([0, 1, 2].map((k) => facePoint(k, s)), norm(s), [0, 1, 2].map((k) => cornerUV.get(ck(k, s))));
+  }
+  const mesh = new BABYLON.Mesh(name, scene);
+  Object.assign(new BABYLON.VertexData(), { positions: pos, normals: nor, uvs: uv, indices: idx }).applyToMesh(mesh);
+  return mesh;
 }

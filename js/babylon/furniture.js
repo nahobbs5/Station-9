@@ -6,23 +6,23 @@ import {
   housingTexture, leatherTexture, lockerTexture, drawerTexture, crateTexture, medkitTexture,
   signTexture, windowTexture, blanketTexture, leafTexture, mugTexture,
 } from '../textures.js';
-import { pbr, basic, toTexture } from './util.js';
+import { pbr, basic, toTexture, bevelBox } from './util.js';
 
 export function furnitureKit(scene) {
   const BABYLON = window.BABYLON;
   const { MeshBuilder, TransformNode } = BABYLON;
   const T = (c, o = {}) => toTexture(scene, c, { anisotropy: 4, ...o });
   const M = {
-    cream: pbr(scene, { map: T(housingTexture()), roughness: 0.6, metalness: 0.3 }),
-    leather: pbr(scene, { map: T(leatherTexture()), roughness: 0.5, metalness: 0.05 }),
+    cream: pbr(scene, { map: T(housingTexture()), roughness: 0.6, metalness: 0.3, surface: 'painted', bump: 0.7 }),
+    leather: pbr(scene, { map: T(leatherTexture()), roughness: 0.5, metalness: 0.05, surface: 'leather', tile: [2, 2] }),
     fabric: pbr(scene, { color: 0x2a2d2f, roughness: 0.95 }),
-    metal: pbr(scene, { color: 0x8a8d90, roughness: 0.4, metalness: 0.8 }),
+    metal: pbr(scene, { color: 0x8a8d90, roughness: 0.4, metalness: 0.8, surface: 'panel' }),
     dark: pbr(scene, { color: 0x1c1e20, roughness: 0.6, metalness: 0.4 }),
     yellow: pbr(scene, { color: 0xd9a52a, roughness: 0.6 }),
     crateGrey: pbr(scene, { color: 0x8f8c82, roughness: 0.7, metalness: 0.3 }),
     paper: pbr(scene, { color: 0xe8e2cf, roughness: 0.9 }),
     blanket: pbr(scene, { map: T(blanketTexture()), roughness: 0.95 }),
-    crate: pbr(scene, { map: T(crateTexture()), roughness: 0.6, metalness: 0.3 }),
+    crate: pbr(scene, { map: T(crateTexture()), roughness: 0.6, metalness: 0.3, surface: 'painted' }),
     medkit: pbr(scene, { map: T(medkitTexture()), roughness: 0.5 }),
     soil: pbr(scene, { color: 0x2a2018, roughness: 1 }),
     mug: pbr(scene, { map: T(mugTexture(), { mirror: true }), roughness: 0.5 }),
@@ -36,7 +36,12 @@ export function furnitureKit(scene) {
   const leafMat = pbr(scene, { map: T(leafTexture()), roughness: 0.8, transparent: true, twoSided: true });
 
   const node = (parent) => { const n = new TransformNode('furniture', scene); if (parent) n.parent = parent; return n; };
-  const box = (p, w, h, d, x, y, z, mat) => { const m = MeshBuilder.CreateBox('f', { width: w, height: h, depth: d }, scene); m.parent = p; m.position.set(x, y, z); m.material = mat; return m; };
+  // Anything chunky enough gets softened edges; thin rails and slats stay plain boxes.
+  const box = (p, w, h, d, x, y, z, mat) => {
+    const t = Math.min(w, h, d);
+    const m = t >= 0.06 ? bevelBox('f', { width: w, height: h, depth: d, bevel: Math.min(0.02, t * 0.12) }, scene) : MeshBuilder.CreateBox('f', { width: w, height: h, depth: d }, scene);
+    m.parent = p; m.position.set(x, y, z); m.material = mat; return m;
+  };
   const cyl = (p, dia, h, x, y, z, mat, tess = 12, dTop = dia) => { const m = MeshBuilder.CreateCylinder('f', { diameterTop: dTop, diameterBottom: dia, height: h, tessellation: tess }, scene); m.parent = p; m.position.set(x, y, z); m.material = mat; return m; };
   const plane = (p, w, h, x, y, z, mat) => { const m = MeshBuilder.CreatePlane('f', { width: w, height: h }, scene); m.parent = p; m.position.set(x, y, z); m.rotation.y = Math.PI; m.material = mat; return m; };
   const posts = (p, w, d, h, r = 0.045) => { for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(p, r, h, r, sx * (w / 2 - r / 2), h / 2, sz * (d / 2 - r / 2), M.metal); };

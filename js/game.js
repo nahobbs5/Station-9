@@ -7,7 +7,8 @@ import { Player } from './player.js';
 import { GameAudio, Music, MENU_MUSIC, END_MUSIC } from './audio.js';
 import { renderCredits } from './credits.js';
 import { findTarget, Throwables } from './interact.js';
-import { Tricks, HatMan } from './tricks.js';
+import { Tricks } from './tricks.js';
+import { HatMan, cameoSurfaces, corridorEndLamps } from './hatman.js';
 import { Intercom, LINES } from './intercom.js';
 import { Minimap, revealAround } from './minimap.js';
 import { parseIntro, parseLore } from './textfiles.js';
@@ -59,7 +60,13 @@ export function startGame(createView) {
     el: { box: $('tape'), head: $('tape-head'), speaker: $('tape-speaker'), line: $('tape-line') },
   });
   const throwables = new Throwables(view.makeBall, (x, z) => blockedAt(x, z, 0.05));
-  const hatman = new HatMan(view.hatman, layout, rig, isDoorClosed, world);
+  // The Hat Man (reference files/Hatman.md). Marigold mentions him once, the first time he's out.
+  const hatman = new HatMan(view.hatman, layout, {
+    rig, world,
+    lineClear: (a, b) => lineClear(layout, a, b, isDoorClosed),
+    onFirst: () => intercom.say(LINES.hatman),
+  });
+  view.hatman.addLamps(corridorEndLamps(layout));
 
   const fwd = { x: 0, y: 0, z: 0 };
   function isInView(pos) {
@@ -71,6 +78,9 @@ export function startGame(createView) {
   }
   const tricks = new Tricks({
     layout, world, audio, alien, player, isInView, isDoorClosed, hatman,
+    cameoSurfaces: cameoSurfaces(layout),
+    inSuite: () => suiteNow !== null,
+    facing: () => { rig.forward(fwd); return fwd; },
     stage: () => stage,
     busy: () => repairingNow,
     say: (text) => intercom.say(text),
@@ -177,6 +187,19 @@ export function startGame(createView) {
   renderCredits($('credits-list'));
   renderCredits($('win-credits'));
   $('credits-open').addEventListener('click', () => { $('title').hidden = true; $('credits').hidden = false; });
+  // Graphics: High (shadows, ambient occlusion, bloom, dust) or Low, remembered between visits.
+  const QUALITY_KEY = 'station9.graphics';
+  const readQuality = () => { try { return localStorage.getItem(QUALITY_KEY) || 'high'; } catch { return 'high'; } };
+  const applyQuality = (q) => {
+    view.setQuality?.(q);
+    $('graphics').textContent = `Graphics: ${q === 'low' ? 'Low' : 'High'}`;
+  };
+  applyQuality(readQuality());
+  $('graphics').addEventListener('click', () => {
+    const q = readQuality() === 'low' ? 'high' : 'low';
+    try { localStorage.setItem(QUALITY_KEY, q); } catch { /* private window: just not remembered */ }
+    applyQuality(q);
+  });
   $('credits-back').addEventListener('click', () => { $('credits').hidden = true; $('title').hidden = false; });
 
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -335,7 +358,6 @@ export function startGame(createView) {
         audio.stopAlienClicks();
         world.dimBeat(ev.time + 0.4);
         if (stats.hunts === 1 || Math.random() < 0.3) intercom.say(LINES.hunt);
-        if (hatman.tryShow() && hatman.sightings === 1) intercom.say(LINES.hatman);
       } else if (ev.type === 'hunt') {
         audio.screech();
         revealTimer = 1.2; // you see it for about a second
@@ -482,7 +504,10 @@ export function startGame(createView) {
     updateSuite(dt);
 
     tricks.update(dt);
-    hatman.update(dt);
+    hatman.update(dt, {
+      alien, stage, elapsed, isInView, player: player.pos,
+      inSuite: suiteNow !== null, trickActive: !!tricks.active,
+    });
     intercom.update(dt);
     if (toastTimer > 0 && (toastTimer -= dt) <= 0) $('toast').hidden = true;
 

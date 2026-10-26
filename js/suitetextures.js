@@ -142,7 +142,7 @@ export function kioskTexture() {
   });
 }
 
-// A clipboard of daily wellness forms. "Closer" is always circled, in a different hand each time.
+// A clipboard of daily wellness forms. "Free" is always circled, in a different hand each time.
 export function wellnessFormTexture(seed = 1) {
   const rand = seeded(seed * 97 + 13);
   return makeCanvas(192, 256, (g, w, h) => {
@@ -152,14 +152,14 @@ export function wellnessFormTexture(seed = 1) {
     g.fillStyle = '#1c2a2a'; g.textAlign = 'left';
     g.font = `bold 15px ${PRINT}`; g.fillText('Daily Wellness Check', 22, 52);
     g.font = `12px ${PRINT}`; g.fillText('Today I feel:', 22, 80);
-    const opts = ['Fine', 'Good', 'Closer'];
+    const opts = ['Fine', 'Good', 'Free'];
     opts.forEach((o, i) => g.fillText(o, 40, 108 + i * 28));
     g.fillText('Please circle one.', 22, 200);
     // The circle, in someone's hand: a slightly different loop each time.
     g.strokeStyle = ['#1f3a8a', '#2b2620', '#5a2a6a'][Math.floor(rand() * 3)];
     g.lineWidth = 1.5 + rand() * 1.5;
     g.beginPath();
-    g.ellipse(58 + rand() * 4, 160 + rand() * 3, 30 + rand() * 6, 12 + rand() * 4, (rand() - 0.5) * 0.3, 0.2, Math.PI * 2.1);
+    g.ellipse(52 + rand() * 4, 160 + rand() * 3, 22 + rand() * 5, 12 + rand() * 4, (rand() - 0.5) * 0.3, 0.2, Math.PI * 2.1);
     g.stroke();
     g.font = `16px ${SCRAWL}`; g.fillStyle = g.strokeStyle;
     g.fillText(['M.', 'L.H.', 'Sam', 'P.R.', 'J.'][Math.floor(rand() * 5)], 120, 236);
@@ -204,10 +204,11 @@ export function graffitiTexture() {
     // Bottom (0.3-0.9 m): neat rows of the slogan, copied again and again. Careful handwriting.
     for (let y = yAt(0.36); y > yAt(0.9); y -= 46) {
       let x = 40 + rand() * 30;
-      while (x < w - 300) x += write('Closer every day.', x, y, 44, { tilt: (rand() - 0.5) * 0.02 }) + 40;
+      while (x < w - 300) x += write('Your labor is our freedom.', x, y, 44, { tilt: (rand() - 0.5) * 0.02 }) + 40;
     }
     // Middle (0.9-1.6 m): the slogan shortens with each row, and the writing grows.
-    const shrinking = ['Closer every day.', 'Closer every', 'Closer every', 'Closer', 'Closer', 'Clo', 'Clo'];
+    // Dropping words from the front, fixating on the last one.
+    const shrinking = ['Your labor is our freedom.', 'is our freedom.', 'is our freedom.', 'our freedom', 'freedom', 'freedom', 'free'];
     let row = 0;
     for (let y = yAt(0.98); y > yAt(1.6) && row < shrinking.length; y -= 54 + row * 4, row++) {
       let x = 30 + rand() * 60;

@@ -11,7 +11,7 @@ export const LINES = {
     'And please, walk. Running is loud. Loud is... discouraged.',
   ],
   power: 'Main power restored! The station is now forty percent brighter. So are you.',
-  comms: 'Rescue call sent. A shuttle will arrive in approximately... soon. Please proceed to the Escape Pod Bay. Closer every day.',
+  comms: 'Rescue call sent. A shuttle will arrive in approximately... soon. Please proceed to the Escape Pod Bay. Your labor is our freedom.',
   hunt: 'Please stay calm. A wellness check is on its way to you.',
   crate: 'Noise-makers! Throw one with Q to redirect unwanted attention. Attention is our most precious resource.',
   hatman: 'Please disregard any colleagues you may see in the corridors. Everyone is fine.',
@@ -26,8 +26,8 @@ export const LINES = {
   needComms: 'Pod launch requires a confirmed rescue window. Please contact Comms first.',
   noDecoys: 'You are out of noise-makers. Storage has plenty. Storage has always had plenty.',
   door: (n) => `Door ${n} is open for your convenience.`,
-  caught: 'Technician status: reassigned. Thank you for your contribution. Closer every day.',
-  win: 'Safe travels, Technician. Closer every day.',
+  caught: 'Technician status: reassigned. Thank you for your contribution. Your labor is our freedom.',
+  win: 'Safe travels, Technician. Your labor is our freedom.',
   // Read all twelve terminals and Marigold reads a roll call instead.
   winAll: [
     'Tomas. Imani. Lena. Priya. Wes. Jun. Ada. Sam. All present.',

@@ -82,8 +82,8 @@ export const PROPS = [
   ...[
     ['generator', [5, 7],   'reactor'],
     ['comms',     [23, 17], 'signal',      null, true],
-    ['control',   [16, 4],  'security'],
-    ['teleporter', [23, 7], 'calibration'],
+    ['control',   [16, 4],  'off'],      // dead: the Hat Man shows in its glass (js/hatman.js)
+    ['teleporter', [23, 7], 'off'],
     ['crew',      [12, 13], 'roster',      'Skipper suit\nis by the\nfridge.\n– S.D.', true],
     ['pod',       [17, 23], 'manifest'],
   ].map(([room, cell, screen, note = null, mug = false], i) => ({ id: 'console' + (i + 1), kind: 'console', room, cell, screen, note, mug })),

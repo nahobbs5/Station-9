@@ -50,7 +50,9 @@ npm test
 
 ## Engine
 
-The game is drawn with [Babylon.js](https://www.babylonjs.com) 9.28, loaded from a CDN. Add `?inspect` to the URL to open Babylon's Inspector for tuning lights and materials. Overall brightness is set by `TUNING` at the top of `js/babylon/util.js`.
+The game is drawn with [Babylon.js](https://www.babylonjs.com) 9.28, loaded from a CDN. Add `?inspect` to the URL to open Babylon's Inspector for tuning lights and materials.
+
+**Graphics: High / Low** (start menu, remembered between visits). High adds reflections from a real industrial room (a CC0 HDRI), flashlight shadows, ambient occlusion, bloom, film grain, a vignette and dust in the air. Low turns the expensive parts off. Add `?fps` to the URL for a frame-rate readout. Third-party assets and their licences are listed in `assets/LICENSES.md`. Overall brightness is set by `TUNING` at the top of `js/babylon/util.js`.
 
 Everything except drawing is engine-free (game rules, alien, tapes, HUD, minimap, sound, level layout), and the engine-specific code lives in `js/babylon/`. An earlier three.js build is in the git history.
 
@@ -77,7 +79,8 @@ Plain JavaScript modules and canvas-drawn textures, with Babylon.js loaded from 
 | `js/worldplan.js` | Where walls, props, posters and loose chairs go; how doors and room lights behave |
 | `js/textures.js` | Every canvas-drawn texture (walls, floor, posters, pipes, console screens, sticky notes, ...) |
 | `js/alienshape.js` | The alien's shape and how it moves |
-| `js/decorplan.js` | Where the wear and tear goes: pipes, leaks, broken lights, patches, clutter. Counts and densities are at the top |
+| `js/decorplan.js` | Where the wear and tear goes: pipes, leaks, broken lights, patches, clutter, corridor ribs, vents, stencilled markings (`STENCILS`) and stains. Counts and densities are at the top |
+| `js/modelplan.js` | Which downloaded 3D models (`assets/models/`) go where: barrels, power boxes, extinguishers, lamps, toolbox, medical box |
 | `js/decorsim.js` | Steam, drips, sparks and stuttering lights over time. Timings are at the top |
 | `js/minimap.js` | The explored-only minimap |
 | `js/intercom.js` | Marigold's lines (the station voice) |
@@ -94,7 +97,8 @@ Plain JavaScript modules and canvas-drawn textures, with Babylon.js loaded from 
 | `decor.js` | Builds the pipes, patches and clutter, and shows the steam, drips and sparks |
 | `alien.js` | Builds and animates the alien |
 | `props.js` | The Hat Man figure and thrown noise-makers |
-| `util.js` | Materials, canvas textures, and the brightness `TUNING` |
+| `util.js` | Materials, canvas textures, bevelled boxes, and the brightness `TUNING` |
+| `models.js` | Loads the 3D models in the background and swaps out their code-built stand-ins |
 
 `js/main.js` starts the game.
 

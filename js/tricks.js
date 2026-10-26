@@ -2,8 +2,9 @@
 // Rules from the Alien Behavior doc: one trick at a time, only while it patrols or investigates,
 // only on a spot within 25 m that you can't see, never in the first 90 s, and every trick
 // has a faint tell first. The cool-down shortens as you finish repairs.
-import { cellOf, cellCenter, lineClear } from './layout.js';
+import { cellOf, cellCenter } from './layout.js';
 import { LINES } from './intercom.js';
+import { HATMAN } from './hatman.js';
 
 const COOLDOWN = 60;
 const COOLDOWN_PER_REPAIR = 15;
@@ -13,8 +14,8 @@ const RANGE = 25;
 const IDLE_FOR_SOUND = 4; // seconds standing still before the sound trick may play
 
 export class Tricks {
-  // w: { layout, world, audio, alien, player, isInView(pos), isDoorClosed, hatman,
-  //      stage(), busy(), say(text) }
+  // w: { layout, world, audio, alien, player, isInView(pos), isDoorClosed, hatman, cameoSurfaces,
+  //      inSuite(), facing() (camera forward), stage(), busy(), say(text) }
   constructor(w) {
     this.w = w;
     this.cooldown = FIRST_TRICK;
@@ -43,9 +44,10 @@ export class Tricks {
     }
     const { alien } = this.w;
     if (alien.dormant > 0 || (alien.state !== 'patrol' && alien.state !== 'investigate')) return;
+    if (this.w.hatman.visible) return; // one at a time: his corridor warning counts
     this.cooldown -= dt;
     if (this.cooldown > 0) return;
-    const options = [this.lightTrick, this.doorTrick, this.soundTrick, this.propTrick, this.hatmanTrick]
+    const options = [this.lightTrick, this.doorTrick, this.soundTrick, this.propTrick, this.cameoTrick]
       .map((f) => f.call(this))
       .filter(Boolean);
     if (!options.length) { this.cooldown = 5; return; }
@@ -160,90 +162,27 @@ export class Tricks {
     };
   }
 
-  hatmanTrick() {
-    const { hatman } = this.w;
-    if (!hatman.ready()) return null;
+  // The Hat Man's reflection: you're close to dark glass (a dead monitor, the pod bay window) and
+  // facing it, and for a moment there's a faint figure behind you in it. Never in the suites.
+  cameoTrick() {
+    const { hatman, player, inSuite, cameoSurfaces, facing } = this.w;
+    if (inSuite() || hatman.visible || hatman.cameoActive) return null;
+    const fwd = facing();
+    const surface = cameoSurfaces.find((s) => {
+      const dx = s.x - player.pos.x, dz = s.z - player.pos.z, d = Math.hypot(dx, dz);
+      if (d > HATMAN.cameoRange) return false;
+      // You're in front of it (it faces you) and looking at it.
+      const facesYou = Math.sin(s.rotY) * -dx + Math.cos(s.rotY) * -dz > 0;
+      return facesYou && (fwd.x * dx + fwd.z * dz) / (d || 1) > 0.6;
+    });
+    if (!surface) return null;
+    let shown = false;
     return {
       update: (dt, t) => {
-        hatman.tryShow();
-        return true;
+        if (!shown) shown = hatman.showCameo(surface);
+        return !shown || t >= HATMAN.cameo;
       },
     };
-  }
-}
-
-// A still silhouette down the corridor. Gone once you've looked straight at it for a couple of seconds.
-// figure: the renderer's mesh { place(x, z, faceYaw, lightX, lightZ), setBacklight(k), hide(), position }
-// rig: the camera (js/rig.js).
-export class HatMan {
-  constructor(figure, layout, rig, isDoorClosed, world) {
-    this.figure = figure;
-    this.layout = layout;
-    this.camera = rig;
-    this.isDoorClosed = isDoorClosed;
-    this.world = world;
-    this.cooldown = 0;
-    this.visible = false;
-    this.sightings = 0;
-  }
-
-  get position() { return this.figure.position; }
-
-  ready() { return !this.visible && this.cooldown <= 0; }
-
-  // Find a spot down the corridor you're facing and put it there.
-  tryShow() {
-    if (!this.ready()) return false;
-    const cam = this.camera;
-    const dir = cam.forward();
-    const base = Math.atan2(dir.x, dir.z);
-    const from = { x: cam.position.x, z: cam.position.z };
-    for (const off of [0, 0.3, -0.3, 0.6, -0.6]) {
-      const a = base + off;
-      const dx = Math.sin(a), dz = Math.cos(a);
-      let d = 0.5;
-      while (d < 14) {
-        const x = from.x + dx * d, z = from.z + dz * d;
-        const cx = cellOf(x), cz = cellOf(z);
-        if (this.layout.walkDistance(x, z) < 0.4 || this.layout.isSolid(cx, cz) || (this.layout.isDoor(cx, cz) && this.isDoorClosed(cx, cz))) break;
-        d += 0.5;
-      }
-      d -= 0.9;
-      if (d < 5) continue;
-      const x = from.x + dx * d, z = from.z + dz * d;
-      // A red glow behind it turns it into a silhouette.
-      this.figure.place(x, z, Math.atan2(from.x - x, from.z - z), x + dx * 0.9, z + dz * 0.9);
-      this.figure.setBacklight(1);
-      this.visible = true;
-      this.life = 4;
-      this.looked = 0;
-      this.sightings++;
-      this.world.dimBeat(0.45); // its tell: the lights dip for a beat
-      return true;
-    }
-    return false;
-  }
-
-  hide() {
-    this.figure.hide();
-    this.visible = false;
-    this.cooldown = 40;
-  }
-
-  update(dt) {
-    if (!this.visible) { this.cooldown -= dt; return; }
-    this.life -= dt;
-    const cam = this.camera;
-    const dir = cam.forward();
-    const p = this.figure.position;
-    const tx = p.x - cam.position.x, ty = 1.5 - cam.position.y, tz = p.z - cam.position.z;
-    const len = Math.hypot(tx, ty, tz) || 1;
-    const looking = (dir.x * tx + dir.y * ty + dir.z * tz) / len > Math.cos(0.18) &&
-      lineClear(this.layout, cam.position, p, this.isDoorClosed);
-    if (looking) this.looked += dt;
-    // Slight flicker just before it goes.
-    this.figure.setBacklight(this.looked > 1.6 ? (Math.random() < 0.5 ? 0 : 1) : 1);
-    if (this.looked >= 2 || this.life <= 0) this.hide();
   }
 }
 

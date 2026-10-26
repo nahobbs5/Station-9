@@ -12,7 +12,7 @@ import { CameraRig } from '../js/rig.js';
 import { wallOutlines, wallSegments } from '../js/walls.js';
 import { CONSOLE_SCREENS, LIVE_SCREENS } from '../js/textures.js';
 import { alienRig } from '../js/alienshape.js';
-import { wallPanels, looseItems, furniturePlacement, signPlacements, emblemClearCells } from '../js/worldplan.js';
+import { wallPanels, looseItems, furniturePlacement, signPlacements, emblemClearCells, doorFrames, FRAME } from '../js/worldplan.js';
 import {
   Alien, inSight, SPEED, HUNT_TIMEOUT, LOSE_TRACK_AFTER, DOOR_FORCE_TIME, WARN_TIME, WARN_TIME_CLOSE,
 } from '../js/alien.js';
@@ -314,7 +314,8 @@ test('every audio file exists and is credited', async () => {
   used.push(...[...src.matchAll(/'(music\/[\w-]+\.mp3)'/g)].map((m) => m[1]));
   const credited = new Set(CREDITS.map((c) => c.file));
   for (const f of used) assert.ok(credited.has(f), `no credit for ${f}`);
-  assert.equal(used.length, CREDITS.length);
+  // Every audio credit is used (art credits, like the HDRI, are checked for existence above).
+  assert.equal(used.length, CREDITS.filter((c) => /\.(wav|mp3)$/.test(c.file)).length);
 });
 
 // Minimap -----------------------------------------------------------------
@@ -614,5 +615,63 @@ test('nothing stands in front of the Station 9 emblem in the airlock', () => {
   for (const it of looseItems(layout, clutter)) {
     assert.ok(!clear.has(`${Math.floor(it.x / TILE)},${Math.floor(it.z / TILE)}`), 'a loose chair or box in front of the emblem');
     for (const [x, z] of it.spots) assert.ok(!clear.has(`${x},${z}`), 'the prop trick could move something in front of the emblem');
+  }
+});
+
+test('corridor ribs stand against both walls, clear of doors, and stay shallow', () => {
+  const plan = planDecor(layout);
+  assert.ok(plan.ribs.length >= 12, `only ${plan.ribs.length} ribs`);
+  for (const r of plan.ribs) {
+    for (const p of [r.a, r.b]) {
+      // On the wall itself: just inside is walkable, just beyond is solid.
+      const ix = r.x - p.x, iz = r.z - p.z, l = Math.hypot(ix, iz);
+      assert.ok(layout.walkDistance(p.x + (ix / l) * 0.05, p.z + (iz / l) * 0.05) > 0);
+      assert.ok(layout.walkDistance(p.x - (ix / l) * 0.05, p.z - (iz / l) * 0.05) <= 0.02);
+      for (const d of layout.doors) assert.ok(Math.hypot(cellCenter(d.cx) - p.x, cellCenter(d.cz) - p.z) > 1.2);
+    }
+    // Sticks out no further than a pillar's depth: walkways stay wide.
+    assert.ok(DECOR.rib.inset <= 0.12);
+    assert.ok(Math.hypot(r.a.x - r.b.x, r.a.z - r.b.z) < 3.4);
+  }
+  for (const v of plan.vents) {
+    assert.ok(!layout.roomAt(...v.cell)?.safe, 'vent in a safe room');
+    for (const r of plan.ribs) for (const p of [r.a, r.b]) assert.ok(Math.hypot(v.x - p.x, v.z - p.z) > 0.5, 'vent under a rib');
+  }
+});
+
+test('door frames span the doorway from wall to wall', () => {
+  const frames = doorFrames(layout);
+  assert.equal(frames.length, layout.doors.length);
+  for (const f of frames) {
+    assert.ok(f.lo > 0.8 && f.hi > 0.8 && f.lo + f.hi < 2.6, `door at ${f.x},${f.z}: ${f.lo}+${f.hi}`);
+    // The jambs stand out no more than FRAME.inset, so walking through stays easy.
+    assert.ok(f.lo + f.hi - 2 * FRAME.inset > 1.6);
+  }
+});
+
+test('stencils sit flat on walls, door stripes flank every door, stains lie on open floor', () => {
+  const plan = planDecor(layout);
+  assert.ok(plan.stencils.filter((s) => s.kind === 'pressure').length >= 10);
+  for (const s of plan.stencils) {
+    const nx = Math.sin(s.rot), nz = Math.cos(s.rot); // out of the wall
+    assert.ok(layout.walkDistance(s.x + nx * 0.06, s.z + nz * 0.06) > 0, `${s.kind} at ${s.x.toFixed(1)},${s.z.toFixed(1)} floats`);
+    assert.ok(layout.walkDistance(s.x - nx * 0.06, s.z - nz * 0.06) < 0.03, `${s.kind} at ${s.x.toFixed(1)},${s.z.toFixed(1)} is off the wall`);
+  }
+  assert.equal(plan.stripes.length, layout.doors.length * 2);
+  for (const s of plan.stains) assert.ok(layout.walkDistance(s.x, s.z) > 0);
+  for (const s of plan.streaks) assert.ok(s.y - s.h / 2 >= 0.15, 'streak runs into the kick plate');
+});
+
+test('every model placement has its file, stands on open floor or hangs on a wall, and avoids safe rooms', async () => {
+  const { modelPlacements, MODELS, modelUrl } = await import('../js/modelplan.js');
+  const { existsSync } = await import('node:fs');
+  const list = modelPlacements(layout, planDecor(layout));
+  assert.ok(list.length >= 20);
+  for (const p of list) {
+    assert.ok(MODELS[p.model], p.model);
+    assert.ok(existsSync(new URL('../' + modelUrl(p.model), import.meta.url)), modelUrl(p.model));
+    assert.ok(layout.walkDistance(p.x, p.z) > 0, `${p.model} at ${p.x.toFixed(2)},${p.z.toFixed(2)} is inside a wall`);
+    const room = layout.roomAt(Math.floor(p.x / TILE), Math.floor(p.z / TILE));
+    assert.ok(!room?.safe, `${p.model} in a safe room`);
   }
 });

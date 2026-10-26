@@ -22,21 +22,21 @@ room: airlock
 author: Vantora Transit Group
 date: 2091-03-04
 
-Welcome to Station 9! You are now part of the future of getting from here to there. Please enjoy your stay, drink plenty of water, and remember: closer every day. If you have any concerns, tell Marigold. She is always listening.
+Welcome to Station 9! You are now part of the future of our wonderful enterprise. Please enjoy your stay, drink plenty of water, and remember: your labor is our freedom. If you have any concerns, tell Marigold. She is always listening.
 
 === t02: Director's memo
 room: control
 author: Tomas Brandt, station director
 date: 2091-03-28
 
-Team, Trials 1 through 10 are complete and on schedule, and the board is delighted. From Trial 11 we begin human transit, and every volunteer receives a generous bonus. Safety flags go through my office, so we keep one clear picture. Smile, everyone. We are making history. Closer every day.
+Team, Trials 1 through 10 are complete and on schedule, and the board is delighted. From Trial 11 we begin human transit, and every volunteer receives a generous bonus. Safety flags go through my office, so we keep one clear picture. Smile, everyone. We are making history. Your labor is our freedom.
 
 === t03: Research log, Trial 19
 room: teleporter
 author: Dr. Imani Okafor, lead physicist
 date: 2091-05-09
 
-The volunteer arrived eleven seconds before the departure timestamp. I flagged it. Tomas says clock drift. Clocks do not drift by the same eleven seconds, in the same direction, three trials in a row. I asked for a pause. The answer was a bonus for the whole lab.
+The volunteer arrived eleven seconds before the departure timestamp. Tomas says its clock drift, but I've flagged it anyway since that sounds highly improbable. Clocks do not consistently drift by eleven seconds in three completely seperate trials. I asked for future testing to be put on pause.
 
 === t04: Personal log
 room: crew
@@ -57,7 +57,7 @@ room: crew
 author: Jun Park, volunteer coordinator
 date: 2091-06-18
 
-The company wanted every consent signed in advance "for all future trials." I told the volunteers it was a formality. Tonight I pulled the Trial 27 form. The signature is perfect. It is just not theirs. It is the signature they would have if they were trying very hard to sign as themselves.
+The company wanted every consent signed in advance "for all future trials." I told the volunteers it was merely a formality. Tonight I pulled the Trial 27 form. The signature is perfect. It is just not theirs. It is the signature they would have if they were trying very hard to sign as themselves.
 
 === t07: Private drive
 room: teleporter
@@ -101,4 +101,4 @@ room: pod
 author: Marigold, station wellness assistant
 date: 2091-07-15
 
-Escape Pod 1 is ready for departure. Before you go, Vantora asks all passengers to complete a short feedback survey. Your wellness is our waypoint. Safe travels, and remember: closer every day.
+Escape Pod 1 is ready for departure. Before you go, Vantora asks all passengers to complete a short feedback survey. Your wellness is our waypoint. Safe travels, and remember: your labor is our freedom.

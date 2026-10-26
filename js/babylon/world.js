@@ -3,17 +3,17 @@
 import { TILE, WALL_H, cellCenter, key } from '../layout.js';
 import {
   wallTexture, floorTextures, ceilingTexture, doorTexture, posterTexture, mapTexture, wallSpot,
-  consoleScreen, LIVE_SCREENS, keyboardTexture, stickyNote, mugTexture, housingTexture,
+  consoleScreen, LIVE_SCREENS, keyboardTexture, stickyNote, mugTexture, housingTexture, hazardTexture, crtTexture,
 } from '../textures.js';
 import {
   wallPanels, guideStrips, propPlacement, propHeight, POSTERS, WALL_MAP, EMBLEM, looseItems,
-  stepDoor, roomLightLevel, teleporterLevel, roomState, roomBase,
+  stepDoor, roomLightLevel, teleporterLevel, roomState, roomBase, doorFrames, FRAME,
 } from '../worldplan.js';
 import { buildDecor } from './decor.js';
 import { furnitureKit, buildFurniture } from './furniture.js';
 import { buildSuites } from './suites.js';
 import { paddedSuite } from '../suiteplan.js';
-import { pbr, basic, toTexture, redraw, srgb, linear, compose, instances, TUNING } from './util.js';
+import { pbr, basic, toTexture, redraw, srgb, linear, compose, instances, TUNING, bevelBox } from './util.js';
 
 // Console status lights: Marigold until you've heard its tape, then Soft Teal (terminals spec).
 const UNREAD = 0xf2a92e, READ = 0x5fb3a8;
@@ -40,7 +40,8 @@ export function buildWorld(scene, layout) {
   const floorTex = floorTextures(layout);
   const floor = MeshBuilder.CreateGround('floor', { width: w * TILE, height: h * TILE }, scene);
   floor.position.set((w * TILE) / 2, 0, (h * TILE) / 2);
-  const floorMat = pbr(scene, { map: T(floorTex.map), roughness: 1, metalness: 0.45 });
+  // Relief from scanned metal plate (2 m tiles); roughness stays from the wet-patch map below.
+  const floorMat = pbr(scene, { map: T(floorTex.map), roughness: 1, metalness: 0.45, surface: 'floor', tile: [w, h], bump: 0.8, rough: false });
   // The wet patches: roughness comes from the map's green channel.
   floorMat.metallicTexture = toTexture(scene, floorTex.rough);
   floorMat.useRoughnessFromMetallicTextureGreen = true;
@@ -52,7 +53,7 @@ export function buildWorld(scene, layout) {
   const ceiling = MeshBuilder.CreateGround('ceiling', { width: w * TILE, height: h * TILE }, scene);
   ceiling.rotation.x = Math.PI;
   ceiling.position.set((w * TILE) / 2, WALL_H, (h * TILE) / 2);
-  ceiling.material = pbr(scene, { map: T(ceilingTexture(layout)), roughness: 0.95 });
+  ceiling.material = pbr(scene, { map: T(ceilingTexture(layout)), roughness: 0.95, surface: 'ceiling', tile: [w, h], bump: 0.6 });
 
   // Walls: flat panels following the station's outline (angled corners, curves), in three finishes.
   // The wellness suites' walls are padded instead (js/babylon/suites.js).
@@ -70,11 +71,41 @@ export function buildWorld(scene, layout) {
     }
     const mesh = new BABYLON.Mesh('walls' + v, scene);
     Object.assign(new BABYLON.VertexData(), { positions, normals, uvs, indices }).applyToMesh(mesh);
-    const mat = pbr(scene, { map: T(wallTexture(v)), roughness: 0.85, metalness: 0.25 });
+    // Wall UVs run 1 per 2 m along and 1 per 3 m up; the scans tile about every metre.
+    const mat = pbr(scene, { map: T(wallTexture(v)), roughness: 0.85, metalness: 0.25, surface: v === 0 ? 'panel' : 'rust', tile: [2, 3] });
     mat.backFaceCulling = false; // single-sided panels; seen only from the walkable side anyway
     mat.twoSidedLighting = true;
     mesh.material = mat;
   });
+
+  // Trims along every wall: a kick plate at the floor and a deeper trim at the ceiling, so walls
+  // meet floor and ceiling with an edge instead of a flat seam.
+  {
+    const positions = [], normals = [], uvs = [], indices = [];
+    const quad = (pts, n, uv) => {
+      const i = positions.length / 3;
+      for (const p of pts) positions.push(...p);
+      for (let k = 0; k < 4; k++) normals.push(...n);
+      uvs.push(...uv);
+      indices.push(i, i + 1, i + 2, i, i + 2, i + 3);
+    };
+    const trim = (p, y0, y1, out, capAt, capUp) => {
+      const ox = p.nx * out, oz = p.nz * out;
+      const u0 = p.u0 * 2, u1 = p.u1 * 2;
+      quad([[p.ax + ox, y0, p.az + oz], [p.bx + ox, y0, p.bz + oz], [p.bx + ox, y1, p.bz + oz], [p.ax + ox, y1, p.az + oz]], [p.nx, 0, p.nz], [u0, 0, u1, 0, u1, 1, u0, 1]);
+      quad([[p.ax, capAt, p.az], [p.bx, capAt, p.bz], [p.bx + ox, capAt, p.bz + oz], [p.ax + ox, capAt, p.az + oz]], [0, capUp ? 1 : -1, 0], [u0, 0, u1, 0, u1, 0.1, u0, 0.1]);
+    };
+    for (const p of panels) {
+      trim(p, 0, 0.16, 0.035, 0.16, true);
+      trim(p, WALL_H - 0.14, WALL_H, 0.045, WALL_H - 0.14, false);
+    }
+    const mesh = new BABYLON.Mesh('wall-trims', scene);
+    Object.assign(new BABYLON.VertexData(), { positions, normals, uvs, indices }).applyToMesh(mesh);
+    const mat = pbr(scene, { color: 0x34383b, roughness: 0.55, metalness: 0.7, surface: 'panel', tile: [1, 0.2] });
+    mat.backFaceCulling = false;
+    mat.twoSidedLighting = true;
+    mesh.material = mat;
+  }
 
   // Corridor guide strips: unlit, so they cost no lighting ----------
   const stripMesh = MeshBuilder.CreateBox('strips', { width: 0.7, height: 0.04, depth: 0.08 }, scene);
@@ -82,13 +113,13 @@ export function buildWorld(scene, layout) {
   instances(stripMesh, guideStrips(layout).map((s) => compose([s.x, 0.03, s.z], [0, s.rot, 0], [1, 1, 1])));
 
   // Doors -------------------------------------------------------------------
-  const doorMat = pbr(scene, { map: TBox(doorTexture('#62666b')), roughness: 0.55, metalness: 0.6 });
-  const hatchMat = pbr(scene, { map: TBox(doorTexture('#2f6e6a')), roughness: 0.45, metalness: 0.65 }); // safe-room hatches
+  const doorMat = pbr(scene, { map: TBox(doorTexture('#62666b')), roughness: 0.55, metalness: 0.6, surface: 'painted', tile: [1, 1.5] });
+  const hatchMat = pbr(scene, { map: TBox(doorTexture('#2f6e6a')), roughness: 0.45, metalness: 0.65, surface: 'painted', tile: [1, 1.5] }); // safe-room hatches
   const lampRed = basic(scene, 0xff2a1a);
   const lampGreen = basic(scene, 0x2aff7a);
   const doors = layout.doors.map((d) => {
     const along = d.axis === 'x';
-    const mesh = MeshBuilder.CreateBox('door', { width: along ? 0.25 : TILE, height: WALL_H, depth: along ? TILE : 0.25 }, scene);
+    const mesh = bevelBox('door', { width: along ? 0.25 : TILE, height: WALL_H, depth: along ? TILE : 0.25, bevel: 0.04 }, scene);
     mesh.material = d.safe ? hatchMat : doorMat;
     const x = cellCenter(d.cx), z = cellCenter(d.cz);
     mesh.position.set(x, WALL_H / 2, z);
@@ -101,6 +132,22 @@ export function buildWorld(scene, layout) {
     });
     return { ...d, x, z, mesh, lamps, closed: false, closedByPlayer: false, t: 0 };
   });
+  // Door frames: hazard-striped jambs either side, and a header across the top the door slides into.
+  const jambMat = pbr(scene, { map: TBox(hazardTexture()), roughness: 0.6, metalness: 0.4, surface: 'painted', tile: [1, 3] });
+  const headerMat = pbr(scene, { color: 0x3a3e41, roughness: 0.55, metalness: 0.7, surface: 'panel' });
+  for (const f of doorFrames(layout)) {
+    const [ax, az] = f.across;
+    const alongX = ax === 0; // the passage runs along x, so the frame's depth is along x
+    const size = (acrossW, alongD, height) => (alongX ? { width: alongD, depth: acrossW, height } : { width: acrossW, depth: alongD, height });
+    for (const d of [-f.lo, f.hi]) {
+      const jamb = bevelBox('jamb', { ...size(FRAME.inset * 2, FRAME.depth, WALL_H), bevel: 0.035 }, scene);
+      jamb.position.set(f.x + ax * d, WALL_H / 2, f.z + az * d);
+      jamb.material = jambMat;
+    }
+    const header = bevelBox('door-header', { ...size(f.lo + f.hi, FRAME.depth + 0.04, FRAME.header), bevel: 0.035 }, scene);
+    header.position.set(f.x + ax * (f.hi - f.lo) / 2, WALL_H - FRAME.header / 2, f.z + az * (f.hi - f.lo) / 2);
+    header.material = headerMat;
+  }
   const doorByKey = new Map(doors.map((d) => [key(d.cx, d.cz), d]));
   const setDoor = (door, closed) => {
     door.closed = closed;
@@ -110,15 +157,40 @@ export function buildWorld(scene, layout) {
   for (const d of doors) if (d.startClosed) { setDoor(d, true); d.t = 1; }
 
   // Room lights -------------------------------------------------------------
+  // A faint cone of light under each fixture, as if the air were hazy: glows, but lights nothing.
+  const coneFade = (() => {
+    const c = document.createElement('canvas');
+    c.width = 8; c.height = 128;
+    const g = c.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 0, 128);
+    grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(0.6, 'rgba(255,255,255,0.25)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad; g.fillRect(0, 0, 8, 128);
+    return toTexture(scene, c);
+  })();
+  const lightCone = (x, z, top, bottom, hex) => {
+    const cone = MeshBuilder.CreateCylinder('light-cone', { diameterTop: top, diameterBottom: bottom, height: WALL_H - 0.1, tessellation: 24, cap: BABYLON.Mesh.NO_CAP }, scene);
+    cone.position.set(x, (WALL_H - 0.1) / 2, z);
+    cone.material = basic(scene, hex, { opacity: coneFade, additive: true, alpha: 0.05 });
+    cone.material.backFaceCulling = false;
+    cone.material.disableDepthWrite = true;
+    cone.isPickable = false;
+    return cone;
+  };
+  const fixtureHousingMat = pbr(scene, { color: 0x26292b, roughness: 0.5, metalness: 0.7, surface: 'panel' });
   const rooms = layout.rooms.map((room) => {
     const r = roomState(room);
     const pos = [cellCenter(room.cx), WALL_H - 0.4, cellCenter(room.cz)];
     const light = pointLight(r.base.color, r.base.intensity, room.safe ? 7 : 13, pos);
     const fixtureMat = basic(scene, r.base.color);
+    // The glowing panel sits in a dark recessed housing.
+    const housing = bevelBox('fixture-housing', { width: 1.85, height: 0.12, depth: 0.5, bevel: 0.03 }, scene);
+    housing.position.set(pos[0], WALL_H - 0.06, pos[2]);
+    housing.material = fixtureHousingMat;
     const fixture = MeshBuilder.CreateBox('fixture', { width: 1.6, height: 0.06, depth: 0.3 }, scene);
-    fixture.position.set(pos[0], WALL_H - 0.03, pos[2]);
+    fixture.position.set(pos[0], WALL_H - 0.135, pos[2]);
     fixture.material = fixtureMat;
-    return Object.assign(r, { light, fixtureMat });
+    const cone = room.safe ? null : lightCone(pos[0], pos[2], 1.4, 5.2, r.base.color);
+    return Object.assign(r, { light, fixtureMat, cone });
   });
   let powered = false;
   const setPower = (on) => {
@@ -134,31 +206,37 @@ export function buildWorld(scene, layout) {
   // Consoles ----------------------------------------------------------------
   // A desk with a chunky, slightly tilted monitor (thick worn bezel, star badge, glowing screen),
   // a keyboard, and sometimes a sticky note or a Skipper mug. Built facing +Z inside `group`.
-  const housingMat = pbr(scene, { map: T(housingTexture()), roughness: 0.6, metalness: 0.25 });
-  const deskMat = pbr(scene, { color: 0x4d5154, roughness: 0.7, metalness: 0.5 });
+  const housingMat = pbr(scene, { map: T(housingTexture()), roughness: 0.6, metalness: 0.25, surface: 'painted', tile: [1, 1], bump: 0.6 });
+  const deskMat = pbr(scene, { color: 0x4d5154, roughness: 0.7, metalness: 0.5, surface: 'panel', tile: [1, 1] });
   const keysMat = pbr(scene, { map: T(keyboardTexture()), roughness: 0.8 });
   const darkMat = pbr(scene, { color: 0x1d1f21, roughness: 0.6, metalness: 0.3 });
   const badgeMat = basic(scene, 0xf2a92e);
   const mugMat = pbr(scene, { map: TWall(mugTexture()), roughness: 0.5 });
   const consoles = [];
+  // Scanlines and darkened edges over every screen, so they read as old curved CRT glass.
+  const crtMat = basic(scene, 0x000000, { opacity: T(crtTexture()) });
+  crtMat.disableDepthWrite = true;
   function makeConsole(group, p) {
     const part = (mesh, parent, x, y, z, mat) => { mesh.parent = parent; mesh.position.set(x, y, z); mesh.material = mat; return mesh; };
-    part(MeshBuilder.CreateBox('desk', { width: 1.3, height: 0.74, depth: 0.7 }, scene), group, 0, 0.37, -0.1, deskMat);
+    part(bevelBox('desk', { width: 1.3, height: 0.74, depth: 0.7, bevel: 0.025 }, scene), group, 0, 0.37, -0.1, deskMat);
     const mon = node('monitor', group);
     mon.position.set(0, 0.74, -0.2);
     mon.rotation.x = -0.12; // leans back a little
     part(MeshBuilder.CreateBox('stand', { width: 0.26, height: 0.06, depth: 0.24 }, scene), mon, 0, 0.03, 0, darkMat);
-    part(MeshBuilder.CreateBox('housing', { width: 0.8, height: 0.6, depth: 0.44 }, scene), mon, 0, 0.36, 0, housingMat);
+    part(bevelBox('housing', { width: 0.8, height: 0.6, depth: 0.44, bevel: 0.045 }, scene), mon, 0, 0.36, 0, housingMat);
     const screenZ = 0.222;
     const canvas = consoleScreen(p.screen, { stage: 0, layout });
     const tex = TWall(canvas);
     const screen = part(MeshBuilder.CreatePlane('screen', { width: 0.62, height: 0.39 }, scene), mon, 0, 0.38, screenZ, basic(scene, 0, { map: tex }));
     screen.rotation.y = Math.PI; // Babylon planes face -Z; turn it to face out of the monitor
+    const crt = part(MeshBuilder.CreatePlane('crt', { width: 0.62, height: 0.39 }, scene), mon, 0, 0.38, screenZ + 0.003, crtMat);
+    crt.rotation.y = Math.PI;
     // A soft glow just in front: it reads as light in the dark without lighting anything.
     const glow = part(MeshBuilder.CreatePlane('glow', { width: 0.78, height: 0.54 }, scene), mon, 0, 0.38, screenZ + 0.02,
       basic(scene, 0x5fb3a8, { additive: true, alpha: 0.07 }));
     glow.rotation.y = Math.PI;
     glow.material.disableDepthWrite = true;
+    if (p.screen === 'off') glow.setEnabled(false); // a dead monitor doesn't glow
     const badge = part(MeshBuilder.CreateCylinder('badge', { diameter: 0.05, height: 0.01, tessellation: 10 }, scene), mon, -0.34, 0.62, screenZ, badgeMat);
     badge.rotation.x = Math.PI / 2;
     part(MeshBuilder.CreateBox('keyboard', { width: 0.56, height: 0.035, depth: 0.2 }, scene), group, 0, 0.758, 0.12, darkMat);
@@ -195,13 +273,13 @@ export function buildWorld(scene, layout) {
     let statusPos = [0, 1, 0];
 
     if (p.id === 'generator') {
-      add(MeshBuilder.CreateBox('gen', { width: 1.5, height: 1.3, depth: 1.3 }, scene), 0, 0.65, 0).material = pbr(scene, { color: 0x55524a, roughness: 0.6, metalness: 0.6 });
+      add(bevelBox('gen', { width: 1.5, height: 1.3, depth: 1.3, bevel: 0.05 }, scene), 0, 0.65, 0).material = pbr(scene, { color: 0x55524a, roughness: 0.6, metalness: 0.6 });
       for (const side of [-0.45, 0.45]) {
         add(MeshBuilder.CreateCylinder('coil', { diameter: 0.44, height: 0.9, tessellation: 12 }, scene), side, 1.75, 0).material = pbr(scene, { color: 0x8a6a3a, metalness: 0.8, roughness: 0.4 });
       }
       statusPos = [0, 1.1, 0.67];
     } else if (p.id === 'comms') {
-      add(MeshBuilder.CreateBox('desk', { width: 1.5, height: 0.95, depth: 0.9 }, scene), 0, 0.48, 0).material = pbr(scene, { color: 0x3d4a52, roughness: 0.6, metalness: 0.5 });
+      add(bevelBox('desk', { width: 1.5, height: 0.95, depth: 0.9, bevel: 0.03 }, scene), 0, 0.48, 0).material = pbr(scene, { color: 0x3d4a52, roughness: 0.6, metalness: 0.5 });
       const screen = add(MeshBuilder.CreatePlane('screen', { width: 1.1, height: 0.55, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, scene), 0, 1.3, 0.2);
       screen.rotation.x = -0.25;
       screen.material = basic(scene, 0x103a33);
@@ -217,7 +295,7 @@ export function buildWorld(scene, layout) {
       win.material = pbr(scene, { color: 0x0a1418, roughness: 0.1, metalness: 0.9 });
       statusPos = [-0.7, 1.35, 0.5];
     } else if (p.id === 'crate') {
-      add(MeshBuilder.CreateBox('crate', { width: 1.3, height: 0.8, depth: 0.9 }, scene), 0, 0.4, 0).material = pbr(scene, { color: 0x4b5232, roughness: 0.8 });
+      add(bevelBox('crate', { width: 1.3, height: 0.8, depth: 0.9, bevel: 0.03 }, scene), 0, 0.4, 0).material = pbr(scene, { color: 0x4b5232, roughness: 0.8 });
       add(MeshBuilder.CreateBox('stripe', { width: 1.32, height: 0.12, depth: 0.92 }, scene), 0, 0.62, 0).material = pbr(scene, { color: 0xc9a227, roughness: 0.6 });
       statusPos = [0, 0.9, 0];
       statusMat.emissiveColor = srgb(0xffaa33);
@@ -318,6 +396,8 @@ export function buildWorld(scene, layout) {
   function update(dt, time, alien = null, player = null) {
     decor.update(dt, time, player);
     suites.update(dt, time);
+    // The CRT overlay breathes very slightly, like an old tube's refresh.
+    crtMat.alpha = 0.88 + Math.random() * 0.12;
     // A screen that just changed flickers for a moment.
     for (const c of consoles) {
       if (c.flicker <= 0) continue;
@@ -328,6 +408,7 @@ export function buildWorld(scene, layout) {
     for (const r of rooms) {
       const k = roomLightLevel(r, dt, time, alien, powered);
       r.light.intensity = r.base.intensity * k * TUNING.light;
+      if (r.cone) { r.cone.material.emissiveColor = srgb(r.base.color); r.cone.material.alpha = 0.05 * Math.min(1.5, k); }
       r.fixtureMat.emissiveColor = srgb(r.base.color).scale(Math.max(0.05, k));
     }
     if (props.teleporterLight) {

@@ -80,7 +80,7 @@ export const propHeight = (p) => PROP_HEIGHT[p.kind] ?? 1;
 
 // Posters: [room, wall side, lines, accent colour, width, height].
 export const POSTERS = [
-  ['airlock', 'n', ['CLOSER', 'EVERY', 'DAY.'], '#b3332a'],
+  ['airlock', 'n', ['YOUR LABOR', 'IS OUR', 'FREEDOM.'], '#b3332a'],
   ['crew', 'w', ['YOUR WELLNESS', 'IS OUR', 'WAYPOINT.'], '#2f6e6a'],
   ['storage', 'w', ['SMALL STEPS.', 'BIG', 'POSSIBILITIES.'], '#b3332a'],
   ['generator', 'w', ['POWER IS A', 'PRIVILEGE.', 'EARN IT.'], '#2f6e4a'],
@@ -127,6 +127,31 @@ export function looseItems(layout, clutterCells) {
     }
   }
   return items;
+}
+
+// How far from (x, z) to the nearest wall heading along (dx, dz), or null if there's none within `max`.
+export function wallAlong(layout, x, z, dx, dz, max) {
+  if (layout.walkDistance(x + dx * max, z + dz * max) > 0) return null;
+  let lo = 0, hi = max;
+  for (let i = 0; i < 24; i++) {
+    const mid = (lo + hi) / 2;
+    if (layout.walkDistance(x + dx * mid, z + dz * mid) > 0) lo = mid; else hi = mid;
+  }
+  return lo;
+}
+
+// A heavy frame round every door: a jamb on each side where the opening meets the wall, and a
+// header across the top that the door slides up into. across: unit direction the door spans.
+export const FRAME = { jamb: 0.24, depth: 0.5, header: 0.32, inset: 0.12 }; // inset: how far it stands out from the wall
+export function doorFrames(layout) {
+  return layout.doors.map((d) => {
+    const x = cellCenter(d.cx), z = cellCenter(d.cz);
+    const across = d.axis === 'x' ? [0, 1] : [1, 0];
+    const max = TILE / 2 + 0.6;
+    const lo = wallAlong(layout, x, z, -across[0], -across[1], max) ?? TILE / 2;
+    const hi = wallAlong(layout, x, z, across[0], across[1], max) ?? TILE / 2;
+    return { x, z, across, lo, hi, axis: d.axis, safe: !!d.safe, yaw: d.axis === 'x' ? Math.PI / 2 : 0 };
+  });
 }
 
 // A door slides up into the ceiling. d.t is 1 when shut; returns its centre height.

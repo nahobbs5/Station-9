@@ -226,8 +226,11 @@ export function posterTexture(lines, accent) {
       g.fillText(line, 34, 100 + i * 80);
     });
     g.fillStyle = '#2b2b2b';
-    g.font = 'bold 30px Oswald, Impact, sans-serif';
-    g.fillText('VANTORA TRANSIT GROUP · CLOSER EVERY DAY.', 34, h - 36);
+    // The tagline, shrunk until it fits the poster's width.
+    const tagline = 'VANTORA TRANSIT GROUP · YOUR LABOR IS OUR FREEDOM.';
+    let size = 30;
+    do g.font = `bold ${size}px Oswald, Impact, sans-serif`; while (g.measureText(tagline).width > w - 68 && --size > 14);
+    g.fillText(tagline, 34, h - 36);
     grime(g, w, h, rand, 60, 0.3);
     g.fillStyle = 'rgba(0,0,0,0.25)';
     g.fillRect(w * 0.7, 0, 40, h * 0.2); // a tear
@@ -386,12 +389,22 @@ const MENUS = {
   comms: ['Outgoing', 'Incoming (2)', 'Recorded (7)', 'System', 'Emergency', 'Test Signal'],
   security: ['Cameras', 'Doors', 'Alarms', 'Access'],
 };
-export const CONSOLE_SCREENS = ['doors', 'system', 'marigold', 'research', 'trial31', 'personnel-lena', 'personnel-jun', 'personnel-sam',
+export const CONSOLE_SCREENS = ['off', 'doors', 'system', 'marigold', 'research', 'trial31', 'personnel-lena', 'personnel-jun', 'personnel-sam',
   'inventory', 'power', 'comms', 'pod', 'reactor', 'signal', 'security', 'calibration', 'roster', 'manifest'];
 // Screens that change as you make progress (redrawn after each repair).
 export const LIVE_SCREENS = new Set(['system', 'power', 'comms', 'pod', 'reactor', 'signal']);
 
 export function consoleScreen(kind, state = {}) {
+  // A dead monitor: near-black glass with a faint sheen. The Hat Man's cameo shows in these.
+  if (kind === 'off') {
+    return makeCanvas(512, 320, (g, w, h) => {
+      g.fillStyle = '#050707'; g.fillRect(0, 0, w, h);
+      const sheen = g.createLinearGradient(0, 0, w, h);
+      sheen.addColorStop(0, 'rgba(160,190,185,0)'); sheen.addColorStop(0.42, 'rgba(160,190,185,0.07)');
+      sheen.addColorStop(0.5, 'rgba(160,190,185,0.02)'); sheen.addColorStop(1, 'rgba(160,190,185,0)');
+      g.fillStyle = sheen; g.fillRect(0, 0, w, h);
+    });
+  }
   const stage = state.stage ?? 0;
   const rand = seeded(kind.length * 97 + 13);
   return makeCanvas(512, 320, (g, w, h) => {
@@ -593,7 +606,7 @@ export function consoleScreen(kind, state = {}) {
       text('Passengers ........... 0 / 4', 30, 130, { size: 15 });
       text('— none listed —', 30, 170, { size: 15, color: C.dim });
       text('Technician: NOT ON LIST', 30, 210, { size: 15, color: C.red });
-      text('Closer every day.', 30, 292, { size: 13, color: C.marigold });
+      text('Your labor is our freedom.', 30, 292, { size: 13, color: C.marigold });
     }
     // Scan lines.
     g.fillStyle = 'rgba(143,224,207,0.05)';
@@ -638,7 +651,7 @@ export function mugTexture() {
   return makeCanvas(256, 128, (g, w, h) => {
     g.fillStyle = '#efe6d2'; g.fillRect(0, 0, w, h);
     drawMascot(g, 80, 64, 26);
-    g.fillStyle = '#0f4c4a'; g.font = `bold 14px ${HEAD}`; g.fillText('CLOSER EVERY DAY', 120, 70);
+    g.fillStyle = '#0f4c4a'; g.font = `bold 14px ${HEAD}`; g.fillText('YOUR LABOR', 120, 60); g.fillText('IS OUR FREEDOM', 120, 78);
     g.fillStyle = 'rgba(60,40,20,0.35)'; g.fillRect(0, h - 10, w, 10); // coffee stain ring
   });
 }
@@ -787,5 +800,143 @@ export function leafTexture() {
     g.fillStyle = grad;
     g.beginPath(); g.moveTo(w / 2, h); g.bezierCurveTo(-w * 0.1, h * 0.6, w * 0.2, h * 0.15, w / 2, 0); g.bezierCurveTo(w * 0.8, h * 0.15, w * 1.1, h * 0.6, w / 2, h); g.fill();
     g.strokeStyle = 'rgba(20,40,15,0.6)'; g.lineWidth = 2; g.beginPath(); g.moveTo(w / 2, h); g.lineTo(w / 2, 6); g.stroke();
+  });
+}
+
+// Door jambs: worn yellow and black hazard stripes, chipped and grimy (tall, for a 3 m jamb).
+export function hazardTexture() {
+  const rand = seeded(23);
+  return tex(64, 384, (g, w, h) => {
+    g.fillStyle = '#c99a24'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#161616';
+    for (let y = -w; y < h + w; y += 48) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y + w * 0.75); g.lineTo(w, y + w * 0.75 + 24); g.lineTo(0, y + 24); g.fill(); }
+    grime(g, w, h, rand, 40, 0.5);
+    scratches(g, w, h, rand, 30, 0.3);
+    // Paint scuffed off at knee and hand height, down to grey metal.
+    for (const y of [h * 0.55, h * 0.8]) {
+      for (let i = 0; i < 6; i++) { g.fillStyle = `rgba(95,95,92,${0.4 + rand() * 0.4})`; g.fillRect(rand() * w, y + (rand() - 0.5) * 30, 3 + rand() * 10, 2 + rand() * 6); }
+    }
+    const grad = g.createLinearGradient(0, h * 0.85, 0, h);
+    grad.addColorStop(0, 'rgba(25,18,10,0)'); grad.addColorStop(1, 'rgba(25,18,10,0.75)'); // kicked and dirty at the bottom
+    g.fillStyle = grad; g.fillRect(0, h * 0.85, w, h * 0.15);
+  });
+}
+
+// A wall vent: angled louvres in a dark slot, dust caught on the slats.
+export function ventTexture() {
+  const rand = seeded(29);
+  return tex(256, 128, (g, w, h) => {
+    g.fillStyle = '#08090a'; g.fillRect(0, 0, w, h);
+    const m = 10;
+    for (let y = m; y < h - m; y += 12) {
+      const grad = g.createLinearGradient(0, y, 0, y + 9);
+      grad.addColorStop(0, '#6c7174'); grad.addColorStop(0.5, '#454a4d'); grad.addColorStop(1, '#1e2123');
+      g.fillStyle = grad; g.fillRect(m, y, w - m * 2, 9);
+      g.fillStyle = 'rgba(150,140,120,0.25)'; g.fillRect(m, y, w - m * 2, 1.5); // dust on each slat
+    }
+    g.strokeStyle = '#2c3033'; g.lineWidth = m; g.strokeRect(m / 2, m / 2, w - m, h - m);
+    for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(30,22,12,${0.15 + rand() * 0.3})`; g.fillRect(m + rand() * (w - m * 2), m + rand() * (h - m * 2), 2 + rand() * 18, 2 + rand() * 4); } // dust and grease on the slats
+    g.fillStyle = '#16181a';
+    for (const [x, y] of [[5, 5], [w - 5, 5], [5, h - 5], [w - 5, h - 5]]) { g.beginPath(); g.arc(x, y, 3, 0, 7); g.fill(); } // screws
+  });
+}
+
+// Stage 4 decals --------------------------------------------------------------
+// Sprayed stencil lettering on a transparent background: soft overspray, a stencil gap through
+// each line, and paint worn away in specks. lines: one or two short lines of capitals.
+export function stencilTexture(lines, { color = '#bdb7a6', seed = 3, w = 512, h = 256 } = {}) {
+  const rand = seeded(seed);
+  return tex(w, h, (g) => {
+    const size = Math.floor((h * 0.8) / lines.length / 1.08);
+    g.font = `bold ${size}px "Arial Narrow", "Helvetica Neue", Arial, sans-serif`;
+    g.textAlign = 'left'; g.textBaseline = 'middle';
+    const gap = size * 0.06; // letter spacing, as stencil sheets have
+    for (const [i, t] of lines.entries()) {
+      const y = h / 2 + (i - (lines.length - 1) / 2) * size * 1.08;
+      const widths = [...t].map((ch) => g.measureText(ch).width + gap);
+      const total = widths.reduce((a, b) => a + b, 0) - gap;
+      const sx = Math.min(1, (w * 0.94) / total);
+      g.save(); g.translate((w - total * sx) / 2, y); g.scale(sx, 1);
+      let x = 0;
+      for (const [k, ch] of [...t].entries()) {
+        g.globalCompositeOperation = 'source-over';
+        g.fillStyle = color; g.shadowColor = color; g.shadowBlur = size * 0.04; // a little overspray
+        g.fillText(ch, x, 0);
+        g.shadowBlur = 0;
+        // Stencil bridges: letters with closed loops get thin gaps so their middles don't fall out.
+        if ('ABDOPQR0689'.includes(ch)) {
+          g.globalCompositeOperation = 'destination-out';
+          const cx = x + widths[k] * 0.45, bw = Math.max(2, size * 0.07);
+          g.fillRect(cx - bw / 2, -size * 0.5, bw, size * 0.28);
+          g.fillRect(cx - bw / 2, size * 0.18, bw, size * 0.3);
+        }
+        x += widths[k];
+      }
+      g.restore();
+    }
+    g.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < 500; i++) { g.fillStyle = `rgba(0,0,0,${0.3 + rand() * 0.7})`; g.fillRect(rand() * w, rand() * h, 1 + rand() * 5, 1 + rand() * 3); }
+    for (let i = 0; i < 6; i++) { g.fillStyle = `rgba(0,0,0,${0.25 + rand() * 0.35})`; g.beginPath(); g.arc(rand() * w, rand() * h, 6 + rand() * 30, 0, 7); g.fill(); } // scuffed patches
+    g.globalCompositeOperation = 'source-over';
+  });
+}
+
+// Worn hazard stripes painted on the floor either side of a door (long along u).
+export function floorStripeTexture() {
+  const rand = seeded(31);
+  return tex(512, 64, (g, w, h) => {
+    g.fillStyle = '#c99a24'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#141414';
+    for (let x = -h; x < w + h; x += 56) { g.beginPath(); g.moveTo(x, h); g.lineTo(x + 28, h); g.lineTo(x + 28 + h, 0); g.lineTo(x + h, 0); g.fill(); }
+    grime(g, w, h, rand, 30, 0.6);
+    g.globalCompositeOperation = 'destination-out'; // worn through where feet go
+    for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(0,0,0,${0.4 + rand() * 0.6})`; g.fillRect(w * (0.25 + rand() * 0.5) + (rand() - 0.5) * w * 0.3, rand() * h, 1 + rand() * 6, 1 + rand() * 4); }
+    g.globalCompositeOperation = 'source-over';
+  });
+}
+
+// Streaks running down a wall from something above: grime (under vents) or rust (under plates).
+export function streakTexture(kind) {
+  const rand = seeded(kind === 'rust' ? 37 : 41);
+  const rgb = kind === 'rust' ? '110,52,18' : '24,20,14';
+  return tex(128, 256, (g, w, h) => {
+    for (let i = 0; i < 26; i++) {
+      const x = rand() * w, sw = 2 + rand() * 9, len = h * (0.25 + rand() * 0.75), a = 0.15 + rand() * 0.45;
+      const grad = g.createLinearGradient(0, 0, 0, len);
+      grad.addColorStop(0, `rgba(${rgb},${a})`); grad.addColorStop(1, `rgba(${rgb},0)`);
+      g.fillStyle = grad; g.fillRect(x, 0, sw, len);
+    }
+    const top = g.createLinearGradient(0, 0, 0, h * 0.2);
+    top.addColorStop(0, `rgba(${rgb},0.45)`); top.addColorStop(1, `rgba(${rgb},0)`);
+    g.fillStyle = top; g.fillRect(0, 0, w, h * 0.2);
+  });
+}
+
+// A stain on the floor: oil (dark, glossy) or dried water (pale tide marks).
+export function stainTexture(kind) {
+  const rand = seeded(kind === 'oil' ? 43 : 47);
+  return tex(256, 256, (g, w, h) => {
+    const rgb = kind === 'oil' ? '8,7,6' : '40,38,32';
+    for (let i = 0; i < 14; i++) {
+      const r = 20 + rand() * 70, x = w / 2 + (rand() - 0.5) * (w - r * 2) * 0.7, y = h / 2 + (rand() - 0.5) * (h - r * 2) * 0.7;
+      const grad = g.createRadialGradient(x, y, 0, x, y, r);
+      grad.addColorStop(0, `rgba(${rgb},${kind === 'oil' ? 0.55 : 0.3})`); grad.addColorStop(0.7, `rgba(${rgb},${kind === 'oil' ? 0.35 : 0.15})`); grad.addColorStop(1, `rgba(${rgb},0)`);
+      g.fillStyle = grad; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+    }
+    if (kind === 'water') {
+      g.strokeStyle = 'rgba(150,145,130,0.35)'; g.lineWidth = 2;
+      for (let i = 0; i < 3; i++) { g.beginPath(); g.ellipse(w / 2, h / 2, 50 + i * 22 + rand() * 10, 40 + i * 20 + rand() * 10, rand(), 0, 7); g.stroke(); } // tide marks
+    }
+  });
+}
+
+// Over a console screen: scanlines and darker edges, as if the glass were curved.
+export function crtTexture() {
+  return tex(256, 160, (g, w, h) => {
+    g.fillStyle = 'rgba(0,0,0,0.38)';
+    for (let y = 0; y < h; y += 3) g.fillRect(0, y, w, 1);
+    const v = g.createRadialGradient(w / 2, h / 2, h * 0.35, w / 2, h / 2, w * 0.62);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.75)');
+    g.fillStyle = v; g.fillRect(0, 0, w, h);
   });
 }

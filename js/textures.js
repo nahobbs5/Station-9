@@ -1123,9 +1123,9 @@ export function commsCallScreen({ p = 0, sent = false, seconds = 5 } = {}) {
       g.lineWidth = 2; g.strokeStyle = finished ? green : active ? amber : '#3b4446';
       g.beginPath(); g.arc(566, y - 5, 9, 0, 7); g.stroke();
       if (finished) { g.beginPath(); g.moveTo(561, y - 5); g.lineTo(565, y - 1); g.lineTo(572, y - 10); g.stroke(); }
-      t(name, 586, y, { size: 14, color: finished || active ? text : '#5d676a' });
-      if (finished) t(done, 738, y, { size: 13, color: green, align: 'right' });
-      else if (active) t(i === 5 ? 'LISTENING…' : 'WORKING…', 738, y, { size: 13, color: amber, align: 'right' });
+      t(name, 584, y, { size: 13, color: finished || active ? text : '#5d676a' });
+      if (finished) t(done, 744, y, { size: 11, color: green, align: 'right' });
+      else if (active) t('…', 744, y, { size: 13, color: amber, align: 'right' });
     });
     // Bottom: dialling line, timer, and the button.
     panel(232, 440, 520, 112);

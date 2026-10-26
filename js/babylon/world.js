@@ -420,8 +420,7 @@ export function buildWorld(scene, layout) {
         const cx = px + 40 + i * 56;
         const lamp = MeshBuilder.CreateSphere('switch-lamp', { diameter: 0.045, segments: 6 }, scene);
         lamp.parent = panel;
-        // Plane faces are mirrored for wall planes (TWall), so x runs the other way.
-        lamp.position.set(-((cx / 512) - 0.5) * f.w, (0.5 - 93 / 280) * f.h, 0.09);
+        lamp.position.set(((cx / 512) - 0.5) * f.w, (0.5 - 93 / 280) * f.h, 0.09);
         lamps.push({ lamp, group: gi });
       }
       px += n * 56 + 24 + 10;

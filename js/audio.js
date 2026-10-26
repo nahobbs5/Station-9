@@ -454,6 +454,15 @@ export class GameAudio {
     s.play();
   }
 
+  // The ending: fade out everything the alien makes, then stop its loops (the game stops updating it).
+  silenceAlien(seconds = 1.5) {
+    this.alienSilenced = true;
+    this.alienBus.gain.setTargetAtTime(0, this.ctx.currentTime, seconds / 4);
+    this.stopAlienClicks();
+    this.beatTimer = 0;
+    setTimeout(() => { this.alienSteps?.pause(); this.murmur?.pause(); }, seconds * 1000);
+  }
+
   stopAlienClicks() {
     for (const s of [...this.clicks]) { s.stop(); s.onEnded(); }
   }

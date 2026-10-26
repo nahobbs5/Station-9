@@ -417,6 +417,7 @@ export function startGame(createView) {
 
   function win() {
     state = 'won';
+    audio.silenceAlien(); // nothing of it in the ending
     const allLore = loreRead.size === LORE_TOTAL;
     tapes.stop(false);
     intercom.stop();
@@ -427,7 +428,6 @@ export function startGame(createView) {
       intercom.say(LINES.win, { priority: true });
     }
     intercom.update(0);
-    audio.play2D('teleporter', { volume: 1.0, rate: 0.5 });
     audio.play2D('rumble', { volume: 1.0 });
     audio.play2D('whoosh', { volume: 1.0 });
     endMusic.play(3000);

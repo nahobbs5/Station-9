@@ -4,15 +4,19 @@ import { TILE, WALL_H, cellCenter, key } from '../layout.js';
 import {
   wallTexture, floorTextures, ceilingTexture, doorTexture, posterTexture, mapTexture, wallSpot,
   consoleScreen, LIVE_SCREENS, keyboardTexture, stickyNote, mugTexture, housingTexture, hazardTexture, crtTexture,
+  commsCallScreen, reactorPlateTexture, switchPanelTexture, SWITCH_GROUPS,
 } from '../textures.js';
 import {
   wallPanels, guideStrips, propPlacement, propHeight, POSTERS, WALL_MAP, EMBLEM, looseItems,
-  stepDoor, roomLightLevel, teleporterLevel, roomState, roomBase, doorFrames, FRAME,
+  stepDoor, roomLightLevel, teleporterLevel, roomState, roomBase, doorFrames, FRAME, kickPlateSpans, generatorFixtures,
 } from '../worldplan.js';
 import { buildDecor } from './decor.js';
 import { furnitureKit, buildFurniture } from './furniture.js';
 import { buildSuites } from './suites.js';
+import { buildVentMeshes } from './vents.js';
+import { cutVentHoles } from '../vents.js';
 import { paddedSuite } from '../suiteplan.js';
+import { grateSpots } from '../vents.js';
 import { pbr, basic, toTexture, redraw, srgb, linear, compose, instances, TUNING, bevelBox } from './util.js';
 
 // Console status lights: Marigold until you've heard its tape, then Soft Teal (terminals spec).
@@ -57,16 +61,18 @@ export function buildWorld(scene, layout) {
 
   // Walls: flat panels following the station's outline (angled corners, curves), in three finishes.
   // The wellness suites' walls are padded instead (js/babylon/suites.js).
-  const panels = wallPanels(layout).filter((p) => !paddedSuite(layout, p));
+  // The wall vents' openings are cut out (js/vents.js cutVentHoles), so you can see out from inside.
+  const panels = cutVentHoles(wallPanels(layout).filter((p) => !paddedSuite(layout, p)), layout);
   [0, 1, 2].forEach((v) => {
     const list = panels.filter((p) => p.variant === v);
     if (!list.length) return;
     const positions = [], normals = [], uvs = [], indices = [];
     for (const p of list) {
       const i = positions.length / 3;
-      positions.push(p.ax, 0, p.az, p.bx, 0, p.bz, p.bx, WALL_H, p.bz, p.ax, WALL_H, p.az);
+      const y0 = p.y0 ?? 0, y1 = p.y1 ?? WALL_H; // a piece round a vent opening can be a strip
+      positions.push(p.ax, y0, p.az, p.bx, y0, p.bz, p.bx, y1, p.bz, p.ax, y1, p.az);
       for (let k = 0; k < 4; k++) normals.push(p.nx, 0, p.nz);
-      uvs.push(p.u0, 0, p.u1, 0, p.u1, 1, p.u0, 1);
+      uvs.push(p.u0, y0 / WALL_H, p.u1, y0 / WALL_H, p.u1, y1 / WALL_H, p.u0, y1 / WALL_H);
       indices.push(i, i + 1, i + 2, i, i + 2, i + 3);
     }
     const mesh = new BABYLON.Mesh('walls' + v, scene);
@@ -95,8 +101,13 @@ export function buildWorld(scene, layout) {
       quad([[p.ax + ox, y0, p.az + oz], [p.bx + ox, y0, p.bz + oz], [p.bx + ox, y1, p.bz + oz], [p.ax + ox, y1, p.az + oz]], [p.nx, 0, p.nz], [u0, 0, u1, 0, u1, 1, u0, 1]);
       quad([[p.ax, capAt, p.az], [p.bx, capAt, p.bz], [p.bx + ox, capAt, p.bz + oz], [p.ax + ox, capAt, p.az + oz]], [0, capUp ? 1 : -1, 0], [u0, 0, u1, 0, u1, 0.1, u0, 0.1]);
     };
-    for (const p of panels) {
-      trim(p, 0, 0.16, 0.035, 0.16, true);
+    // A piece of panel p from fraction k0 to k1 along it.
+    const part = (p, k0, k1) => ({ ...p, ax: p.ax + (p.bx - p.ax) * k0, az: p.az + (p.bz - p.az) * k0, bx: p.ax + (p.bx - p.ax) * k1, bz: p.az + (p.bz - p.az) * k1,
+      u0: p.u0 + (p.u1 - p.u0) * k0, u1: p.u0 + (p.u1 - p.u0) * k1 });
+    const grates = grateSpots(layout);
+    // Whole panels, before any are cut round vent holes, so each wall gets one run of trim.
+    for (const p of wallPanels(layout).filter((q) => !paddedSuite(layout, q))) {
+      for (const [k0, k1] of kickPlateSpans(p, grates)) trim(part(p, k0, k1), 0, 0.16, 0.035, 0.16, true); // broken round wall vents
       trim(p, WALL_H - 0.14, WALL_H, 0.045, WALL_H - 0.14, false);
     }
     const mesh = new BABYLON.Mesh('wall-trims', scene);
@@ -179,7 +190,8 @@ export function buildWorld(scene, layout) {
   const fixtureHousingMat = pbr(scene, { color: 0x26292b, roughness: 0.5, metalness: 0.7, surface: 'panel' });
   const rooms = layout.rooms.map((room) => {
     const r = roomState(room);
-    const pos = [cellCenter(room.cx), WALL_H - 0.4, cellCenter(room.cz)];
+    // The reactor fills the generator room's middle up to the ceiling, so its light hangs to one side.
+    const pos = [cellCenter(room.cx), WALL_H - 0.4, cellCenter(room.cz) - (room.id === 'generator' ? 2.6 : 0)];
     const light = pointLight(r.base.color, r.base.intensity, room.safe ? 7 : 13, pos);
     const fixtureMat = basic(scene, r.base.color);
     // The glowing panel sits in a dark recessed housing.
@@ -195,6 +207,7 @@ export function buildWorld(scene, layout) {
   let powered = false;
   const setPower = (on) => {
     powered = on;
+    props.genSwitches?.(on);
     for (const r of rooms) {
       if (r.room.safe) continue;
       r.base = roomBase(r.room, on);
@@ -207,7 +220,7 @@ export function buildWorld(scene, layout) {
   // A desk with a chunky, slightly tilted monitor (thick worn bezel, star badge, glowing screen),
   // a keyboard, and sometimes a sticky note or a Skipper mug. Built facing +Z inside `group`.
   const housingMat = pbr(scene, { map: T(housingTexture()), roughness: 0.6, metalness: 0.25, surface: 'painted', tile: [1, 1], bump: 0.6 });
-  const deskMat = pbr(scene, { color: 0x4d5154, roughness: 0.7, metalness: 0.5, surface: 'panel', tile: [1, 1] });
+  const deskMat = pbr(scene, { color: 0x4d5154, roughness: 0.7, metalness: 0.5, surface: 'painted', tile: [1, 1], bump: 0.4 });
   const keysMat = pbr(scene, { map: T(keyboardTexture()), roughness: 0.8 });
   const darkMat = pbr(scene, { color: 0x1d1f21, roughness: 0.6, metalness: 0.3 });
   const badgeMat = basic(scene, 0xf2a92e);
@@ -273,19 +286,70 @@ export function buildWorld(scene, layout) {
     let statusPos = [0, 1, 0];
 
     if (p.id === 'generator') {
-      add(bevelBox('gen', { width: 1.5, height: 1.3, depth: 1.3, bevel: 0.05 }, scene), 0, 0.65, 0).material = pbr(scene, { color: 0x55524a, roughness: 0.6, metalness: 0.6 });
-      for (const side of [-0.45, 0.45]) {
-        add(MeshBuilder.CreateCylinder('coil', { diameter: 0.44, height: 0.9, tessellation: 12 }, scene), side, 1.75, 0).material = pbr(scene, { color: 0x8a6a3a, metalness: 0.8, roughness: 0.4 });
+      // The primary generator (Main Generator Room sheet): a tall worn reactor on a grated platform
+      // with a yellow railing, glowing orange tubes, and red and grey pipes up into the ceiling.
+      // It all stays inside its 2 m cell, which is solid.
+      const steel = pbr(scene, { color: 0x7a776f, roughness: 0.55, metalness: 0.7, surface: 'rust', tile: [2, 2], bump: 0.6 });
+      const dark = pbr(scene, { color: 0x2c2e30, roughness: 0.5, metalness: 0.75, surface: 'painted', bump: 0.4 });
+      const yellow = pbr(scene, { color: 0xd9a52a, roughness: 0.5, metalness: 0.4 });
+      const cyl = (d, hgt, y, mat, x = 0, z = 0, tess = 24) => { const m = add(MeshBuilder.CreateCylinder('reactor', { diameter: d, height: hgt, tessellation: tess }, scene), x, y, z); m.material = mat; return m; };
+      cyl(1.96, 0.14, 0.07, pbr(scene, { color: 0x34373a, roughness: 0.6, metalness: 0.7, surface: 'grate', tile: [2, 2] }), 0, 0, 32);
+      cyl(1.3, 0.5, 0.39, dark);                 // base housing
+      cyl(1.05, 1.7, 1.49, steel);               // the body
+      cyl(1.2, 0.18, 2.43, dark);                // top collar
+      cyl(0.62, 0.6, 2.76, steel);               // stack into the ceiling
+      for (const y of [0.9, 2.1]) { const band = add(MeshBuilder.CreateTorus('band', { diameter: 1.08, thickness: 0.06, tessellation: 32 }, scene), 0, y, 0); band.material = dark; }
+      // The railing round the platform.
+      for (const y of [0.58, 1.02]) { const rail = add(MeshBuilder.CreateTorus('rail', { diameter: 1.86, thickness: 0.04, tessellation: 40 }, scene), 0, y, 0); rail.material = yellow; }
+      for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; cyl(0.04, 0.9, 0.59, yellow, Math.sin(a) * 0.93, Math.cos(a) * 0.93, 8); }
+      // Four glowing tubes in dark housings, around the body.
+      const glowMat = basic(scene, 0xff7a1c);
+      for (const a of [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4]) {
+        const hx = Math.sin(a) * 0.55, hz = Math.cos(a) * 0.55;
+        const housingBox = add(bevelBox('tube-housing', { width: 0.18, height: 1.3, depth: 0.12, bevel: 0.02 }, scene), hx, 1.45, hz);
+        housingBox.rotation.y = a; housingBox.material = dark;
+        cyl(0.07, 1.1, 1.45, glowMat, Math.sin(a) * 0.62, Math.cos(a) * 0.62, 10);
       }
-      statusPos = [0, 1.1, 0.67];
+      // The emblem plate on the front, and pipes rising to the ceiling.
+      const plate = add(bevelBox('reactor-plate', { width: 0.5, height: 0.56, depth: 0.04, bevel: 0.01 }, scene), 0, 1.55, 0.53);
+      plate.material = pbr(scene, { map: TBox(reactorPlateTexture()), roughness: 0.6, metalness: 0.5 });
+      const pipeMats = [pbr(scene, { color: 0x7a2a1e, roughness: 0.5, metalness: 0.6, surface: 'pipe', tile: [1, 2] }), pbr(scene, { color: 0x5d6064, roughness: 0.5, metalness: 0.7, surface: 'pipe', tile: [1, 2] })];
+      [[1.2, 0], [-1.2, 1], [2.35, 1], [-2.35, 0]].forEach(([a, k]) => {
+        const x = Math.sin(a) * 0.8, z = Math.cos(a) * 0.8;
+        cyl(0.14, WALL_H - 0.14, 0.14 + (WALL_H - 0.14) / 2, pipeMats[k], x, z, 12);
+        for (const y of [0.5, 2.6]) cyl(0.2, 0.06, y, dark, x, z, 12);
+        const elbow = add(MeshBuilder.CreateCylinder('elbow', { diameter: 0.11, height: 0.3, tessellation: 10 }, scene), Math.sin(a) * 0.66, 0.9, Math.cos(a) * 0.66);
+        elbow.rotation.set(Math.PI / 2, a, 0); elbow.material = pipeMats[k];
+      });
+      // Its glow lights the room a little; dim and unsteady until it's repaired.
+      const glow = pointLight(0xff8a30, 1, 7, [0, 0, 0]);
+      glow.parent = group; glow.position.set(0, 1.5, 0);
+      props.genGlow = { light: glow, mat: glowMat };
+      statusPos = [0, 0.42, 0.66];
     } else if (p.id === 'comms') {
-      add(bevelBox('desk', { width: 1.5, height: 0.95, depth: 0.9, bevel: 0.03 }, scene), 0, 0.48, 0).material = pbr(scene, { color: 0x3d4a52, roughness: 0.6, metalness: 0.5 });
-      const screen = add(MeshBuilder.CreatePlane('screen', { width: 1.1, height: 0.55, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, scene), 0, 1.3, 0.2);
-      screen.rotation.x = -0.25;
-      screen.material = basic(scene, 0x103a33);
-      add(MeshBuilder.CreateCylinder('mast', { diameter: 0.06, height: 1.2 }, scene), 0.6, 1.55, -0.3).material = pbr(scene, { color: 0x777777, metalness: 0.9, roughness: 1 });
+      // The Outgoing Call console (S9-COM-01): a big screen in a chunky bezel with handles, on a
+      // pedestal desk. Its screen is redrawn as the rescue call goes out (setRepairProgress).
+      add(bevelBox('desk', { width: 1.5, height: 0.95, depth: 0.9, bevel: 0.03 }, scene), 0, 0.48, 0).material = pbr(scene, { color: 0x3d4042, roughness: 0.6, metalness: 0.5, surface: 'painted', bump: 0.4 });
+      const mon = node('comms-monitor', group);
+      mon.position.set(0, 1.45, 0.05);
+      mon.rotation.x = -0.18;
+      const frameMat = pbr(scene, { color: 0x3a3b3c, roughness: 0.55, metalness: 0.75, surface: 'rust', tile: [1, 1], bump: 0.5 });
+      const bezel = bevelBox('comms-bezel', { width: 1.34, height: 0.92, depth: 0.12, bevel: 0.04 }, scene);
+      bezel.parent = mon; bezel.material = frameMat;
+      for (const sx of [-1, 1]) {
+        const handle = bevelBox('handle', { width: 0.04, height: 0.42, depth: 0.04, bevel: 0.008 }, scene);
+        handle.parent = mon; handle.position.set(sx * 0.73, 0, 0.02); handle.material = frameMat;
+        for (const sy of [-1, 1]) { const stub = MeshBuilder.CreateBox('stub', { width: 0.06, height: 0.03, depth: 0.03 }, scene); stub.parent = mon; stub.position.set(sx * 0.7, sy * 0.19, 0.02); stub.material = frameMat; }
+      }
+      const callTex = TWall(commsCallScreen());
+      const screen = MeshBuilder.CreatePlane('screen', { width: 1.18, height: 0.74 }, scene);
+      screen.parent = mon; screen.position.set(0, 0, 0.062); screen.rotation.y = Math.PI;
+      screen.material = basic(scene, 0, { map: callTex });
+      const lamp = MeshBuilder.CreateSphere('lamp', { diameter: 0.035, segments: 6 }, scene);
+      lamp.parent = mon; lamp.position.set(-0.6, -0.36, 0.06); lamp.material = basic(scene, 0xffb04a);
+      const stand = add(bevelBox('stand', { width: 0.3, height: 0.5, depth: 0.2, bevel: 0.02 }, scene), 0, 1.1, -0.05); stand.material = frameMat;
       statusPos = [-0.6, 1.0, 0.46];
-      props.commsScreen = screen;
+      props.commsScreen = { tex: callTex, last: -1 };
     } else if (p.id === 'pod') {
       const pod = add(MeshBuilder.CreateCapsule('pod', { radius: 0.65, height: 0.8 + 1.3, tessellation: 16 }, scene), 0, 0.85, 0);
       pod.rotation.z = Math.PI / 2;
@@ -336,6 +400,39 @@ export function buildWorld(scene, layout) {
     interactables.push({ id: 'door', kind: 'door', door: d, pos: { x: d.x, y: 1.4, z: d.z }, range: 2.6 });
   }
 
+  // The generator room's switch panel: lamps above each toggle go green when power is restored.
+  {
+    const f = generatorFixtures(layout).panel;
+    const panel = node('switch-panel');
+    panel.position.set(f.x, f.y, f.z);
+    panel.rotation.y = f.rot;
+    const back = bevelBox('switch-back', { width: f.w + 0.08, height: f.h + 0.08, depth: 0.08, bevel: 0.02 }, scene);
+    back.parent = panel; back.position.z = 0.04; back.material = pbr(scene, { color: 0x3a3a37, roughness: 0.6, metalness: 0.6, surface: 'rust', bump: 0.5 });
+    const face = MeshBuilder.CreatePlane('switch-face', { width: f.w, height: f.h }, scene);
+    face.parent = panel; face.position.z = 0.081; face.rotation.y = Math.PI;
+    face.material = pbr(scene, { map: TWall(switchPanelTexture()), roughness: 0.55, metalness: 0.5 });
+    const lampMats = { green: basic(scene, 0x3cff8a), amber: basic(scene, 0xffb02a), red: basic(scene, 0xff2a1a) };
+    const lamps = [];
+    // Lamp positions match the texture's layout (512 x 280 canvas, groups of n switches 56 px apart).
+    let px = 10;
+    SWITCH_GROUPS.forEach(([, n], gi) => {
+      for (let i = 0; i < n; i++) {
+        const cx = px + 40 + i * 56;
+        const lamp = MeshBuilder.CreateSphere('switch-lamp', { diameter: 0.045, segments: 6 }, scene);
+        lamp.parent = panel;
+        // Plane faces are mirrored for wall planes (TWall), so x runs the other way.
+        lamp.position.set(-((cx / 512) - 0.5) * f.w, (0.5 - 93 / 280) * f.h, 0.09);
+        lamps.push({ lamp, group: gi });
+      }
+      px += n * 56 + 24 + 10;
+    });
+    const setLamps = (on) => {
+      for (const { lamp, group } of lamps) lamp.material = on ? lampMats.green : group === 1 ? lampMats.amber : lampMats.red;
+    };
+    setLamps(false);
+    props.genSwitches = setLamps;
+  }
+
   // Pipes, patches, broken lights and leaks. Its sounds go to whoever sets world.onDecorEvent.
   let onDecorEvent = null;
   const decor = buildDecor(scene, layout, { onEvent: (type, at) => onDecorEvent?.(type, at) });
@@ -346,6 +443,9 @@ export function buildWorld(scene, layout) {
 
   // The wellness suites: padded, bright, and their own light.
   const suites = buildSuites(scene, layout);
+
+  // The vents: covers, gratings and the ducts behind them (js/vents.js).
+  const vents = buildVentMeshes(scene, layout);
 
   // Loose props: chairs and boxes that don't block anything. The prop trick moves them.
   const boxMat = pbr(scene, { color: 0x5a4a32, roughness: 0.9 });
@@ -396,6 +496,7 @@ export function buildWorld(scene, layout) {
   function update(dt, time, alien = null, player = null) {
     decor.update(dt, time, player);
     suites.update(dt, time);
+    vents.update(dt);
     // The CRT overlay breathes very slightly, like an old tube's refresh.
     crtMat.alpha = 0.88 + Math.random() * 0.12;
     // A screen that just changed flickers for a moment.
@@ -411,6 +512,12 @@ export function buildWorld(scene, layout) {
       if (r.cone) { r.cone.material.emissiveColor = srgb(r.base.color); r.cone.material.alpha = 0.05 * Math.min(1.5, k); }
       r.fixtureMat.emissiveColor = srgb(r.base.color).scale(Math.max(0.05, k));
     }
+    if (props.genGlow) {
+      // Output low: a weak, wavering glow. Repaired: steady and bright.
+      const k = powered ? 1 : 0.3 + 0.12 * Math.sin(time * 7.3) * Math.sin(time * 2.1) + (Math.random() < 0.02 ? -0.2 : 0);
+      props.genGlow.light.intensity = 2.4 * k * TUNING.light;
+      props.genGlow.mat.emissiveColor = srgb(0xff7a1c).scale(0.35 + 0.65 * k);
+    }
     if (props.teleporterLight) {
       props.teleporterLight.intensity = teleporterLevel(time) * TUNING.light;
       props.teleporterRing.rotation.y += dt * 0.4;
@@ -418,7 +525,7 @@ export function buildWorld(scene, layout) {
   }
 
   return {
-    doors, rooms, props, interactables, loose, decor, setDoor, setPower, update,
+    doors, rooms, props, interactables, loose, decor, vents, setDoor, setPower, update,
     set onDecorEvent(fn) { onDecorEvent = fn; },
     markRead(id) { if (props[id]) props[id].status.emissiveColor = srgb(READ); },
     // Repairs change what some screens say (power online, signal sent, launch window open).
@@ -430,7 +537,15 @@ export function buildWorld(scene, layout) {
       }
     },
     setStatus(id, hex) { if (props[id]) props[id].status.emissiveColor = srgb(hex); },
-    setCommsLit() { props.commsScreen.material.emissiveColor = srgb(0x2a8a6a); },
+    setCommsLit() { redraw(props.commsScreen.tex, commsCallScreen({ sent: true }), { mirror: true }); props.commsScreen.last = 2; },
+    // While E is held on a repair: the comms screen walks through the call (redrawn in steps).
+    setRepairProgress(id, p) {
+      const c = props.commsScreen;
+      if (id !== 'comms' || !c || c.last >= 2) return;
+      if (p < 1 && Math.abs(p - c.last) < 0.04) return;
+      c.last = p;
+      redraw(c.tex, commsCallScreen({ p }), { mirror: true });
+    },
     anchors: { teleporter: props.teleporter.position, generator: props.generator.group.position },
     doorAt: (x, z) => doorByKey.get(key(x, z)),
     get powered() { return powered; },

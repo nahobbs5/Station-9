@@ -16,7 +16,6 @@ They're credited in the game anyway (js/credits.js).
 | `textures/concrete_floor_worn_001/` (normal + AO/roughness/metal, 1K) | Concrete Floor Worn 001 | Dimitrios Savva, Rico Cilliers, [Poly Haven](https://polyhaven.com/a/concrete_floor_worn_001) | CC0 |
 | `models/Barrel_01/` (glTF + 1K textures) | Barrel 01 | Jorge Camacho, [Poly Haven](https://polyhaven.com/a/Barrel_01) | CC0 |
 | `models/barrel_03/` (glTF + 1K textures) | Barrel 03 | Serhii Khromov, [Poly Haven](https://polyhaven.com/a/barrel_03) | CC0 |
-| `models/korean_fire_extinguisher_01/` (glTF + 1K textures) | Korean Fire Extinguisher 01 | UM JOORIN, [Poly Haven](https://polyhaven.com/a/korean_fire_extinguisher_01) | CC0 |
 | `models/medical_box/` (glTF + 1K textures) | Medical Box | Ulan Cabanilla, [Poly Haven](https://polyhaven.com/a/medical_box) | CC0 |
 | `models/metal_toolbox/` (glTF + 1K textures) | Metal Toolbox | Mateusz Sadek, [Poly Haven](https://polyhaven.com/a/metal_toolbox) | CC0 |
 | `models/power_box_01/` (glTF + 1K textures) | Power Box 01 | Rico Cilliers, Yann Kervran, [Poly Haven](https://polyhaven.com/a/power_box_01) | CC0 |

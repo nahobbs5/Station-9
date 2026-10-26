@@ -80,7 +80,7 @@ Plain JavaScript modules and canvas-drawn textures, with Babylon.js loaded from 
 | `js/textures.js` | Every canvas-drawn texture (walls, floor, posters, pipes, console screens, sticky notes, ...) |
 | `js/alienshape.js` | The alien's shape and how it moves |
 | `js/decorplan.js` | Where the wear and tear goes: pipes, leaks, broken lights, patches, clutter, corridor ribs, vents, stencilled markings (`STENCILS`) and stains. Counts and densities are at the top |
-| `js/modelplan.js` | Which downloaded 3D models (`assets/models/`) go where: barrels, power boxes, extinguishers, lamps, toolbox, medical box |
+| `js/modelplan.js` | Which downloaded 3D models (`assets/models/`) go where: barrels, power boxes, lamps, toolbox, medical box |
 | `js/decorsim.js` | Steam, drips, sparks and stuttering lights over time. Timings are at the top |
 | `js/minimap.js` | The explored-only minimap |
 | `js/intercom.js` | Marigold's lines (the station voice) |

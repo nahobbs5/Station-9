@@ -5,6 +5,7 @@ import { findPath } from './pathfind.js';
 import { wallSpot } from './textures.js';
 import { seeded } from './textures.js';
 import { wallSegments } from './walls.js';
+import { grateSpots } from './vents.js';
 
 export const LIGHTS = {
   EMERGENCY: { color: 0xff3a22, intensity: 5 },
@@ -83,7 +84,7 @@ export const POSTERS = [
   ['airlock', 'n', ['YOUR LABOR', 'IS OUR', 'FREEDOM.'], '#b3332a'],
   ['crew', 'w', ['YOUR WELLNESS', 'IS OUR', 'WAYPOINT.'], '#2f6e6a'],
   ['storage', 'w', ['SMALL STEPS.', 'BIG', 'POSSIBILITIES.'], '#b3332a'],
-  ['generator', 'w', ['POWER IS A', 'PRIVILEGE.', 'EARN IT.'], '#2f6e4a'],
+  ['generator', 'w', ['POWER', 'KEEPS US', 'TOGETHER.'], '#c8781e'],
   ['comms', 'e', ["WE'RE", 'ALWAYS', 'LISTENING.'], '#b3332a'],
   ['teleporter', 'w', ['STEP IN.', 'STEP OUT.', 'STEP UP.'], '#2f4f6e'],
   ['pod', 's', ['LEAVING', 'SO SOON?', "WE'LL MISS YOU."], '#b3332a'],
@@ -91,6 +92,17 @@ export const POSTERS = [
 // The station map on the control room wall, and the emblem sign in the airlock.
 export const WALL_MAP = { room: 'control', side: 'n', w: 2.4, h: 2.1, y: 1.85 };
 export const EMBLEM = { room: 'airlock', side: 's', src: 'images/emblem.jpg', frame: 1.9, size: 1.75, y: 1.75 };
+
+// The generator room's wall pieces (after the Main Generator Room sheet): the switch panel in the
+// middle of the east wall (between the reactor console and the workbench), and the big G-1 stencil
+// on the north wall beside the door. Decor keeps clear of both (js/decorplan.js).
+export function generatorFixtures(layout) {
+  const room = layout.room('generator');
+  return {
+    panel: { ...wallSpot(room, 'e'), y: 1.45, w: 1.3, h: 0.72 },
+    sign: { ...wallSpot(room, 'n', 0.8), y: 1.75, w: 1.5, h: 0.9 },
+  };
+}
 
 // Cells kept clear so nothing stands in front of the emblem: the one under it and the one before it.
 export function emblemClearCells(layout) {
@@ -105,13 +117,15 @@ export function emblemClearCells(layout) {
 export function looseItems(layout, clutterCells) {
   const rand = seeded(11);
   const keepClear = emblemClearCells(layout);
+  const grates = grateSpots(layout); // and nothing parked on or in front of a vent
+  const byGrate = (x, z) => grates.some((g) => Math.hypot(g.x - x, g.z - z) < 1.6);
   const spotsOf = (room) => {
     const spots = [];
     for (let z = room.y; z < room.y + room.h; z++) {
       for (let x = room.x; x < room.x + room.w; x++) {
         const edge = x === room.x || z === room.y || x === room.x + room.w - 1 || z === room.y + room.h - 1;
         const nearDoor = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => layout.isDoor(x + dx, z + dz));
-        if (edge && !nearDoor && layout.isOpen(x, z) && !clutterCells.has(key(x, z)) && !keepClear.has(key(x, z))) spots.push([x, z]);
+        if (edge && !nearDoor && layout.isOpen(x, z) && !clutterCells.has(key(x, z)) && !keepClear.has(key(x, z)) && !byGrate(cellCenter(x), cellCenter(z))) spots.push([x, z]);
       }
     }
     return spots;
@@ -127,6 +141,22 @@ export function looseItems(layout, clutterCells) {
     }
   }
   return items;
+}
+
+// The parts of a wall panel (as fractions 0..1 along it) that keep their kick plate: everything
+// except a gap where a wall vent's cover sits (js/vents.js grateSpots), so the cover isn't hidden.
+export function kickPlateSpans(p, grates) {
+  const dx = p.bx - p.ax, dz = p.bz - p.az, len = Math.hypot(dx, dz) || 1e-6;
+  let spans = [[0, 1]];
+  for (const g of grates) {
+    if (g.kind !== 'wall' || g.nx * p.nx + g.nz * p.nz < 0.7) continue; // other walls
+    const t = ((g.x - p.ax) * dx + (g.z - p.az) * dz) / (len * len);
+    const off = Math.abs((g.x - p.ax) * dz - (g.z - p.az) * dx) / len;
+    const half = (g.w / 2 + 0.05) / len;
+    if (off > 0.15 || t + half < 0 || t - half > 1) continue;
+    spans = spans.flatMap(([a, b]) => [[a, Math.min(b, t - half)], [Math.max(a, t + half), b]]).filter(([a, b]) => b - a > 1e-4);
+  }
+  return spans;
 }
 
 // How far from (x, z) to the nearest wall heading along (dx, dz), or null if there's none within `max`.

@@ -231,7 +231,18 @@ export function posterTexture(lines, accent) {
     let size = 30;
     do g.font = `bold ${size}px Oswald, Impact, sans-serif`; while (g.measureText(tagline).width > w - 68 && --size > 14);
     g.fillText(tagline, 34, h - 36);
-    grime(g, w, h, rand, 60, 0.3);
+    // Aged paper: darker edges, fine specks and a water streak or two (no big spots).
+    const age = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.72);
+    age.addColorStop(0, 'rgba(60,45,25,0)'); age.addColorStop(1, 'rgba(60,45,25,0.35)');
+    g.fillStyle = age; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 220; i++) { g.fillStyle = `rgba(40,30,18,${0.2 + rand() * 0.4})`; g.fillRect(rand() * w, rand() * h, 1 + rand() * 2.5, 1 + rand() * 2.5); }
+    for (let i = 0; i < 2; i++) {
+      const x = rand() * w, sw = 6 + rand() * 14, top = rand() * h * 0.3;
+      const streak = g.createLinearGradient(0, top, 0, h);
+      streak.addColorStop(0, 'rgba(90,70,40,0.18)'); streak.addColorStop(1, 'rgba(90,70,40,0)');
+      g.fillStyle = streak; g.fillRect(x, top, sw, h - top);
+    }
+    scratches(g, w, h, rand, 20, 0.12);
     g.fillStyle = 'rgba(0,0,0,0.25)';
     g.fillRect(w * 0.7, 0, 40, h * 0.2); // a tear
   });
@@ -394,6 +405,50 @@ export const CONSOLE_SCREENS = ['off', 'doors', 'system', 'marigold', 'research'
 // Screens that change as you make progress (redrawn after each repair).
 export const LIVE_SCREENS = new Set(['system', 'power', 'comms', 'pod', 'reactor', 'signal']);
 
+// The engineering screens (Main Generator, Power Grid): near-black glass, warm amber bars,
+// red warnings and tabs along the bottom, as on the Main Generator Room sheet.
+const G = { bg0: '#14171a', bg1: '#0a0c0d', text: '#d8d4c8', dim: '#8a877e', line: 'rgba(216,212,200,0.18)', amber: '#e8a23a', red: '#e0533f', green: '#62d39a', core: '#ff7a1c' };
+function gtext(g, t, x, y, { size = 13, color = G.text, font = MONO, align = 'left' } = {}) {
+  g.font = `${size}px ${font}`; g.fillStyle = color; g.textAlign = align; g.fillText(t, x, y);
+}
+function bar(g, x, y, bw, bh, v, color) {
+  g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(x, y, bw, bh);
+  g.fillStyle = color; g.fillRect(x, y, bw * Math.max(0, Math.min(1, v)), bh);
+}
+function genScreen(g, w, h, title, tab, body, on) {
+  const bg = g.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, G.bg0); bg.addColorStop(1, G.bg1);
+  g.fillStyle = bg; g.fillRect(0, 0, w, h);
+  g.strokeStyle = G.line; g.lineWidth = 1; g.strokeRect(10, 10, w - 20, h - 20);
+  gtext(g, title, 24, 40, { size: 17, font: HEAD });
+  drawEmblem(g, w - 112, 32, 9, { light: '#d8d4c8', accent: G.amber });
+  gtext(g, 'STATION 9', w - 96, 32, { size: 11, font: HEAD });
+  gtext(g, 'RESEARCH', w - 96, 43, { size: 7, color: G.dim });
+  g.fillStyle = G.line; g.fillRect(20, 54, w - 40, 1);
+  body(on);
+  ['OVERVIEW', 'DISTRIBUTION', 'DIAGNOSTICS', 'MANUAL'].forEach((t, i) => {
+    const x = 20 + i * 119, sel = t === tab;
+    g.fillStyle = sel ? 'rgba(216,212,200,0.16)' : 'rgba(216,212,200,0.04)'; g.fillRect(x, h - 44, 112, 26);
+    g.strokeStyle = sel ? G.text : G.line; g.strokeRect(x, h - 44, 112, 26);
+    gtext(g, t, x + 56, h - 26, { size: 11, color: sel ? G.text : G.dim, align: 'center' });
+  });
+}
+// The reactor as a blueprint: a wire cylinder with a glowing core.
+function drawReactorWire(g, cx, cy, r, on) {
+  g.strokeStyle = 'rgba(216,212,200,0.55)'; g.lineWidth = 1;
+  const top = cy - r * 1.05, bot = cy + r * 0.9;
+  for (const y of [top, cy - r * 0.35, cy + r * 0.3, bot]) { g.beginPath(); g.ellipse(cx, y, r * 0.75, r * 0.18, 0, 0, Math.PI * 2); g.stroke(); }
+  for (const dx of [-0.75, -0.4, 0.4, 0.75]) { g.beginPath(); g.moveTo(cx + dx * r, top); g.lineTo(cx + dx * r, bot); g.stroke(); }
+  g.beginPath(); g.ellipse(cx, bot + r * 0.12, r * 1.05, r * 0.26, 0, 0, Math.PI * 2); g.stroke(); // the platform
+  g.beginPath(); g.moveTo(cx, top - r * 0.5); g.lineTo(cx, top); g.stroke();
+  g.strokeStyle = 'rgba(216,212,200,0.12)';
+  for (let i = -3; i <= 3; i++) { g.beginPath(); g.moveTo(cx - r * 1.4, cy + i * r * 0.3); g.lineTo(cx + r * 1.4, cy + i * r * 0.3); g.stroke(); }
+  const core = g.createLinearGradient(cx - r * 0.2, 0, cx + r * 0.2, 0);
+  const a = on ? 1 : 0.55;
+  core.addColorStop(0, `rgba(255,122,28,${0.2 * a})`); core.addColorStop(0.5, `rgba(255,190,110,${a})`); core.addColorStop(1, `rgba(255,122,28,${0.2 * a})`);
+  g.fillStyle = core; g.fillRect(cx - r * 0.2, top + r * 0.15, r * 0.4, bot - top - r * 0.3);
+}
+
 export function consoleScreen(kind, state = {}) {
   // A dead monitor: near-black glass with a faint sheen. The Hat Man's cameo shows in these.
   if (kind === 'off') {
@@ -525,16 +580,23 @@ export function consoleScreen(kind, state = {}) {
         .forEach(([item, n, col], i) => { text(item, 30, 100 + i * 26, { size: 15 }); text(n, w - 40, 100 + i * 26, { size: 15, color: col, align: 'right' }); });
       text('Removed by: P. RAMAN (B corridor)', 30, 292, { size: 13, color: C.marigold });
     } else if (kind === 'power') {
-      header('Power Management');
-      const on = stage >= 1;
-      banner(on ? 'MAIN POWER ONLINE' : '⚠  MAIN POWER OFFLINE', on ? '#2a7f62' : '#a33528');
-      statusRow('Reactors', on ? 'ONLINE' : 'OFFLINE', 152, on ? C.green : C.red);
-      statusRow('Auxiliary', on ? 'STANDBY' : 'OFFLINE', 186, on ? C.marigold : C.red);
-      statusRow('Battery', on ? '100%' : '14%', 220, on ? C.green : C.red);
-      statusRow('Emergency', 'ONLINE', 254, C.green);
-      box(344, 134, 148, 130, on ? C.line : C.red);
-      if (on) { text('All systems', 354, 160, { size: 13 }); text('nominal.', 354, 180, { size: 13 }); text('Thank you!', 354, 210, { size: 13, color: C.marigold }); }
-      else { text('ERROR 0x4A-77', 354, 158, { size: 14, color: C.red }); ['Reactor output', 'lost. Check', 'coolant flow and', 'restart sequence.'].forEach((t, i) => text(t, 354, 182 + i * 18, { size: 12, color: C.red })); }
+      genScreen(g, w, h, 'POWER GRID', 'DISTRIBUTION', (on) => {
+        // The generator feeding each section of the station.
+        const node = [30, 150, 112, 40];
+        g.fillStyle = on ? 'rgba(232,162,58,0.12)' : 'rgba(224,83,63,0.16)'; g.fillRect(...node);
+        g.strokeStyle = on ? G.amber : G.red; g.lineWidth = 2; g.strokeRect(...node);
+        gtext(g, (on ? '' : '⚠ ') + 'GENERATOR', 86, 176, { size: 14, color: on ? G.amber : G.red, align: 'center' });
+        const rows = [['HABITATION', on ? 86 : 23], ['LABS', on ? 92 : 12], ['COMMS', on ? 74 : 9], ['LIFE SUPPORT', on ? 98 : 64]];
+        g.strokeStyle = G.amber; g.lineWidth = 1.2;
+        rows.forEach(([label, v], i) => {
+          const y = 104 + i * 40;
+          g.beginPath(); g.moveTo(142, 170); g.lineTo(172, 170); g.lineTo(172, y - 5); g.lineTo(196, y - 5); g.stroke();
+          g.fillStyle = v > 50 ? G.green : G.amber; g.fillRect(200, y - 11, 8, 10);
+          gtext(g, label, 216, y, { size: 13 });
+          bar(g, 340, y - 11, 100, 10, v / 100, v < 30 ? G.red : G.amber);
+          gtext(g, `${v}%`, 486, y, { size: 13, align: 'right' });
+        });
+      }, stage >= 1);
     } else if (kind === 'comms') {
       header('Communications', MENUS.comms);
       box(176, 78, 310, 100);
@@ -559,14 +621,19 @@ export function consoleScreen(kind, state = {}) {
       text('Seats: 4   Passengers: 0', 30, 234, { size: 14, color: C.dim });
       text('Please complete the feedback survey before departure.', 30, 292, { size: 12, color: C.marigold });
     } else if (kind === 'reactor') {
-      header('Reactor Diagnostic');
-      const flow = stage >= 1 ? 64 : 0;
-      ['Coolant A', 'Coolant B', 'Pump 1', 'Pump 2'].forEach((n, i) => {
-        const v = stage >= 1 ? 50 + rand() * 40 : i === 3 ? 6 : 0;
-        text(n, 30, 102 + i * 34, { size: 14 });
-        box(150, 88 + i * 34, 300, 18); g.fillStyle = v > 20 ? C.teal : C.red; g.fillRect(152, 90 + i * 34, 2.96 * v, 14);
-      });
-      text(`COOLANT FLOW: ${flow}%`, 30, 290, { size: 16, color: flow ? C.green : C.red });
+      genScreen(g, w, h, 'MAIN GENERATOR', 'OVERVIEW', (on) => {
+        drawReactorWire(g, 120, 178, 70, on);
+        const rows = [['TURBINE', on ? 0.86 : 0.62], ['COOLANT', on ? 0.8 : 0.4], ['OUTPUT', on ? 0.92 : 0.28], ['STABILITY', on ? 0.88 : 0.22]];
+        rows.forEach(([label, v], i) => {
+          const y = 104 + i * 32;
+          gtext(g, label, 262, y, { size: 13 });
+          bar(g, 380, y - 10, 110, 9, v, v < 0.3 ? G.red : G.amber);
+        });
+        const ok = on;
+        g.fillStyle = ok ? 'rgba(98,211,154,0.12)' : 'rgba(224,83,63,0.16)'; g.fillRect(262, 232, 228, 30);
+        g.strokeStyle = ok ? G.green : G.red; g.lineWidth = 1.5; g.strokeRect(262, 232, 228, 30);
+        gtext(g, ok ? 'OUTPUT NOMINAL' : '⚠  OUTPUT LOW', 376, 253, { size: 16, color: ok ? G.green : G.red, align: 'center', font: HEAD });
+      }, stage >= 1);
     } else if (kind === 'signal') {
       header('Signal Monitor');
       box(30, 78, w - 60, 150);
@@ -656,16 +723,41 @@ export function mugTexture() {
   });
 }
 
-// The monitor housing: worn cream-grey plastic and metal.
+// Worn white enamel, as on the interiors sheet: clean off-white paint, chipped down to grey metal
+// and rust at the edges and corners, fine scratches, a little grime low down. No big spots, so it
+// still looks right on small parts like chair backs (each box face shows the whole texture).
+function wornEnamel(g, w, h, rand, base) {
+  g.fillStyle = base; g.fillRect(0, 0, w, h);
+  // The faintest unevenness in the paint.
+  const v = g.createLinearGradient(0, 0, w, h);
+  v.addColorStop(0, 'rgba(255,255,250,0.06)'); v.addColorStop(1, 'rgba(60,50,40,0.07)');
+  g.fillStyle = v; g.fillRect(0, 0, w, h);
+  // Darker wear along every edge.
+  const edge = Math.max(4, w * 0.035);
+  for (const [x, y, ew, eh] of [[0, 0, w, edge], [0, h - edge, w, edge], [0, 0, edge, h], [w - edge, 0, edge, h]]) {
+    g.fillStyle = 'rgba(70,62,52,0.22)'; g.fillRect(x, y, ew, eh);
+  }
+  // Chips: mostly near the edges and corners, a few out in the open.
+  const nearEdge = (span) => { const t = rand() ** 3 * span * 0.18; return rand() < 0.5 ? t : span - t; };
+  for (let i = 0; i < 160; i++) {
+    const onSide = rand() < 0.5;
+    const x = i % 7 === 0 ? rand() * w : onSide ? nearEdge(w) : rand() * w;
+    const y = i % 7 === 0 ? rand() * h : onSide ? rand() * h : nearEdge(h);
+    const r = rand();
+    g.fillStyle = r < 0.55 ? `rgba(95,92,86,${0.5 + rand() * 0.4})` : `rgba(115,55,22,${0.45 + rand() * 0.4})`; // bare metal or rust
+    g.fillRect(x, y, 1 + rand() * (r < 0.08 ? 7 : 3), 1 + rand() * (r < 0.08 ? 5 : 2.5));
+  }
+  scratches(g, w, h, rand, 26, 0.16);
+  // A little grime toward the bottom.
+  const low = g.createLinearGradient(0, h * 0.82, 0, h);
+  low.addColorStop(0, 'rgba(45,36,26,0)'); low.addColorStop(1, 'rgba(45,36,26,0.22)');
+  g.fillStyle = low; g.fillRect(0, h * 0.82, w, h * 0.18);
+}
+
+// The monitor housing and the off-white furniture: worn white enamel.
 export function housingTexture() {
   const rand = seeded(83);
-  return makeCanvas(256, 256, (g, w, h) => {
-    g.fillStyle = '#b8b09c'; g.fillRect(0, 0, w, h);
-    blotches(g, w, h, rand, 40, (r) => `rgba(40,30,20,${0.15 + r * 0.3})`, 22);
-    blotches(g, w, h, rand, 14, (r) => `rgba(110,60,25,${0.15 + r * 0.25})`, 10);
-    g.strokeStyle = 'rgba(255,255,255,0.15)'; g.lineWidth = 1;
-    for (let i = 0; i < 40; i++) { const x = rand() * w, y = rand() * h; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (rand() - 0.5) * 40, y + (rand() - 0.5) * 10); g.stroke(); }
-  });
+  return makeCanvas(256, 256, (g, w, h) => wornEnamel(g, w, h, rand, '#c4bdab'));
 }
 
 // Furniture ------------------------------------------------------------------------------
@@ -692,9 +784,25 @@ export function leatherTexture() {
   const rand = seeded(91);
   return makeCanvas(256, 256, (g, w, h) => {
     g.fillStyle = '#8a4a22'; g.fillRect(0, 0, w, h);
-    blotches(g, w, h, rand, 30, (r) => `rgba(${r > 0.5 ? '170,100,55' : '50,25,10'},${0.15 + r * 0.25})`, 26);
-    g.strokeStyle = 'rgba(30,14,5,0.35)'; g.lineWidth = 2;
-    for (let i = 0; i < 18; i++) { const y = rand() * h; g.beginPath(); g.moveTo(0, y); g.bezierCurveTo(w * 0.3, y + (rand() - 0.5) * 30, w * 0.6, y + (rand() - 0.5) * 30, w, y + (rand() - 0.5) * 20); g.stroke(); }
+    // A soft sheen across the middle, darker toward the edges.
+    const sheen = g.createLinearGradient(0, 0, 0, h);
+    sheen.addColorStop(0, 'rgba(40,18,6,0.25)'); sheen.addColorStop(0.45, 'rgba(200,120,70,0.12)'); sheen.addColorStop(1, 'rgba(40,18,6,0.3)');
+    g.fillStyle = sheen; g.fillRect(0, 0, w, h);
+    // Two or three faint worn patches where people sit and lean.
+    for (let i = 0; i < 3; i++) {
+      const x = w * (0.25 + rand() * 0.5), y = h * (0.25 + rand() * 0.5), r = 30 + rand() * 30;
+      const wear = g.createRadialGradient(x, y, 0, x, y, r);
+      wear.addColorStop(0, 'rgba(185,115,70,0.18)'); wear.addColorStop(1, 'rgba(185,115,70,0)');
+      g.fillStyle = wear; g.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    // A few soft creases.
+    g.strokeStyle = 'rgba(40,18,6,0.18)'; g.lineWidth = 1.5;
+    for (let i = 0; i < 6; i++) { const y = rand() * h; g.beginPath(); g.moveTo(0, y); g.bezierCurveTo(w * 0.3, y + (rand() - 0.5) * 20, w * 0.6, y + (rand() - 0.5) * 20, w, y + (rand() - 0.5) * 14); g.stroke(); }
+    // Stitched seams near the edges.
+    g.strokeStyle = 'rgba(235,190,140,0.35)'; g.lineWidth = 1; g.setLineDash([4, 4]);
+    g.strokeRect(10, 10, w - 20, h - 20);
+    g.setLineDash([]);
+    g.strokeStyle = 'rgba(30,12,4,0.45)'; g.lineWidth = 2; g.strokeRect(6, 6, w - 12, h - 12);
   }, { wrap: true });
 }
 
@@ -702,8 +810,7 @@ export function leatherTexture() {
 export function lockerTexture() {
   const rand = seeded(17);
   return makeCanvas(128, 384, (g, w, h) => {
-    g.fillStyle = '#c9c4b6'; g.fillRect(0, 0, w, h);
-    blotches(g, w, h, rand, 30, (r) => `rgba(40,30,20,${0.12 + r * 0.25})`, 16);
+    wornEnamel(g, w, h, rand, '#cbc6b8');
     g.fillStyle = '#d9a52a'; g.fillRect(0, h * 0.62, w, h * 0.07);
     g.fillStyle = '#2b2b2b';
     for (let i = 0; i < 5; i++) g.fillRect(w * 0.25, 18 + i * 9, w * 0.5, 3);
@@ -717,8 +824,7 @@ export function lockerTexture() {
 export function drawerTexture(rows = 3) {
   const rand = seeded(23 + rows);
   return makeCanvas(256, 256, (g, w, h) => {
-    g.fillStyle = '#b9b4a6'; g.fillRect(0, 0, w, h);
-    blotches(g, w, h, rand, 25, (r) => `rgba(40,30,20,${0.12 + r * 0.25})`, 18);
+    wornEnamel(g, w, h, rand, '#bdb8aa');
     for (let i = 0; i < rows; i++) {
       const y0 = (i * h) / rows;
       g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 3; g.strokeRect(6, y0 + 4, w - 12, h / rows - 8);
@@ -732,8 +838,7 @@ export function drawerTexture(rows = 3) {
 export function crateTexture() {
   const rand = seeded(29);
   return makeCanvas(256, 256, (g, w, h) => {
-    g.fillStyle = '#9b988d'; g.fillRect(0, 0, w, h);
-    blotches(g, w, h, rand, 30, (r) => `rgba(40,30,20,${0.15 + r * 0.25})`, 20);
+    wornEnamel(g, w, h, rand, '#a29f94');
     g.fillStyle = '#d9a52a'; g.fillRect(0, h * 0.62, w, h * 0.1);
     drawEmblem(g, w * 0.5, h * 0.36, 34, { light: '#2c3134', accent: '#c8781e' });
     g.fillStyle = '#2c3134'; g.font = `bold 26px ${HEAD}`; g.textAlign = 'center'; g.fillText('STATION 9', w / 2, h * 0.86);
@@ -912,8 +1017,25 @@ export function streakTexture(kind) {
   });
 }
 
-// A stain on the floor: oil (dark, glossy) or dried water (pale tide marks).
+// Dust and grime round a grate that's been opened: a soft dark halo, heaviest just outside the
+// cover's edge (where hands and boots go), clear in the middle where the grate itself sits.
+function dustRingTexture() {
+  const rand = seeded(53);
+  return tex(256, 256, (g, w, h) => {
+    const ring = g.createRadialGradient(w / 2, h / 2, w * 0.2, w / 2, h / 2, w * 0.5);
+    ring.addColorStop(0, 'rgba(14,12,9,0)'); ring.addColorStop(0.3, 'rgba(14,12,9,0.3)'); ring.addColorStop(1, 'rgba(14,12,9,0)');
+    g.fillStyle = ring; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 260; i++) { // scuffs
+      const a = rand() * Math.PI * 2, r = w * (0.24 + rand() * 0.2);
+      g.fillStyle = `rgba(14,12,9,${0.08 + rand() * 0.18})`;
+      g.fillRect(w / 2 + Math.cos(a) * r, h / 2 + Math.sin(a) * r, 1 + rand() * 4, 1 + rand() * 3);
+    }
+  });
+}
+
+// A stain on the floor: oil (dark, glossy), dried water (pale tide marks), or dust round a grate.
 export function stainTexture(kind) {
+  if (kind === 'dust') return dustRingTexture();
   const rand = seeded(kind === 'oil' ? 43 : 47);
   return tex(256, 256, (g, w, h) => {
     const rgb = kind === 'oil' ? '8,7,6' : '40,38,32';
@@ -938,5 +1060,151 @@ export function crtTexture() {
     const v = g.createRadialGradient(w / 2, h / 2, h * 0.35, w / 2, h / 2, w * 0.62);
     v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.75)');
     g.fillStyle = v; g.fillRect(0, 0, w, h);
+  });
+}
+
+// The comms console's Outgoing Call screen (after the Outgoing Call Console sheet). Redrawn as the
+// rescue call goes out: p is how far through the call (0..1), sent once it has gone.
+export const CALL_STEPS = [['Antenna Power', 'ONLINE'], ['Gyro Alignment', 'LOCKED'], ['Signal Calibration', 'TUNED'],
+  ['Establishing Uplink', 'LINKED'], ['Transmitting Signal', 'SENT'], ['Awaiting Response', 'LISTENING']];
+export function commsCallScreen({ p = 0, sent = false, seconds = 5 } = {}) {
+  const amber = '#e8b44a', dim = '#7f8a8c', text = '#d9dcd6', line = 'rgba(200,210,205,0.18)', red = '#e0533f', green = '#62d39a';
+  const prog = sent ? 1 : p;
+  const rand = seeded(61);
+  return makeCanvas(1024, 640, (g, w, h) => {
+    const t = (s, x, y, { size = 16, color = text, font = MONO, align = 'left' } = {}) => { g.font = `${size}px ${font}`; g.fillStyle = color; g.textAlign = align; g.fillText(s, x, y); };
+    const panel = (x, y, pw, ph) => { g.fillStyle = 'rgba(255,255,255,0.025)'; g.fillRect(x, y, pw, ph); g.strokeStyle = line; g.lineWidth = 1.2; g.strokeRect(x, y, pw, ph); };
+    const bg = g.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, '#111619'); bg.addColorStop(1, '#090c0e');
+    g.fillStyle = bg; g.fillRect(0, 0, w, h);
+    // Header.
+    panel(16, 14, w - 32, 70);
+    drawEmblem(g, 56, 48, 17, { light: '#d9dcd6', accent: amber });
+    t('STATION 9', 88, 50, { size: 26, font: HEAD }); t('R E S E A R C H', 104, 70, { size: 11, color: dim });
+    g.fillStyle = line; g.fillRect(250, 26, 1, 46);
+    ['COMMUNICATIONS', 'DEEP SPACE RELAY', 'EXTERNAL CONTACT'].forEach((s, i) => t(s, 264, 36 + i * 16, { size: 11, color: dim }));
+    t('2091-07-15  03:14', w - 170, 44, { size: 15, align: 'right' }); t('SYS-9-COM-01', w - 170, 64, { size: 11, color: dim, align: 'right' });
+    const online = prog > 0;
+    g.strokeStyle = online ? green : red; g.strokeRect(w - 156, 28, 92, 24);
+    t(online ? 'ONLINE' : 'STANDBY', w - 110, 46, { size: 14, color: online ? green : red, align: 'center' });
+    g.fillStyle = online ? amber : '#5a4a2a'; g.beginPath(); g.arc(w - 44, 40, 6, 0, 7); g.fill();
+    // The menu down the left.
+    const menu = [['Outgoing Call', 'Contact External'], ['Incoming (2)', 'No New Messages'], ['Recorded Logs', '47 Files'],
+      ['System Status', `Antenna: ${prog >= 1 / 6 ? 'ONLINE' : 'OFFLINE'}`], ['Settings', 'Audio / Relay / Power'], ['Help', 'Procedures']];
+    menu.forEach(([a, b], i) => {
+      const y = 98 + i * 72;
+      if (i === 0) { g.fillStyle = amber; g.fillRect(16, y, 200, 64); }
+      else { g.strokeStyle = line; g.strokeRect(16, y, 200, 64); }
+      g.strokeStyle = i === 0 ? '#1a1a14' : dim; g.lineWidth = 1.5; g.strokeRect(28, y + 18, 26, 26); // icon
+      t(a, 66, y + 30, { size: 16, color: i === 0 ? '#1a1a14' : text }); t(b, 66, y + 50, { size: 11, color: i === 0 ? '#3a3420' : dim });
+    });
+    // Centre: the call.
+    panel(232, 98, 520, 330);
+    t('OUTGOING CALL', 250, 140, { size: 34, font: HEAD }); t('ESTABLISHING CONNECTION TO RESCUE NETWORK', 250, 162, { size: 12, color: dim });
+    t('DEEP SPACE RELAY // DSN-77A', 738, 128, { size: 11, color: dim, align: 'right' });
+    t(sent ? 'LOCKED ON' : prog > 0 ? 'AUTO-ALIGN IN PROGRESS' : 'AWAITING OPERATOR', 738, 144, { size: 11, color: dim, align: 'right' });
+    // A dish against a planet's edge.
+    g.save(); g.beginPath(); g.rect(240, 176, 300, 244); g.clip();
+    const planet = g.createRadialGradient(560, 640, 150, 560, 640, 330);
+    planet.addColorStop(0, '#1d3448'); planet.addColorStop(0.9, '#2c5672'); planet.addColorStop(1, 'rgba(120,180,220,0)');
+    g.fillStyle = planet; g.beginPath(); g.arc(560, 640, 330, 0, 7); g.fill();
+    for (let i = 0; i < 60; i++) { g.fillStyle = `rgba(255,255,255,${rand() * 0.5})`; g.fillRect(240 + rand() * 300, 176 + rand() * 120, 1.5, 1.5); }
+    g.translate(360, 280); g.rotate(-0.5 + prog * 0.15);
+    g.strokeStyle = '#c9cdc8'; g.lineWidth = 2; g.fillStyle = 'rgba(200,205,200,0.18)';
+    g.beginPath(); g.ellipse(0, 0, 80, 34, 0, 0, Math.PI * 2); g.fill(); g.stroke();
+    for (let k = -2; k <= 2; k++) { g.beginPath(); g.moveTo(k * 30, -Math.sqrt(Math.max(0, 1 - (k * 30 / 80) ** 2)) * 34); g.lineTo(k * 30, Math.sqrt(Math.max(0, 1 - (k * 30 / 80) ** 2)) * 34); g.stroke(); }
+    g.beginPath(); g.moveTo(-60, 20); g.lineTo(0, -70); g.lineTo(60, 20); g.stroke(); g.fillStyle = '#c9cdc8'; g.fillRect(-4, -76, 8, 8);
+    g.restore();
+    g.strokeStyle = '#8f9590'; g.lineWidth = 3; g.beginPath(); g.moveTo(360, 300); g.lineTo(350, 410); g.moveTo(330, 410); g.lineTo(390, 410); g.stroke();
+    // The checklist: each step ticks off as the call goes through.
+    CALL_STEPS.forEach(([name, done], i) => {
+      const y = 214 + i * 36, d0 = i / CALL_STEPS.length, d1 = (i + 1) / CALL_STEPS.length;
+      const finished = sent ? i < 5 : prog >= d1, active = sent ? i === 5 : prog > d0 && prog < d1;
+      g.lineWidth = 2; g.strokeStyle = finished ? green : active ? amber : '#3b4446';
+      g.beginPath(); g.arc(566, y - 5, 9, 0, 7); g.stroke();
+      if (finished) { g.beginPath(); g.moveTo(561, y - 5); g.lineTo(565, y - 1); g.lineTo(572, y - 10); g.stroke(); }
+      t(name, 586, y, { size: 14, color: finished || active ? text : '#5d676a' });
+      if (finished) t(done, 738, y, { size: 13, color: green, align: 'right' });
+      else if (active) t(i === 5 ? 'LISTENING…' : 'WORKING…', 738, y, { size: 13, color: amber, align: 'right' });
+    });
+    // Bottom: dialling line, timer, and the button.
+    panel(232, 440, 520, 112);
+    const label = sent ? 'SIGNAL SENT · AWAITING RESPONSE' : prog > 0 ? 'D I A L I N G   R E S C U E   N E T W O R K …' : 'READY TO DIAL';
+    g.strokeStyle = 'rgba(200,210,205,0.25)'; g.lineWidth = 1; g.beginPath();
+    for (let x = 248; x < 560; x += 3) g.lineTo(x, 478 + Math.sin(x * 0.11) * (prog > 0 && !sent ? 10 * rand() : 2));
+    g.stroke();
+    t(label, 252, 484, { size: 15 });
+    const secs = Math.min(seconds, prog * seconds);
+    t(`00:00:${String(Math.floor(secs)).padStart(2, '0')}`, 736, 490, { size: 36, color: amber, font: MONO, align: 'right' });
+    t(`EST. TIME 00:00:${String(seconds).padStart(2, '0')}`, 736, 512, { size: 11, color: dim, align: 'right' });
+    t('TARGET: STATION 9 EMERGENCY BEACON', 250, 524, { size: 12, color: dim });
+    t('FREQUENCY: 7.3 GHz (DEEP SPACE RELAY)', 250, 542, { size: 12, color: dim });
+    const btn = sent ? ['CALL SENT', green] : prog > 0 ? ['CANCEL CALL', red] : ['HOLD  [E]  TO DIAL', amber];
+    g.strokeStyle = btn[1]; g.lineWidth = 2; g.fillStyle = 'rgba(0,0,0,0.25)';
+    g.fillRect(372, 566, 280, 52); g.strokeRect(372, 566, 280, 52);
+    t(btn[0], 512, 600, { size: 22, color: btn[1], font: HEAD, align: 'center' });
+    // Right: signal strength, the antenna radar, and who's being called.
+    panel(766, 98, 242, 260);
+    t('SIGNAL STRENGTH', 780, 122, { size: 12 });
+    const pct = Math.round(sent ? 87 : prog * 87 + (prog > 0 ? 4 : 2));
+    for (let i = 0; i < 14; i++) {
+      const lit = i / 14 < pct / 100, bh = 8 + i * 3.2;
+      g.fillStyle = lit ? amber : '#2b3133'; g.fillRect(782 + i * 15, 190 - bh, 10, bh);
+    }
+    t(`${pct}%`, 994, 214, { size: 18, align: 'right' });
+    g.strokeStyle = 'rgba(200,210,205,0.3)'; g.lineWidth = 1;
+    for (const r of [56, 36, 16]) { g.beginPath(); g.arc(887, 286, r, 0, 7); g.stroke(); }
+    g.beginPath(); g.moveTo(831, 286); g.lineTo(943, 286); g.moveTo(887, 230); g.lineTo(887, 342); g.stroke();
+    const sweep = -1 + prog * 4.4;
+    g.strokeStyle = amber; g.beginPath(); g.moveTo(887, 286); g.lineTo(887 + Math.cos(sweep) * 54, 286 + Math.sin(sweep) * 54); g.stroke();
+    t('ANTENNA AZIMUTH', 780, 352 + 22, { size: 11, color: dim }); t(`${(180 + prog * 34.6).toFixed(1)}°`, 994, 374, { size: 12, align: 'right' });
+    panel(766, 392, 242, 230);
+    t('CONTACT PROTOCOL', 780, 418, { size: 12 });
+    ['Emergency Beacon', 'Station 9 Command', 'Corporate HQ', 'Research Network', 'Manual Frequency'].forEach((s, i) => {
+      const y = 432 + i * 36;
+      if (i === 0) { g.fillStyle = amber; g.fillRect(778, y, 218, 30); }
+      else { g.strokeStyle = line; g.strokeRect(778, y, 218, 30); }
+      t(String(i + 1), 792, y + 21, { size: 14, color: i === 0 ? '#1a1a14' : text });
+      t(s, 820, y + 21, { size: 14, color: i === 0 ? '#1a1a14' : text });
+    });
+  });
+}
+
+// The plate on the reactor's front: worn metal, the emblem, STATION 9 RESEARCH.
+export function reactorPlateTexture() {
+  const rand = seeded(67);
+  return makeCanvas(256, 288, (g, w, h) => {
+    wornEnamel(g, w, h, rand, '#8e8b82');
+    drawEmblem(g, w / 2, h * 0.38, 46, { light: '#24272a', accent: '#c8781e' });
+    g.fillStyle = '#24272a'; g.textAlign = 'center';
+    g.font = `600 34px ${HEAD}`; g.fillText('STATION 9', w / 2, h * 0.8);
+    g.font = `12px ${HEAD}`; g.fillText('— R E S E A R C H —', w / 2, h * 0.88);
+  });
+}
+
+// The generator room's switch panel: COOLANT PUMPS, FUEL FLOW, AUX POWER, with toggles (the
+// lamps above each toggle are separate meshes so they can change colour).
+export const SWITCH_GROUPS = [['COOLANT PUMPS', 3], ['FUEL FLOW', 3], ['AUX POWER', 1]];
+export function switchPanelTexture() {
+  const rand = seeded(71);
+  return makeCanvas(512, 280, (g, w, h) => {
+    g.fillStyle = '#4a4a46'; g.fillRect(0, 0, w, h);
+    scratches(g, w, h, rand, 40, 0.2);
+    let x = 10;
+    for (const [label, n] of SWITCH_GROUPS) {
+      const gw = n * 56 + 24;
+      g.fillStyle = '#5c5c57'; g.fillRect(x, 10, gw, h - 20);
+      g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 3; g.strokeRect(x, 10, gw, h - 20);
+      g.fillStyle = '#e9e4d6'; g.font = `500 17px ${HEAD}`; g.textAlign = 'center'; g.fillText(label, x + gw / 2, 40);
+      for (let i = 0; i < n; i++) {
+        const cx = x + 12 + 28 + i * 56;
+        g.fillStyle = '#1b1c1c'; g.fillRect(cx - 18, 70, 36, 46); // the lamp's bezel (the lamp itself is a mesh)
+        g.fillStyle = '#121313'; g.fillRect(cx - 14, 136, 28, 70); // toggle housing
+        g.fillStyle = '#8a8c88'; g.fillRect(cx - 5, 148, 10, 34); // the toggle
+        g.fillStyle = '#d8d4c8'; g.fillRect(cx - 12, 222, 24, 12); // label strip
+      }
+      x += gw + 10;
+    }
+    for (let i = 0; i < 200; i++) { g.fillStyle = `rgba(110,55,22,${0.3 + rand() * 0.4})`; g.fillRect(rand() * w, rand() * h, 1 + rand() * 3, 1 + rand() * 2); }
   });
 }

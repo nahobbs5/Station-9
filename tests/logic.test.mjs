@@ -634,6 +634,7 @@ test('corridor ribs stand against both walls, clear of doors, and stay shallow',
     assert.ok(Math.hypot(r.a.x - r.b.x, r.a.z - r.b.z) < 3.4);
   }
   for (const v of plan.vents) {
+    assert.ok(v.y > 1.5, 'a low decorative vent would look enterable');
     assert.ok(!layout.roomAt(...v.cell)?.safe, 'vent in a safe room');
     for (const r of plan.ribs) for (const p of [r.a, r.b]) assert.ok(Math.hypot(v.x - p.x, v.z - p.z) > 0.5, 'vent under a rib');
   }
@@ -666,7 +667,7 @@ test('every model placement has its file, stands on open floor or hangs on a wal
   const { modelPlacements, MODELS, modelUrl } = await import('../js/modelplan.js');
   const { existsSync } = await import('node:fs');
   const list = modelPlacements(layout, planDecor(layout));
-  assert.ok(list.length >= 20);
+  assert.ok(list.length >= 15);
   for (const p of list) {
     assert.ok(MODELS[p.model], p.model);
     assert.ok(existsSync(new URL('../' + modelUrl(p.model), import.meta.url)), modelUrl(p.model));
@@ -674,4 +675,56 @@ test('every model placement has its file, stands on open floor or hangs on a wal
     const room = layout.roomAt(Math.floor(p.x / TILE), Math.floor(p.z / TILE));
     assert.ok(!room?.safe, `${p.model} in a safe room`);
   }
+});
+
+test('decor and models keep clear of the hideable grates, each grate has its smear, kick plates gap at wall vents', async () => {
+  const { grateSpots } = await import('../js/vents.js');
+  const { modelPlacements } = await import('../js/modelplan.js');
+  const { kickPlateSpans } = await import('../js/worldplan.js');
+  const grates = grateSpots(layout);
+  if (!grates.length) return;
+  const plan = planDecor(layout);
+  const near = (o, d) => grates.find((g) => Math.hypot(g.x - o.x, g.z - o.z) < d);
+  for (const list of ['plates', 'tape', 'boards', 'vents', 'stencils', 'sconces']) {
+    for (const o of plan[list]) assert.ok(!near(o, 0.9), `${list} item by grate ${near(o, 0.9)?.id}`);
+  }
+  for (const o of plan.streaks.filter((s) => !s.grate)) assert.ok(!near(o, 0.9), 'streak by a grate');
+  for (const o of plan.stains.filter((s) => !s.grate)) assert.ok(!near(o, 1.1), 'stain on a grate');
+  for (const o of [...plan.clutter, ...plan.grates]) assert.ok(!near(o, 1.1), 'clutter or floor plate on a grate');
+  for (const m of modelPlacements(layout, plan)) assert.ok(!near(m, 1.1), `${m.model} by grate ${near(m, 1.1)?.id}`);
+  const { looseItems, extraSeats } = await import('../js/worldplan.js');
+  for (const o of looseItems(layout, new Set())) assert.ok(!near(o, 1.1), `loose ${o.kind} by grate ${near(o, 1.1)?.id}`);
+  for (const o of [...layout.furniture.map((f) => furniturePlacement(layout, f)), ...extraSeats(layout)]) assert.ok(!near(o, 1.1), `furniture by grate ${near(o, 1.1)?.id}`);
+  for (const g of grates) assert.equal(plan.stains.filter((s) => s.grate === g.id).length, 1, `smear for ${g.id}`);
+  // The kick plate breaks round every wall vent, and only there.
+  for (const g of grates.filter((q) => q.kind === 'wall')) {
+    const panel = wallPanels(layout).find((p) => {
+      const dx = p.bx - p.ax, dz = p.bz - p.az, len = Math.hypot(dx, dz);
+      const t = ((g.x - p.ax) * dx + (g.z - p.az) * dz) / (len * len);
+      return t > 0 && t < 1 && Math.abs((g.x - p.ax) * dz - (g.z - p.az) * dx) / len < 0.15 && g.nx * p.nx + g.nz * p.nz > 0.7;
+    });
+    assert.ok(panel, `no wall panel behind ${g.id}`);
+    const spans = kickPlateSpans(panel, grates);
+    const len = Math.hypot(panel.bx - panel.ax, panel.bz - panel.az);
+    const t = ((g.x - panel.ax) * (panel.bx - panel.ax) + (g.z - panel.az) * (panel.bz - panel.az)) / (len * len);
+    assert.ok(!spans.some(([a, b]) => t > a && t < b), `kick plate runs across ${g.id}`);
+  }
+});
+
+test('generator room fixtures hang on clear walls', async () => {
+  const { generatorFixtures, furniturePlacement: fp } = await import('../js/worldplan.js');
+  const { panel, sign } = generatorFixtures(layout);
+  const plan = planDecor(layout);
+  for (const f of [panel, sign]) {
+    const nx = Math.sin(f.rot), nz = Math.cos(f.rot);
+    assert.ok(layout.walkDistance(f.x + nx * 0.1, f.z + nz * 0.1) > 0, 'faces into the room');
+    assert.ok(layout.walkDistance(f.x - nx * 0.1, f.z - nz * 0.1) <= 0.02, 'on a wall');
+    for (const d of layout.doors) assert.ok(Math.hypot(cellCenter(d.cx) - f.x, cellCenter(d.cz) - f.z) > f.w / 2 + 0.9, 'clear of the door');
+    for (const fu of layout.furniture.filter((q) => q.room === 'generator')) {
+      const a = fp(layout, fu);
+      assert.ok(Math.hypot(a.x - f.x, a.z - f.z) > 1.2, `${fu.kind} under a generator fixture`);
+    }
+    for (const list of ['plates', 'tape', 'vents', 'boards']) for (const o of plan[list]) assert.ok(Math.hypot(o.x - f.x, o.z - f.z) > 1.0, `${list} on a generator fixture`);
+  }
+  assert.ok(plan.stencils.some((s) => s.kind === 'g1'));
 });

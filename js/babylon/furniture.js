@@ -13,16 +13,16 @@ export function furnitureKit(scene) {
   const { MeshBuilder, TransformNode } = BABYLON;
   const T = (c, o = {}) => toTexture(scene, c, { anisotropy: 4, ...o });
   const M = {
-    cream: pbr(scene, { map: T(housingTexture()), roughness: 0.6, metalness: 0.3, surface: 'painted', bump: 0.7 }),
+    cream: pbr(scene, { map: T(housingTexture()), roughness: 0.6, metalness: 0.3, surface: 'painted', bump: 0.4 }),
     leather: pbr(scene, { map: T(leatherTexture()), roughness: 0.5, metalness: 0.05, surface: 'leather', tile: [2, 2] }),
     fabric: pbr(scene, { color: 0x2a2d2f, roughness: 0.95 }),
-    metal: pbr(scene, { color: 0x8a8d90, roughness: 0.4, metalness: 0.8, surface: 'panel' }),
+    metal: pbr(scene, { color: 0x8a8d90, roughness: 0.4, metalness: 0.8, surface: 'painted', bump: 0.4 }), // smooth, no tread plate
     dark: pbr(scene, { color: 0x1c1e20, roughness: 0.6, metalness: 0.4 }),
     yellow: pbr(scene, { color: 0xd9a52a, roughness: 0.6 }),
     crateGrey: pbr(scene, { color: 0x8f8c82, roughness: 0.7, metalness: 0.3 }),
     paper: pbr(scene, { color: 0xe8e2cf, roughness: 0.9 }),
     blanket: pbr(scene, { map: T(blanketTexture()), roughness: 0.95 }),
-    crate: pbr(scene, { map: T(crateTexture()), roughness: 0.6, metalness: 0.3, surface: 'painted' }),
+    crate: pbr(scene, { map: T(crateTexture()), roughness: 0.6, metalness: 0.3, surface: 'painted', bump: 0.4 }),
     medkit: pbr(scene, { map: T(medkitTexture()), roughness: 0.5 }),
     soil: pbr(scene, { color: 0x2a2018, roughness: 1 }),
     mug: pbr(scene, { map: T(mugTexture(), { mirror: true }), roughness: 0.5 }),

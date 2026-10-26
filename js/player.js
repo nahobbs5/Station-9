@@ -28,6 +28,7 @@ export class Player {
     this.exhausted = false;
     this.keys = new Set();
     this.flashlightOn = true;
+    this.frozen = false; // a vent has you: no walking, the vent places the camera (js/vents.js)
     this.flashClicked = false; // set on toggle; main turns it into a small noise
     this.moving = false;
     this.idle = 0; // seconds since you last moved
@@ -56,6 +57,14 @@ export class Player {
 
   // Returns { loudness, mode } on the frame a footstep lands, otherwise null.
   update(dt, time) {
+    if (this.frozen) {
+      this.moving = false;
+      this.mode = 'crouch';
+      this.idle += dt;
+      this.stamina = Math.min(1, this.stamina + dt / RECOVER_TIME);
+      this.camera.flashlight = this.flashlightOn ? 0.5 : 0; // a duct is half a metre across: far less light needed
+      return null;
+    }
     const k = this.keys;
     const fwd = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
     const side = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);

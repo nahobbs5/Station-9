@@ -60,11 +60,18 @@ export class Music {
   }
 }
 const HUM_VOLUME = 0.35;
+const OPEN_HZ = 20000;          // the world bus's low-pass, wide open
+const SUITE_WORLD_HZ = 500;     // ...and through the suites' padding
+const SUITE_WORLD_GAIN = 0.35;
+const VENT_WORLD_HZ = 1500;      // ...and through a vent's thin metal
+const VENT_WORLD_GAIN = 0.7;
 
 // One playing (or playable) sound, with the small API the game uses:
 // play / pause / stop, setVolume, setPlaybackRate, onEnded, isPlaying.
 class Voice {
-  constructor(audio, buffer, { volume = 1, rate = 1, ref = 2.5, loop = false, duration, offset = 0, positional = false, anchor = null } = {}) {
+  // bus: 'alien' | 'world' | 'clear'. By default, sounds on the alien go to the alien bus, other positional
+  // sounds to the world bus, and plain 2D sounds (your own) straight out. See GameAudio.setInSuite.
+  constructor(audio, buffer, { volume = 1, rate = 1, ref = 2.5, loop = false, duration, offset = 0, positional = false, anchor = null, bus } = {}) {
     this.audio = audio;
     this.ctx = audio.ctx;
     this.buffer = buffer;
@@ -86,12 +93,12 @@ class Voice {
       this.panner.refDistance = ref;
       this.panner.rolloffFactor = 1.2;
       this.panner.maxDistance = 10000;
-      this.gain.connect(this.panner).connect(audio.master);
+      this.gain.connect(this.panner).connect(audio.busFor(bus, positional, anchor));
       this.anchor = anchor;
       audio.voices.add(this);
       this.place();
     } else {
-      this.gain.connect(audio.master);
+      this.gain.connect(audio.busFor(bus, positional, anchor));
     }
   }
 
@@ -159,6 +166,18 @@ export class GameAudio {
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.master = this.ctx.createGain();
     this.master.connect(this.ctx.destination);
+    // Inside the wellness suites the padding keeps the alien out entirely and dulls the rest of the
+    // station: the alien bus goes silent, the world bus quiet and low-passed (setInSuite).
+    this.alienBus = this.ctx.createGain();
+    this.alienBus.connect(this.master);
+    this.worldFilter = this.ctx.createBiquadFilter();
+    this.worldFilter.type = 'lowpass';
+    this.worldFilter.frequency.value = OPEN_HZ;
+    this.worldFilter.connect(this.master);
+    this.worldBus = this.ctx.createGain();
+    this.worldBus.connect(this.worldFilter);
+    this.inSuite = false;
+    this.inVent = false;
     this.voices = new Set(); // positional sounds, re-placed each frame
     this.buffers = {};
     this.beatTimer = 0;
@@ -269,6 +288,45 @@ export class GameAudio {
     this.buffers.tubeBuzz = make(0.9, (t) =>
       (Math.sign(Math.sin(t * 2 * Math.PI * 120)) * 0.25 + Math.sin(t * 2 * Math.PI * 240) * 0.2 + noise() * 0.08) *
       (Math.random() < 0.85 ? 1 : 0.2) * Math.min(1, t * 30) * Math.exp(-t * 2));
+    // Vents (js/vents.js). The cover lifting slowly: a long, low metal groan.
+    this.buffers.ventGroan = make(1.4, (t, st) => {
+      const f = 70 + 25 * Math.sin(t * 2.2) + 12 * Math.sin(t * 7.1);
+      const v = st + (noise() - st) * 0.05;
+      const env = Math.sin(Math.min(1, t / 1.4) * Math.PI);
+      return { v: (Math.sin(t * 2 * Math.PI * f) * 0.5 + Math.sin(t * 2 * Math.PI * f * 2.03) * 0.25 + v * 1.5) * env * 0.7, s: v };
+    });
+    // The cover opened fast: a sharp, ringing clang.
+    this.buffers.ventClang = make(1.6, (t) => {
+      let v = 0;
+      for (const [f, a] of [[523, 1], [1187, 0.6], [1931, 0.45], [2870, 0.3]]) v += Math.sin(t * 2 * Math.PI * f) * a;
+      return (v * 0.45 * Math.exp(-t * 3.2) + noise() * 0.5 * Math.exp(-t * 60));
+    });
+    // Crawling: a dull thud, now and then with a metal pop.
+    this.buffers.crawlThud = make(0.22, (t, st) => {
+      const v = st + (noise() - st) * 0.06;
+      return { v: (v * 3 + Math.sin(t * 2 * Math.PI * 95) * 0.4) * Math.exp(-t * 22), s: v };
+    });
+    this.buffers.ventPop = make(0.18, (t) => (Math.sin(t * 2 * Math.PI * 1650) * 0.6 + Math.sin(t * 2 * Math.PI * 2420) * 0.3) * Math.exp(-t * 28));
+    // Something tapping, further down the duct.
+    this.buffers.ventTap = make(0.6, (t) => {
+      let v = 0;
+      for (const at of [0, 0.19, 0.31]) if (t >= at) v += (Math.sin((t - at) * 2 * Math.PI * 1300) + noise() * 0.3) * Math.exp(-(t - at) * 70);
+      return v * 0.5;
+    });
+    // It hitting the cover in a chase: rough scrapes on metal, about three seconds.
+    this.buffers.ventScrape = make(3, (t, st) => {
+      const v = st + (noise() - st) * 0.35;
+      const strokes = Math.max(0, Math.sin(t * 2 * Math.PI * 1.4)) ** 0.6;
+      return { v: (v + Math.sin(t * 2 * Math.PI * 310) * 0.2) * strokes * 0.9, s: v };
+    });
+    // The cover torn off: a rip and a crash.
+    this.buffers.ventTear = make(1.2, (t, st) => {
+      const v = st + (noise() - st) * 0.5;
+      const rip = t < 0.6 ? Math.min(1, t / 0.08) * (0.6 + 0.4 * Math.sin(t * 2 * Math.PI * 37)) : 0;
+      let crash = 0;
+      if (t >= 0.6) { const u = t - 0.6; crash = (noise() * 0.6 + Math.sin(u * 2 * Math.PI * 610) * 0.5) * Math.exp(-u * 6); }
+      return { v: v * rip + crash, s: v };
+    });
     // Heartbeat: lub-dub.
     this.buffers.beat = make(0.5, (t) => {
       const lub = t < 0.15 ? Math.sin(t * 2 * Math.PI * 55) * Math.sin((t / 0.15) * Math.PI) : 0;
@@ -322,7 +380,7 @@ export class GameAudio {
   }
 
   startAmbience(teleporterAnchor) {
-    this.hum = this.make(false, 'hum', { volume: HUM_VOLUME, loop: true });
+    this.hum = this.make(false, 'hum', { volume: HUM_VOLUME, loop: true, bus: 'world' }); // muffled in the suites
     this.hum?.play();
     this.make(true, 'teleporter', { volume: 0.5, loop: true, ref: 2 }, teleporterAnchor)?.play();
   }
@@ -344,6 +402,33 @@ export class GameAudio {
     this.hum.gain.gain.setTargetAtTime(v, this.ctx.currentTime, speed);
   }
 
+  busFor(bus, positional, anchor) {
+    if (bus === 'alien' || (!bus && anchor && anchor === this.alienAnchor)) return this.alienBus;
+    if (bus === 'world' || (!bus && positional)) return this.worldBus;
+    return this.master;
+  }
+
+  // Stepping into (or out of) a wellness suite: nothing of the alien, and the station muffled.
+  setInSuite(on) {
+    if (on === this.inSuite) return;
+    this.inSuite = on;
+    const t = this.ctx.currentTime;
+    this.alienBus.gain.setTargetAtTime(on ? 0 : 1, t, 0.25);
+    this.worldBus.gain.setTargetAtTime(on ? SUITE_WORLD_GAIN : 1, t, 0.25);
+    this.worldFilter.frequency.setTargetAtTime(on ? SUITE_WORLD_HZ : OPEN_HZ, t, 0.25);
+  }
+
+  // Inside a vent: the station's sounds come through a little muffled (so you can still judge where
+  // the alien is), and the alien's own sounds come through clearly. Not as dulled as a suite.
+  setInVent(on) {
+    if (on === this.inVent) return;
+    this.inVent = on;
+    if (this.inSuite) return;
+    const t = this.ctx.currentTime;
+    this.worldBus.gain.setTargetAtTime(on ? VENT_WORLD_GAIN : 1, t, 0.25);
+    this.worldFilter.frequency.setTargetAtTime(on ? VENT_WORLD_HZ : OPEN_HZ, t, 0.25);
+  }
+
   // anchor: the alien's live position; its looping sounds follow it.
   attachAlien(anchor) {
     this.alienAnchor = anchor;
@@ -359,6 +444,7 @@ export class GameAudio {
       patrol: { volume: 0.9, rate: 0.9, duration: 1.0 },
       investigate: { volume: 1.2, rate: 1.35, duration: 0.7 },
       lost: { volume: 0.8, rate: 0.7, duration: 0.6 },
+      listen: { volume: 1.1, rate: 0.6, duration: 1.6 }, // at the grate: slowed and stretched
     }[state] ?? { volume: 1, rate: 1, duration: 1 };
     if (!this.alienAnchor) return;
     const s = this.make(true, 'clicks', { ref: 3, offset: Math.random() * 3, ...opts }, this.alienAnchor);
@@ -429,8 +515,8 @@ export class GameAudio {
       this.murmurVol += (want - this.murmurVol) * Math.min(1, dt * 1.5);
       this.murmur.setVolume(this.murmurVol);
     }
-    // Heartbeat starts within 10 m and speeds up as it gets close.
-    if (alienDist < 10) {
+    // Heartbeat starts within 10 m and speeds up as it gets close. Not in the suites: you're safe there.
+    if (alienDist < 10 && !this.inSuite) {
       const k = 1 - alienDist / 10;
       this.beatTimer -= dt;
       if (this.beatTimer <= 0) {

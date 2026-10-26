@@ -46,8 +46,6 @@ export const CREDITS = [
     file: 'assets/models/Barrel_01/Barrel_01_1k.gltf', use: 'Barrels in room corners' },
   { group: 'Art', title: 'Barrel 03 (3D model)', credit: 'Serhii Khromov via Poly Haven (CC0)',
     file: 'assets/models/barrel_03/barrel_03_1k.gltf', use: 'Barrels in room corners' },
-  { group: 'Art', title: 'Korean Fire Extinguisher 01 (3D model)', credit: 'UM JOORIN via Poly Haven (CC0)',
-    file: 'assets/models/korean_fire_extinguisher_01/korean_fire_extinguisher_01_1k.gltf', use: 'Fire extinguishers' },
   { group: 'Art', title: 'Medical Box (3D model)', credit: 'Ulan Cabanilla via Poly Haven (CC0)',
     file: 'assets/models/medical_box/medical_box_1k.gltf', use: 'Medical box on the lockers' },
   { group: 'Art', title: 'Metal Toolbox (3D model)', credit: 'Mateusz Sadek via Poly Haven (CC0)',

@@ -104,10 +104,10 @@ export function buildDecor(scene, layout, { onEvent = () => {} } = {}) {
   const stripeMesh = groundPlane('door-stripe');
   stripeMesh.material = pbr(scene, { map: toTexture(scene, floorStripeTexture(), { anisotropy: 8 }), transparent: true, roughness: 0.7, zOffset: -2 });
   decal(stripeMesh, plan.stripes, (st) => compose([st.x, 0.006, st.z], [0, st.yaw, 0], [st.len, 1, st.depth]));
-  for (const kind of ['oil', 'water']) {
+  for (const kind of ['oil', 'water', 'dust']) {
     const mesh = groundPlane('stain');
     // Oil stays wet and glossy; dried water is dull.
-    mesh.material = pbr(scene, { map: T(stainTexture(kind)), transparent: true, roughness: kind === 'oil' ? 0.18 : 0.8, metalness: 0, zOffset: -1 });
+    mesh.material = pbr(scene, { map: T(stainTexture(kind)), transparent: true, roughness: kind === 'oil' ? 0.18 : 0.8, metalness: kind === 'dust' ? 0.4 : 0, zOffset: -1 });
     decal(mesh, plan.stains.filter((st) => st.kind === kind), (st) => compose([st.x, 0.004, st.z], [0, st.rot, 0], [st.r * 2, 1, st.r * 2]));
   }
 

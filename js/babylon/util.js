@@ -46,7 +46,11 @@ export function pbr(scene, { color = 0xffffff, map = null, roughness = 1, metaln
   m.roughness = roughness;
   m.metallic = metalness;
   m.maxSimultaneousLights = MAX_LIGHTS;
-  if (transparent && map) { map.hasAlpha = true; m.useAlphaFromAlbedoTexture = true; m.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND; }
+  if (transparent && map) {
+    map.hasAlpha = true; m.useAlphaFromAlbedoTexture = true; m.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
+    // Where it's see-through, show nothing: no shine or reflection over the clear parts (decals).
+    m.useSpecularOverAlpha = false; m.useRadianceOverAlpha = false;
+  }
   if (zOffset) m.zOffset = zOffset;
   if (twoSided) m.backFaceCulling = false;
   if (surface) {

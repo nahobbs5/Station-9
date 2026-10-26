@@ -15,6 +15,7 @@ import { parseIntro, parseLore } from './textfiles.js';
 import { TapePlayer } from './tapes.js';
 import { CameraRig } from './rig.js';
 import { inSuite, graffitiWall, GRAFFITI_RANGE } from './suiteplan.js';
+import { VENT, VentState, grateAt, nearestGrate, clampYaw, lookingOut, ventPoint } from './vents.js';
 
 const $ = (id) => document.getElementById(id);
 const ORDER = REPAIRS;
@@ -79,7 +80,7 @@ export function startGame(createView) {
   const tricks = new Tricks({
     layout, world, audio, alien, player, isInView, isDoorClosed, hatman,
     cameoSurfaces: cameoSurfaces(layout),
-    inSuite: () => suiteNow !== null,
+    inSuite: () => suiteNow !== null || vent.inside, // no tricks in the suites or the vents
     facing: () => { rig.forward(fwd); return fwd; },
     stage: () => stage,
     busy: () => repairingNow,
@@ -107,6 +108,10 @@ export function startGame(createView) {
   const DOOR_LINE_GAP = 20; // seconds before she repeats a door line
   const graffiti = graffitiWall(layout);
   const stats = { hunts: 0, decoys: 0 };
+  // Vents (js/vents.js): which one you're in, and the E key's tap-or-hold at a grate.
+  const vents = world.vents?.vents ?? [];
+  const vent = new VentState(vents);
+  let eDownAt = -1, eTapped = false, ventHold = 0, ventGrate = null, ventRefused = 0, tapTimer = 30;
 
   // Lore terminals and the opening announcements come from text/lore.txt and text/intro.txt,
   // loaded when the shift starts.
@@ -136,12 +141,17 @@ export function startGame(createView) {
   // Input --------------------------------------------------------------------------
   addEventListener('keydown', (e) => {
     if (state !== 'playing') return;
-    if (e.code === 'KeyE') { if (!e.repeat) ePressed = true; eHeld = true; }
-    if (e.code === 'KeyQ' && !e.repeat) throwDecoy();
+    if (e.code === 'KeyE') { if (!e.repeat) { ePressed = true; eDownAt = elapsed; } eHeld = true; }
+    if (e.code === 'KeyQ' && !e.repeat && !vent.inside) throwDecoy();
     if (e.code === 'KeyM' && !e.repeat) $('map').hidden = !$('map').hidden;
     if (e.code === 'KeyT' && !e.repeat) tapes.stop();
   });
-  addEventListener('keyup', (e) => { if (e.code === 'KeyE') eHeld = false; });
+  addEventListener('keyup', (e) => {
+    if (e.code !== 'KeyE') return;
+    eHeld = false;
+    if (eDownAt >= 0 && elapsed - eDownAt < VENT.tapMax) eTapped = true; // a tap, not a hold
+    eDownAt = -1;
+  });
 
   const canvas = view.canvas;
   const lock = () => { const p = canvas.requestPointerLock(); if (p?.catch) p.catch(() => {}); };
@@ -316,6 +326,7 @@ export function startGame(createView) {
       return false;
     }
     progress[id] = Math.min(1, progress[id] + dt / target.duration);
+    world.setRepairProgress?.(id, progress[id]);
     pulseTimer -= dt;
     if (pulseTimer <= 0) {
       pulseTimer = 0.8;
@@ -361,12 +372,26 @@ export function startGame(createView) {
       } else if (ev.type === 'hunt') {
         audio.screech();
         revealTimer = 1.2; // you see it for about a second
+      } else if (ev.type === 'scrape') {
+        // At the grate in a chase: it hits the cover first.
+        audio.playAt('ventScrape', { x: ev.grate.x, y: 0.4, z: ev.grate.z }, { volume: 1.6, ref: 3, bus: 'alien' });
+      } else if (ev.type === 'tearStart') {
+        audio.playAt('ventTear', { x: ev.grate.x, y: 0.4, z: ev.grate.z }, { volume: 1.8, ref: 4, bus: 'alien' });
+        world.vents?.tear(ev.grate);
+      } else if (ev.type === 'tore') {
+        // A dead end: caught. A duct: caught only near that end; otherwise it goes round to the other.
+        const g = ev.grate;
+        if (vent.inside && vent.vent === g.vent) {
+          const endS = g.end === 0 ? 0 : g.vent.length;
+          if (g.vent.kind === 'dead' || Math.abs(vent.s - endS) <= VENT.tearCatch) { caught(); return; }
+          alien.goOtherEnd();
+        } else alien.toLost();
       } else if (ev.type === 'doorForce') {
         const d = world.doorAt(ev.cell[0], ev.cell[1]);
-        audio.playAt('door', d, { volume: 0.9, rate: 0.6, duration: 1.6 });
+        audio.playAt('door', d, { volume: 0.9, rate: 0.6, duration: 1.6, bus: 'alien' });
       } else if (ev.type === 'doorOpen') {
         const d = world.doorAt(ev.cell[0], ev.cell[1]);
-        audio.playAt('door', d, { volume: 1.0, rate: 1.0, offset: 1.5, duration: 2 });
+        audio.playAt('door', d, { volume: 1.0, rate: 1.0, offset: 1.5, duration: 2, bus: 'alien' });
       }
     }
   }
@@ -421,6 +446,109 @@ export function startGame(createView) {
   const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
   // Per-frame update -------------------------------------------------------------
+  // Vents ----------------------------------------------------------------------------
+  // At a grate: tap E to dive in (or out) fast and loud, hold it to slip through quietly. Inside:
+  // crawl with W/S, look about (within limits), and keep still while it listens.
+  // Returns the grate you could use right now (for the prompt), or null.
+  function updateVent(dt) {
+    const acted = ePressed || player.flashClicked;
+    const wasInside = vent.inside;
+    const grate = vent.inside ? vent.exitGrate() : grateAt(vents, player.pos, player.crouching);
+    ventRefused = Math.max(0, ventRefused - dt);
+    if (grate && (vent.mode === 'out' || vent.mode === 'in')) {
+      ventHold = eHeld && eDownAt >= 0 ? elapsed - eDownAt : 0;
+      let speed = null;
+      if (eTapped) speed = 'fast';
+      else if (ventHold >= VENT.slowHold) { speed = 'slow'; eDownAt = -1; ventHold = 0; }
+      if (speed && vent.mode === 'out') {
+        if (vent.canEnter(grate, alien.pos)) ventIn(grate, speed);
+        else ventRefused = 2;
+      } else if (speed) ventOut(speed);
+    } else ventHold = 0;
+    eTapped = false;
+    if (!vent.inside) {
+      if (wasInside) ventDone();
+      return grate;
+    }
+    const k = player.keys;
+    const fwd = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
+    for (const n of vent.update(dt, { fwd, acted })) {
+      audio.play2D(Math.random() < 0.15 ? 'ventPop' : 'crawlThud', { volume: 0.45, rate: 0.9 + Math.random() * 0.2 });
+      ventNoise(n);
+    }
+    if (player.flashClicked) {
+      player.flashClicked = false;
+      ventNoise({ ...ventPoint(vent.vent, vent.s), loudness: LOUDNESS.flashlight });
+    }
+    // Any movement or sound while it listens at this vent's grate: it tears the cover off.
+    if (!vent.still && alien.listenGrate?.vent === vent.vent) alien.ventNoise();
+    if (!vent.inside) { ventDone(); return grate; }
+    // The camera, low in the duct, looking within limits.
+    const v = vent.view();
+    player.yaw = clampYaw(player.yaw, v.yaw);
+    player.pitch = Math.max(-0.6, Math.min(v.nearGrate?.kind === 'floor' ? 1.35 : 0.6, player.pitch));
+    player.pos.x = v.x; player.pos.z = v.z;
+    rig.set(v.x, v.y, v.z, player.yaw, player.pitch);
+    rig.fovScale = 1 - VENT.fovNarrow / ((70 * Math.PI) / 180);
+    $('slats').hidden = !lookingOut(v.nearGrate, rig.forward(fwdVec));
+    // Now and then, something taps further along a duct. It's never anything.
+    if (vent.vent.kind === 'duct' && (tapTimer -= dt) <= 0) {
+      tapTimer = 25 + Math.random() * 35;
+      const p = ventPoint(vent.vent, vent.s + vent.facing * (4 + Math.random() * 4));
+      audio.playAt('ventTap', { x: p.x, y: p.y + 0.3, z: p.z }, { volume: 0.35, ref: 1.5, bus: 'clear' });
+    }
+    return grate;
+  }
+  const fwdVec = { x: 0, y: 0, z: 0 };
+
+  function ventIn(grate, speed) {
+    const n = vent.enter(grate, speed);
+    player.frozen = true;
+    player.yaw = vent.view().yaw; // inside, you face out through the cover (or along the duct)
+    player.pitch = 0;
+    tapTimer = 20 + Math.random() * 30;
+    audio.playAt(n.sound, { x: n.x, y: 0.4, z: n.z }, { volume: speed === 'fast' ? 1.3 : 0.8, ref: 2, bus: 'clear' });
+    audio.setInVent(true);
+    noiseLevel = Math.max(noiseLevel, n.loudness);
+    ventHeard(n, grate);
+  }
+
+  function ventOut(speed) {
+    const n = vent.leave(speed);
+    if (!n) return;
+    audio.playAt(n.sound, { x: n.x, y: 0.4, z: n.z }, { volume: speed === 'fast' ? 1.3 : 0.8, ref: 2, bus: 'clear' });
+    noiseLevel = Math.max(noiseLevel, n.loudness);
+    makeNoise({ x: n.x, z: n.z }, n.loudness); // you're out: an ordinary noise now
+  }
+
+  // Back out in the room: stand up by the grate.
+  function ventDone() {
+    const g = vent.grate;
+    player.frozen = false;
+    rig.fovScale = 1;
+    $('slats').hidden = true;
+    audio.setInVent(false);
+    if (g.kind === 'wall') {
+      player.pos.x = g.x + g.inward[0] * 0.7; player.pos.z = g.z + g.inward[1] * 0.7;
+      player.yaw = Math.atan2(-g.inward[0], -g.inward[1]) + Math.PI; // facing into the room
+      player.eye = 0.5;
+    } else {
+      player.pos.x = g.x; player.pos.z = g.z;
+      player.eye = 0.2;
+    }
+  }
+
+  // A noise you made in a vent (crawling, the flashlight): if it hears, it comes to the nearest grate.
+  function ventNoise(n) {
+    noiseLevel = Math.max(noiseLevel, n.loudness);
+    ventHeard(n, nearestGrate(vent.vent, vent.s).grate);
+  }
+  function ventHeard(n, grate) {
+    if (alien.dormant > 0) return;
+    const heard = heardLoudness(layout, { x: n.x, z: n.z, loudness: n.loudness }, alien.pos, isDoorClosed);
+    if (heard >= Math.hypot(n.x - alien.pos.x, n.z - alien.pos.z)) alien.hearVent(grate);
+  }
+
   // Stepping into a wellness suite: Marigold's line at the door, and your eyes adjusting to the light
   // (exposure from 0.6 to 1.0 of normal over 1.5 s). In Suite B she comments if you get close to the wall.
   function updateSuite(dt) {
@@ -429,6 +557,7 @@ export function startGame(createView) {
       // Leaving: anything she was about to say about the room no longer makes sense outside it.
       if (suiteNow && !suite) intercom.queue = intercom.queue.filter((l) => !l.suite);
       suiteNow = suite;
+      audio.setInSuite(suite !== null); // nothing of the alien in here, and the station muffled
       if (suite) {
         exposureK = 0.6;
         saidGraffiti = false;
@@ -457,13 +586,15 @@ export function startGame(createView) {
       audio.footstep(step.mode);
       makeNoise(player.pos, step.loudness);
     }
+    ventGrate = updateVent(dt);
+    if (state !== 'playing') return; // caught in a vent
     if (player.flashClicked) {
       player.flashClicked = false;
       makeNoise(player.pos, LOUDNESS.flashlight);
     }
 
-    // What you're looking at.
-    const target = findTarget(rig, world.interactables);
+    // What you're looking at (nothing while you're in a vent, or at a grate: E is for the grate).
+    const target = vent.inside || ventGrate ? null : findTarget(rig, world.interactables);
     let repairing = false;
     if (target) {
       if (ePressed && target.kind !== 'repair') press(target);
@@ -484,7 +615,8 @@ export function startGame(createView) {
     // The alien.
     const d = Math.hypot(alien.pos.x - player.pos.x, alien.pos.z - player.pos.z);
     const safe = inSafeRoom();
-    const canSee = alien.dormant <= 0 && !safe &&
+    const hidden = vent.inside; // in a vent it can't see you or reach you; only tear the cover off
+    const canSee = !hidden && alien.dormant <= 0 && !safe &&
       inSight(alien, player.pos, { moving: player.moving, lit: player.flashlightOn }) &&
       lineClear(layout, alien.pos, player.pos, isDoorClosed);
     alien.update(dt, {
@@ -500,13 +632,14 @@ export function startGame(createView) {
     view.alien.setReveal(revealTimer / 1.2);
     view.alien.update(alien, elapsed);
     audio.update(dt, { alienDist: alien.dormant > 0 ? 99 : d, alienMoving: alien.moving, alienState: alien.state });
-    if (alien.dormant <= 0 && !safe && d < CATCH_DIST) { caught(); return; }
+    if (state !== 'playing') return; // caught at a grate
+    if (!hidden && alien.dormant <= 0 && !safe && d < CATCH_DIST) { caught(); return; }
     updateSuite(dt);
 
     tricks.update(dt);
     hatman.update(dt, {
       alien, stage, elapsed, isInView, player: player.pos,
-      inSuite: suiteNow !== null, trickActive: !!tricks.active,
+      inSuite: suiteNow !== null || vent.inside, trickActive: !!tricks.active,
     });
     intercom.update(dt);
     if (toastTimer > 0 && (toastTimer -= dt) <= 0) $('toast').hidden = true;
@@ -518,7 +651,7 @@ export function startGame(createView) {
     // Reveal a few times a second, and straight away when you step into a new cell.
     const cell = cellOf(player.pos.x) + ',' + cellOf(player.pos.z);
     exploreTimer -= dt;
-    if (exploreTimer <= 0 || cell !== lastCell) {
+    if (!vent.inside && (exploreTimer <= 0 || cell !== lastCell)) {
       exploreTimer = 0.25;
       lastCell = cell;
       revealAround(layout, explored, player.pos, isDoorClosed);
@@ -528,6 +661,7 @@ export function startGame(createView) {
     mapTimer = 0.1;
     minimap.draw({
       player, explored, terminals, loreRead, stage, gotCrate,
+      grates: vents.flatMap((v) => v.grates),
       doors: world.doors,
       time: elapsed,
     });
@@ -536,7 +670,7 @@ export function startGame(createView) {
   function drawHud(dt, target, repairing) {
     drawMap(dt);
     const room = layout.roomAt(cellOf(player.pos.x), cellOf(player.pos.z));
-    $('location').textContent = room ? room.name + (room.safe ? ' · SAFE' : '') : layout.isSafe(cellOf(player.pos.x), cellOf(player.pos.z)) ? 'Hatch · SAFE' : 'Corridor';
+    $('location').textContent = vent.inside ? (vent.vent?.kind === 'duct' ? 'Duct' : 'Vent') + ' · HIDING' : room ? room.name + (room.safe ? ' · SAFE' : '') : layout.isSafe(cellOf(player.pos.x), cellOf(player.pos.z)) ? 'Hatch · SAFE' : 'Corridor';
     $('lore').textContent = `LORE ${loreRead.size}/${LORE_TOTAL}`;
     $('objective').textContent = stage < 3 ? OBJECTIVES[ORDER[stage]] : '';
     $('checklist').innerHTML = ORDER.map((id, i) =>
@@ -561,10 +695,17 @@ export function startGame(createView) {
         prompt = tapes.id === target.id ? '[E] Stop tape' : `[E] Play tape${loreRead.has(target.id) ? ' (heard)' : ''}`;
       } else prompt = `[E] ${target.label}`;
     }
+    // Vents: what E does at a grate, and the hold bar for slipping through quietly.
+    if (ventRefused > 0) prompt = 'Too close to it';
+    else if (ventGrate) prompt = vent.inside ? '[Tap E] Climb out fast · [Hold E] Climb out quietly' : '[Tap E] Dive in · [Hold E] Slip in quietly';
+    else if (vent.inside) prompt = vent.vent?.kind === 'duct' ? '[W/S] Crawl · keep still to stay hidden' : 'Keep still';
+    else if (grateAt(vents, player.pos, true)?.kind === 'wall') prompt = '[C] Crouch to use the vent';
     $('prompt').textContent = prompt;
-    const showBar = target && target.kind === 'repair' && progress[target.id] > 0 && progress[target.id] < 1;
+    const holding = ventGrate && ventHold > VENT.tapMax;
+    const showBar = holding || (target && target.kind === 'repair' && progress[target.id] > 0 && progress[target.id] < 1);
     $('progress').hidden = !showBar;
-    if (showBar) $('progress-bar').style.width = `${progress[target.id] * 100}%`;
+    if (holding) $('progress-bar').style.width = `${Math.min(1, ventHold / VENT.slowHold) * 100}%`;
+    else if (showBar) $('progress-bar').style.width = `${progress[target.id] * 100}%`;
     $('progress').classList.toggle('active', repairing);
 
     $('vignette').className = alien.state === 'hunt' ? 'hunt' : '';
@@ -594,7 +735,7 @@ export function startGame(createView) {
 
   // Handy for debugging in the browser console.
   window.station9 = {
-    alien, player, world, layout, hatman, tricks, progress, loreRead, explored, tapes, audio, intercom, decor: world.decor,
+    alien, player, world, layout, hatman, tricks, progress, loreRead, explored, tapes, audio, intercom, vent, vents, decor: world.decor,
     renderer: view.renderer, view, rig, engine: view.name,
     get lore() { return lore; }, get state() { return state; }, get stage() { return stage; },
   };

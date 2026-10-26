@@ -2,8 +2,9 @@
 // Pure logic with plain {x, z} positions, so it can be tested without a browser.
 import { findPath } from './pathfind.js';
 import { ROUTE, cellOf, cellCenter } from './layout.js';
+import { VENT } from './vents.js';
 
-export const SPEED = { patrol: 1.5, investigate: 2.5, search: 1.5, hunt: 5.5, lost: 1.2 };
+export const SPEED = { patrol: 1.5, investigate: 2.5, search: 1.5, hunt: 5.5, lost: 1.2, listen: 2.5 };
 export const SIGHT_RANGE = 4;       // metres
 export const SIGHT_HALF_ANGLE = Math.PI / 3; // a 120 degree cone
 export const HEAR_CLOSE = 4;        // hearing you this close while investigating starts a hunt
@@ -15,7 +16,7 @@ export const WARN_TIME_CLOSE = 0.5; // ...shorter if it's already within 4 m
 export const DOOR_FORCE_TIME = 1.5; // a closed door holds it this long
 const PATROL_PAUSE = 3;             // listening stop in each room
 const RECENT = 3;                   // a quieter noise can't retarget it within this many seconds
-const CLICK_EVERY = { patrol: 5, investigate: 1.5, lost: 7 };
+const CLICK_EVERY = { patrol: 5, investigate: 1.5, lost: 7, listen: 2.2 };
 const LOST_MOVE = 2.5, LOST_STOP = 1.5; // stop-start shuffle while it has lost track
 
 export class Alien {
@@ -131,6 +132,46 @@ export class Alien {
     this.emit('lost');
   }
 
+  // You used a grate, or made a noise in a vent, and it heard. It goes to the grate and listens there
+  // (js/vents.js; the Vents & Gratings doc). In a chase it hits the cover for a while first.
+  hearVent(grate, { chase = this.state === 'hunt' } = {}) {
+    if (this.dormant > 0) return false;
+    if (this.state === 'tear' || this.state === 'waitOther') return true; // already on it
+    if (this.state === 'listen' && this.listenGrate?.vent === grate.vent) {
+      if (this.atGrate) this.ventNoise(); // heard you while listening: tear it off
+      return true;
+    }
+    this.state = 'listen';
+    this.listenGrate = grate;
+    this.atGrate = false;
+    this.scrapeLeft = chase ? VENT.scrape : 0;
+    this.listenLeft = VENT.listen;
+    this.rushing = chase;
+    this.warn = 0;
+    this.pause = 0;
+    this.goal = null;
+    this.path = [];
+    this.repath = true;
+    this.clickTimer = 0;
+    return true;
+  }
+
+  // You moved or made a sound while it listened at the grate: it tears the cover off.
+  ventNoise() {
+    if (this.state !== 'listen' || !this.atGrate) return false;
+    this.state = 'tear';
+    this.tearLeft = VENT.tear;
+    this.emit('tearStart', { grate: this.listenGrate });
+    return true;
+  }
+
+  // The cover is off and you weren't caught (you crawled away down a duct): wait, then run round
+  // to the duct's other end and listen there.
+  goOtherEnd() {
+    this.state = 'waitOther';
+    this.waitLeft = VENT.otherEndWait;
+  }
+
   toPatrol() {
     this.state = 'patrol';
     let best = 0, bestD = Infinity;
@@ -218,6 +259,42 @@ export class Alien {
         if (this.repath || !this.goal) this.setGoal(this.lastKnown, ctx);
         // Reached where you were and nothing new: cast around that spot until it gives up.
         if (this.follow(dt, SPEED.hunt, ctx)) this.wander(dt, SPEED.search, ctx);
+        break;
+      }
+      case 'listen': {
+        if (!this.atGrate) {
+          if (this.repath || !this.goal) this.setGoal(this.listenGrate.waypoint, ctx);
+          if (this.follow(dt, this.rushing ? SPEED.hunt : SPEED.listen, ctx)) {
+            this.atGrate = true;
+            const g = this.listenGrate;
+            this.heading = Math.atan2(g.x - this.pos.x, g.z - this.pos.z);
+            if (this.scrapeLeft > 0) this.emit('scrape', { grate: g, time: this.scrapeLeft });
+            this.emit('listen', { grate: g });
+          }
+          break;
+        }
+        if (this.scrapeLeft > 0) { this.scrapeLeft -= dt; break; }
+        this.listenLeft -= dt;
+        if (this.listenLeft <= 0) { this.listenGrate = null; this.toLost(); }
+        break;
+      }
+      case 'tear': {
+        this.tearLeft -= dt;
+        if (this.tearLeft <= 0) {
+          this.state = 'torn';
+          this.emit('tore', { grate: this.listenGrate });
+        }
+        break;
+      }
+      case 'waitOther': {
+        this.waitLeft -= dt;
+        if (this.waitLeft <= 0) {
+          const g = this.listenGrate;
+          const other = g.vent.grates.find((o) => o !== g);
+          this.state = 'torn'; // so hearVent takes the new grate
+          this.hearVent(other ?? g, { chase: true });
+          this.scrapeLeft = 0;
+        }
         break;
       }
       case 'lost': {

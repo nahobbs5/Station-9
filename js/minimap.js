@@ -18,7 +18,8 @@ const COLORS = {
 //   pod        pod   }
 //   crate      on the noise-maker crate until you take it
 //   terminal   on each terminal you've seen; state 'read' or 'unread'
-export function mapMarkers(layout, explored, { stage = 0, gotCrate = false, loreRead = new Set(), terminals = [] } = {}) {
+// grates: the vents' grates (js/vents.js), shown once you've seen their cell.
+export function mapMarkers(layout, explored, { stage = 0, gotCrate = false, loreRead = new Set(), terminals = [], grates = [] } = {}) {
   const seenCell = (x, z) => explored[z * layout.w + x] === 1;
   const seenRoom = (r) => {
     for (let z = r.y; z < r.y + r.h; z++) for (let x = r.x; x < r.x + r.w; x++) if (seenCell(x, z)) return true;
@@ -39,11 +40,23 @@ export function mapMarkers(layout, explored, { stage = 0, gotCrate = false, lore
   for (const t of terminals) {
     if (seenCell(t.cell[0], t.cell[1])) out.push({ kind: 'terminal', x: t.cell[0] + 0.5, z: t.cell[1] + 0.5, state: loreRead.has(t.id) ? 'read' : 'unread' });
   }
+  for (const g of grates) {
+    if (!seenCell(g.cell[0], g.cell[1])) continue;
+    // Wall vents sit just inside the room, by the wall; floor gratings where they are.
+    const ix = g.inward?.[0] ?? 0, iz = g.inward?.[1] ?? 0;
+    out.push({ kind: 'vent', x: (g.x + ix * 0.5) / TILE, z: (g.z + iz * 0.5) / TILE });
+  }
   return out;
 }
 
 // Icon painters. Each draws centred on (0, 0) in pixels.
 const ICONS = {
+  vent(g) { // a small V
+    g.font = 'bold 8px "Share Tech Mono", ui-monospace, monospace';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('V', 0, 0.5);
+  },
   safe(g) {
     g.font = 'bold 11px "Share Tech Mono", ui-monospace, monospace';
     g.textAlign = 'center';
@@ -142,7 +155,7 @@ export class Minimap {
   }
 
   // s: { player, explored, doors, terminals: [{ id, cell }], loreRead: Set, stage, gotCrate, time }
-  draw({ player, explored, doors, terminals, loreRead, stage, gotCrate, time }) {
+  draw({ player, explored, doors, terminals, loreRead, stage, gotCrate, time, grates = [] }) {
     const { g, layout: L } = this;
     const seen = (x, z) => L.inBounds(x, z) && explored[z * L.w + x] === 1;
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -176,10 +189,10 @@ export class Minimap {
     }
 
     // Symbols: safe rooms, repair jobs (the current one pulses), the crate, terminals.
-    for (const m of mapMarkers(L, explored, { stage, gotCrate, loreRead, terminals })) {
+    for (const m of mapMarkers(L, explored, { stage, gotCrate, loreRead, terminals, grates })) {
       const color = m.kind === 'safe' ? COLORS.hatch
         : m.kind === 'terminal' ? (m.state === 'read' ? COLORS.terminalRead : COLORS.terminal)
-        : m.kind === 'crate' ? COLORS.label
+        : m.kind === 'crate' || m.kind === 'vent' ? COLORS.label
         : m.state === 'now' ? COLORS.objective : m.state === 'done' ? COLORS.done : COLORS.later;
       g.save();
       g.translate(m.x * CELL, m.z * CELL);

@@ -77,7 +77,7 @@ export class Tricks {
       update: (dt, t) => {
         if (t < 0.05) audio.dipHum(true);
         if (t < 1.8) return false; // the tell
-        if (!started) { started = true; audio.playAt('flicker', pos, { volume: 1.2, ref: 3 }); }
+        if (!started) { started = true; audio.playAt('flicker', pos, { volume: 1.2, ref: 3, bus: 'alien' }); }
         if (t < 3.8) r.mult = Math.random() < 0.5 ? 1 : 0.05;
         else if (t < 23.8) r.mult = 0.03; // dark for 20 s
         else { r.mult = 1; audio.dipHum(false); return true; }
@@ -96,11 +96,11 @@ export class Tricks {
     const door = candidates[Math.floor(Math.random() * candidates.length)];
     return {
       update: (dt, t) => {
-        if (t < 0.05) audio.playAt('click', { x: door.x, z: door.z, y: 2 }, { volume: 0.9, ref: 3 });
+        if (t < 0.05) audio.playAt('click', { x: door.x, z: door.z, y: 2 }, { volume: 0.9, ref: 3, bus: 'alien' });
         if (t < 1.6) return false;
         if (door.closed && !isInView(door)) {
           world.setDoor(door, false);
-          audio.playAt('door', { x: door.x, z: door.z }, { volume: 0.3, rate: 1.1, duration: 2.5 });
+          audio.playAt('door', { x: door.x, z: door.z }, { volume: 0.3, rate: 1.1, duration: 2.5, bus: 'alien' });
           if (this.doorTricks++ === 0 || Math.random() < 1 / 3) say(LINES.door(world.doors.indexOf(door) + 1));
         }
         return true;
@@ -124,7 +124,7 @@ export class Tricks {
     let s = null;
     return {
       update: (dt, t) => {
-        if (!s) s = audio.playAt('footsteps', pos, { volume: 1.4, ref: 3, loop: true, duration: 6 });
+        if (!s) s = audio.playAt('footsteps', pos, { volume: 1.4, ref: 3, loop: true, duration: 6, bus: 'alien' });
         if (!s) return true;
         if (t < 1.5) s.setPlaybackRate(1 + Math.sin(t * 20) * 0.08);
         else s.setPlaybackRate(1);
@@ -147,7 +147,7 @@ export class Tricks {
     const from = elsewhere[Math.floor(Math.random() * elsewhere.length)];
     return {
       update: (dt, t) => {
-        if (t < 0.05 && from) audio.playAt('scrape', { x: cellCenter(from.cx), z: cellCenter(from.cz), y: 0.3 }, { volume: 1.2, ref: 3 });
+        if (t < 0.05 && from) audio.playAt('scrape', { x: cellCenter(from.cx), z: cellCenter(from.cz), y: 0.3 }, { volume: 1.2, ref: 3, bus: 'alien' });
         if (t < 2) return false;
         const p = item.mesh.position;
         if (isInView(p)) return true; // you turned round: leave it be

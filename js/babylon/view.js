@@ -47,6 +47,7 @@ export function createBabylonView(container, layout) {
 
   const camera = new BABYLON.UniversalCamera('camera', new Vector3(0, 1.6, 0), scene);
   camera.fov = (70 * Math.PI) / 180; // vertical
+  const baseFov = camera.fov;
   camera.minZ = 0.05;
   camera.maxZ = 90;
   camera.inputs.clear(); // the shared Player handles input
@@ -192,6 +193,7 @@ export function createBabylonView(container, layout) {
     makeBall: ballMaker(scene),
     render(rig) {
       const p = rig.position;
+      camera.fov = baseFov * (rig.fovScale ?? 1); // narrower in a vent
       rig.forward(fwd);
       camera.position.set(p.x, p.y, p.z);
       camera.setTarget(target.set(p.x + fwd.x, p.y + fwd.y, p.z + fwd.z));

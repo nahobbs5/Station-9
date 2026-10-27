@@ -860,3 +860,26 @@ test('the alien looks and moves differently in each state (Alien Behavior Guide)
     assert.ok(Math.min(...lows) > 0.05 && Math.min(...lows) < 0.6, `${mood}: lowest tip ${Math.min(...lows).toFixed(2)}`);
   }
 });
+
+test('a terminal you face beats a nearby grate, and looking at a grate aims at nothing else', async () => {
+  const { findTarget } = await import('../js/interact.js');
+  const { grateSpots } = await import('../js/vents.js');
+  const { propPlacement, propHeight } = await import('../js/worldplan.js');
+  // What you can aim at, as world.js builds it: doors and props.
+  const items = [
+    ...layout.doors.map((d) => ({ id: 'door', kind: 'door', pos: { x: cellCenter(d.cx), y: 1.4, z: cellCenter(d.cz) }, range: 2.6 })),
+    ...layout.props.filter((p) => p.kind !== 'scenery').map((p) => { const a = propPlacement(layout, p); return { id: p.id, kind: p.kind, pos: { x: a.x, y: propHeight(p), z: a.z }, range: 2.7 }; }),
+  ];
+  const rig = new CameraRig();
+  const look = (x, y, z, tx, ty, tz) => rig.set(x, y, z, Math.atan2(-(tx - x), -(tz - z)), Math.atan2(ty - y, Math.hypot(tx - x, tz - z)));
+  for (const p of layout.props.filter((q) => q.kind === 'log')) {
+    const a = propPlacement(layout, p);
+    look(a.x + Math.sin(a.rotY) * 1.2, 1.6, a.z + Math.cos(a.rotY) * 1.2, a.x, propHeight(p), a.z);
+    assert.equal(findTarget(rig, items)?.id, p.id, `facing terminal ${p.id}`);
+  }
+  for (const g of grateSpots(layout)) {
+    if (g.kind === 'wall') look(g.x + g.nx * 0.7, 0.95, g.z + g.nz * 0.7, g.x, 0.4, g.z); // crouched, looking at the cover
+    else rig.set(g.x, 1.6, g.z, 0, -1.35); // standing on it, looking down
+    assert.equal(findTarget(rig, items), null, `looking at grate ${g.id}, aimed at ${findTarget(rig, items)?.kind}`);
+  }
+});

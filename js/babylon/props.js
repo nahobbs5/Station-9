@@ -2,29 +2,27 @@
 // (HatMan in js/hatman.js, Throwables in js/interact.js); these are just the visible parts.
 import { basic, linear, hsl, toTexture, compose, instances, TUNING, pbr } from './util.js';
 import { noisemakerShell } from '../textures.js';
-import { HATMAN, hatmanSilhouette, hatmanReflection } from '../hatman.js';
+import { HATMAN, hatmanSilhouette, hatmanReflection, hatmanHalo } from '../hatman.js';
 
-export const HATMAN_BACKLIGHT = 7;
+export const HATMAN_BACKLIGHT = 10;
 
 // The Hat Man: a flat black silhouette that always turns to face you (you can't tell at 6 m and
-// more), hovering 0.35 m off the floor and drifting slowly up and down, with a red light behind him.
+// more), hovering 0.35 m off the floor and drifting slowly up and down, against a red haze with a red
+// light behind him (so he reads even in an unlit corridor).
 // Also his reflection cameo (a faint shape on dark glass) and the corridor-end lamps he stands against.
 export function makeHatmanFigure(scene) {
   const BABYLON = window.BABYLON;
   const { MeshBuilder, PointLight, Vector3, Mesh } = BABYLON;
 
+  // Near-black, cut out by the silhouette's alpha (blended like the cameo; an alpha-test cut-out
+  // drew the whole 1 m x 2.3 m plane as a dark box). Unlit: he reads as a hole in the corridor.
   const tex = toTexture(scene, hatmanSilhouette());
-  tex.hasAlpha = true;
-  const mat = basic(scene, 0, { map: tex }); // unlit: he reads as a hole in the corridor
-  // A solid cut-out (alpha test, not blending), so he blocks what's behind him and writes depth.
-  // Lighting is off and the diffuse colour is black, so the diffuse map only supplies the cut-out.
-  mat.diffuseTexture = tex;
-  mat.transparencyMode = BABYLON.Material.MATERIAL_ALPHATEST;
-  mat.alphaCutOff = 0.5;
+  const mat = basic(scene, 0x030303, { opacity: tex });
   mat.backFaceCulling = false;
   const plane = MeshBuilder.CreatePlane('hatman', { width: 1.0, height: HATMAN.height }, scene);
   plane.material = mat;
   plane.billboardMode = Mesh.BILLBOARDMODE_Y;
+  plane.alphaIndex = 1; // drawn after his haze (alphaIndex 0), so he sits in front of it
   const baseY = HATMAN.hover + HATMAN.height / 2;
   plane.position.y = baseY;
   plane.setEnabled(false);
@@ -33,8 +31,22 @@ export function makeHatmanFigure(scene) {
   const backlight = new PointLight('hatman-light', new Vector3(0, -10, 0), scene);
   backlight.diffuse = linear(0xff2010);
   backlight.specular = backlight.diffuse;
-  backlight.range = 7;
+  backlight.range = 9;
   backlight.intensity = 0;
+
+  // The red haze behind him: solid red, faded by the canvas's alpha, added on top (like the light
+  // cones; alpha below 1 so it's blended, not drawn opaque). Drawn before him, so he's black against it.
+  const HALO_ALPHA = 0.95;
+  const haloTex = toTexture(scene, hatmanHalo());
+  const haloMat = basic(scene, 0xff3a1e, { opacity: haloTex, additive: true, alpha: HALO_ALPHA });
+  haloMat.backFaceCulling = false;
+  haloMat.fogEnabled = false; // the scene's black fog would swallow it at 20 m and more
+  const halo = MeshBuilder.CreatePlane('hatman-halo', { width: 2.4, height: 3.2 }, scene);
+  halo.material = haloMat;
+  halo.billboardMode = Mesh.BILLBOARDMODE_Y;
+  halo.isPickable = false;
+  halo.alphaIndex = 0;
+  halo.setEnabled(false);
 
   // The cameo: one faint pale shape, moved onto whichever dark screen or window it's in.
   const refTex = toTexture(scene, hatmanReflection());
@@ -51,13 +63,19 @@ export function makeHatmanFigure(scene) {
     place(x, z, lightX, lightZ) {
       plane.position.set(x, baseY, z);
       backlight.position.set(lightX, 1.6, lightZ);
+      // The haze a little behind him, away from you.
+      const dx = lightX - x, dz = lightZ - z, d = Math.hypot(dx, dz) || 1;
+      halo.position.set(x + (dx / d) * 0.15, baseY + 0.1, z + (dz / d) * 0.15);
       plane.setEnabled(true);
+      halo.setEnabled(true);
+      haloMat.alpha = HALO_ALPHA;
+      backlight.intensity = HATMAN_BACKLIGHT * TUNING.light;
     },
     // Rises and falls a few centimetres over about five seconds, as if held in the air.
     update(time) { plane.position.y = baseY + HATMAN.drift * Math.sin((time * 2 * Math.PI) / HATMAN.driftPeriod); },
     setBacklight(k) { backlight.intensity = HATMAN_BACKLIGHT * k * TUNING.light; },
-    setAlpha(k) { mat.alpha = k; backlight.intensity = HATMAN_BACKLIGHT * k * TUNING.light; },
-    hide() { plane.setEnabled(false); backlight.intensity = 0; mat.alpha = 1; },
+    setAlpha(k) { mat.alpha = k; haloMat.alpha = HALO_ALPHA * k; backlight.intensity = HATMAN_BACKLIGHT * k * TUNING.light; },
+    hide() { plane.setEnabled(false); halo.setEnabled(false); backlight.intensity = 0; mat.alpha = 1; },
     // Just in front of the glass, a little to one side (as if over your shoulder), most of its height.
     showCameo(s) {
       const fx = Math.sin(s.rotY), fz = Math.cos(s.rotY);

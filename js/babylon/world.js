@@ -21,7 +21,7 @@ import { buildPod } from './pod.js';
 import { POD } from '../podplan.js';
 import { pbr, basic, toTexture, redraw, srgb, linear, compose, instances, TUNING, bevelBox } from './util.js';
 import { noisemakerMaker } from './props.js';
-import { pickupPlacements, NOISEMAKERS } from '../noisemakers.js';
+import { pickupPlacements, NOISEMAKERS, CRATE_CONTENTS } from '../noisemakers.js';
 
 // Console status lights: Marigold until you've heard its tape, then Soft Teal (terminals spec).
 const UNREAD = 0xf2a92e, READ = 0x5fb3a8;
@@ -277,6 +277,7 @@ export function buildWorld(scene, layout) {
 
   // Props -------------------------------------------------------------------
   const props = {};
+  let cratePos = null;
   let podView = null; // the escape pod's moving parts (door, thrusters, door control)
   const interactables = [];
   for (const p of layout.props) {
@@ -365,8 +366,9 @@ export function buildWorld(scene, layout) {
     } else if (p.id === 'crate') {
       add(bevelBox('crate', { width: 1.3, height: 0.8, depth: 0.9, bevel: 0.03 }, scene), 0, 0.4, 0).material = pbr(scene, { color: 0x4b5232, roughness: 0.8 });
       add(MeshBuilder.CreateBox('stripe', { width: 1.32, height: 0.12, depth: 0.92 }, scene), 0, 0.62, 0).material = pbr(scene, { color: 0xc9a227, roughness: 0.6 });
+      // No marker light: what's inside sits on the lid (see the noise-maker block below).
       statusPos = [0, 0.9, 0];
-      statusMat.emissiveColor = srgb(0xffaa33);
+      cratePos = { x, z, rotY };
     } else if (p.kind === 'log' || p.kind === 'console') {
       // A desk console like the reference sheet; its status light is the one built above.
       const c = makeConsole(group, p);
@@ -393,7 +395,8 @@ export function buildWorld(scene, layout) {
     if (p.kind === 'console') {
       add(status, ...statusPos); // set dressing: a light, but nothing to use
     } else if (p.kind !== 'scenery') {
-      add(status, ...statusPos);
+      if (p.kind === 'crate') status.dispose(); // no marker light: its noise-makers sit on the lid
+      else add(status, ...statusPos);
       props[p.id] = { group, status: statusMat };
       const at = p.id === 'pod' ? { x: POD.panel.x, y: POD.panel.y, z: POD.panel.z } : { x, y: propHeight(p), z };
       interactables.push({ id: p.id, kind: p.kind, label: p.label, duration: p.duration, pos: at, range: 2.7 });
@@ -440,6 +443,14 @@ export function buildWorld(scene, layout) {
   // Noise-makers lying about (js/noisemakers.js): each glows faintly and bobs; take it with E.
   const makeNoisemaker = noisemakerMaker(scene);
   const pickups = new Map();
+  // The Storage crate's noise-makers, lying on its lid until you take them.
+  const crateItems = cratePos ? CRATE_CONTENTS.map((type, i) => {
+    const m = makeNoisemaker(type);
+    const lx = (i - (CRATE_CONTENTS.length - 1) / 2) * 0.45, c = Math.cos(cratePos.rotY), s = Math.sin(cratePos.rotY);
+    m.position.set(cratePos.x + lx * c, 0.8 + 0.12, cratePos.z - lx * s);
+    pickups.set('crate-' + i, m);
+    return 'crate-' + i;
+  }) : [];
   for (const pk of pickupPlacements(layout)) {
     const m = makeNoisemaker(pk.type);
     m.position.set(pk.x, pk.y + 0.12, pk.z);
@@ -561,6 +572,7 @@ export function buildWorld(scene, layout) {
       const i = interactables.findIndex((it) => it.id === id);
       if (i >= 0) interactables.splice(i, 1);
     },
+    takeFromCrate() { const id = crateItems.shift(); if (id) { pickups.get(id)?.remove(); pickups.delete(id); } },
     setPickupLabel(id, text) { const it = interactables.find((q) => q.id === id); if (it) it.label = text; },
     setStatus(id, hex) { if (props[id]) props[id].status.emissiveColor = srgb(hex); },
     setCommsLit() { redraw(props.commsScreen.tex, commsCallScreen({ sent: true }), { mirror: true }); props.commsScreen.last = 2; },
@@ -577,5 +589,7 @@ export function buildWorld(scene, layout) {
     doorAt: (x, z) => doorByKey.get(key(x, z)),
     get powered() { return powered; },
     dimBeat(seconds) { for (const r of rooms) r.beat = seconds; },
+    // The Hat Man's power cut: every room light out (not the generator or teleporter glow).
+    setBlackout(on) { for (const r of rooms) r.blackout = on; },
   };
 }

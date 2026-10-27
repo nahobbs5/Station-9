@@ -44,7 +44,7 @@ export class Tricks {
     }
     const { alien } = this.w;
     if (alien.dormant > 0 || (alien.state !== 'patrol' && alien.state !== 'investigate')) return;
-    if (this.w.hatman.visible) return; // one at a time: his corridor warning counts
+    if (this.w.hatman.busy) return; // one at a time: his blackout reveal counts
     this.cooldown -= dt;
     if (this.cooldown > 0) return;
     const options = [this.lightTrick, this.doorTrick, this.soundTrick, this.propTrick, this.cameoTrick]

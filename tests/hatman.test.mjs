@@ -1,23 +1,12 @@
-// The Hat Man (js/hatman.js), to the rules in reference files/Hatman.md.
+// The Hat Man (js/hatman.js): the blackout reveal and the reflection cameo.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLayout, cellOf, cellCenter } from '../js/layout.js';
-import { findPath } from '../js/pathfind.js';
-import { SPEED } from '../js/alien.js';
+import { buildLayout, cellOf } from '../js/layout.js';
 import { inSuite } from '../js/suiteplan.js';
-import {
-  HATMAN, HatMan, corridorSpots, corridorOfCell, predictCorridor, chooseSpot, cameoSurfaces, corridorEndLamps, pathEnd,
-} from '../js/hatman.js';
+import { roomLightLevel, roomState } from '../js/worldplan.js';
+import { HATMAN, HatMan, corridorSpots, chooseSpot, cameoSurfaces, corridorEndLamps } from '../js/hatman.js';
 
 const layout = buildLayout();
-const grid = { w: layout.w, h: layout.h, passable: (x, z) => layout.isOpen(x, z) && !layout.isSafe(x, z), cost: () => 1 };
-const at = ([x, z]) => ({ x: cellCenter(x), z: cellCenter(z) });
-
-// A patrol from Storage to the Arrival Airlock, which runs down the storage-airlock corridor.
-const route = () => {
-  const [sx, sz] = layout.room('storage').spot, [gx, gz] = layout.room('airlock').spot;
-  return { start: [sx, sz], path: findPath(grid, sx, sz, gx, gz) };
-};
 
 test('hat man: marker spots are in corridors only, never in a suite, each with its own id', () => {
   const spots = corridorSpots(layout);
@@ -31,47 +20,136 @@ test('hat man: marker spots are in corridors only, never in a suite, each with i
   }
 });
 
-test('hat man: he warns about the corridor the alien reaches in 2 to 6 s, and only then', () => {
-  const { start, path } = route();
-  const alien = { pos: at(start), path, state: 'patrol', dormant: 0 };
-  const hit = predictCorridor(alien, layout);
-  assert.ok(hit, 'a corridor on the way');
-  assert.ok(hit.eta >= HATMAN.lead[0] && hit.eta <= HATMAN.lead[1], `eta ${hit.eta}`);
-  assert.equal(hit.corridor, corridorOfCell(layout, hit.cell[0], hit.cell[1]));
-  // It's the first corridor cell the alien reaches at least 2 s out.
-  let t = 0, prev = alien.pos;
-  for (const c of path) {
-    const p = at(c);
-    t += Math.hypot(p.x - prev.x, p.z - prev.z) / SPEED.patrol;
-    prev = p;
-    if (c[0] === hit.cell[0] && c[1] === hit.cell[1]) break;
-    if (t >= HATMAN.lead[0]) assert.equal(corridorOfCell(layout, c[0], c[1]), null, `skipped an earlier corridor cell at ${c}`);
-  }
-  // Hunting, asleep, or the corridor too far ahead: no warning.
-  assert.equal(predictCorridor({ ...alien, state: 'hunt' }, layout), null);
-  assert.equal(predictCorridor({ ...alien, dormant: 5 }, layout), null);
-  const slow = path.filter((c) => !corridorOfCell(layout, c[0], c[1])).slice(0, 2);
-  assert.equal(predictCorridor({ ...alien, path: slow }, layout), null);
+// A row of spots straight down +x from you.
+const row = (xs) => xs.map((x) => ({ id: 'c:' + x, corridor: 'c', x, z: 0 }));
+const ahead = { x: 1, y: 0, z: 0 };
+
+test('hat man: he stands down the corridor you look at, nearer each repair: 25, 18, 12, 6 m', () => {
+  const spots = row(Array.from({ length: 31 }, (_, i) => i));
+  const pick = (stage) => chooseSpot(spots, { from: { x: 0, z: 0 }, forward: ahead, stage, rand: () => 0.5 });
+  assert.deepEqual([0, 1, 2, 3].map((st) => pick(st).x), [25, 18, 12, 6]);
 });
 
-test('hat man: he stands nearer each repair: 25, 18, 12 m', () => {
-  const spots = Array.from({ length: 31 }, (_, i) => ({ id: 'c:' + i, corridor: 'c', x: i, z: 0 }));
-  const from = { x: 0, z: 0 };
-  const pick = (stage) => chooseSpot(spots, 'c', { from, stage, rand: () => 0.5 });
-  assert.equal(pick(0).x, 25);
-  assert.equal(pick(1).x, 18);
-  assert.equal(pick(2).x, 12);
-  assert.equal(pick(3).x, 6);
+test('hat man: only in view, line clear, never within 3 m, never twice in one spot', () => {
+  const from = { x: 0, z: 0 }, o = { from, forward: ahead, stage: 3, rand: () => 0.5 };
+  assert.equal(chooseSpot(row([1, 2, 4, 9]), o).x, 4, 'target 6, but 1 and 2 are too close');
+  assert.equal(chooseSpot(row([4, 9]), { ...o, used: new Set(['c:4']) }).x, 9);
+  assert.equal(chooseSpot(row([4, 9]), { ...o, lineClear: (a, b) => b.x !== 4 }).x, 9);
+  assert.equal(chooseSpot(row([-6, -9]), o), null, 'behind you');
+  assert.equal(chooseSpot([{ id: 's', corridor: 'c', x: 6, z: 6 }], o), null, '45 degrees off is not "looking down it"');
+  assert.ok(chooseSpot([{ id: 's', corridor: 'c', x: 6, z: 2 }], o), 'about 18 degrees off is');
 });
 
-test('hat man: never within 3 m, never twice in one spot, never placed where you can see', () => {
-  const spots = [1, 2, 4, 9, 10].map((x) => ({ id: 'c:' + x, corridor: 'c', x, z: 0 }));
-  const from = { x: 0, z: 0 };
-  assert.equal(chooseSpot(spots, 'c', { from, stage: 3, rand: () => 0.5 }).x, 4); // target 6, but 1 and 2 are too close
-  assert.equal(chooseSpot(spots, 'c', { from, stage: 3, rand: () => 0.5, used: new Set(['c:4']) }).x, 9);
-  assert.equal(chooseSpot(spots, 'c', { from, stage: 3, rand: () => 0.5, isInView: (s) => s.x === 4 }).x, 9);
-  assert.equal(chooseSpot(spots, 'c', { from, stage: 3, rand: () => 0.5, lineClear: () => false }), null);
-  assert.equal(chooseSpot(spots, 'other', { from, stage: 0 }), null);
+// Run a HatMan in a straight corridor of spots ahead of you.
+function scene({ spots = row([4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26]) } = {}) {
+  const r = rigs();
+  r.rig.dir = { ...ahead };
+  const hm = new HatMan(r.figure, layout, { rig: r.rig, world: r.world, lineClear: () => true, rand: () => 0.5, onFirst: () => r.calls.push('first') });
+  hm.spots = spots;
+  const ctx = { stage: 0, elapsed: 0, inSuite: false, blocked: false, player: { x: 0, z: 0 } };
+  const run = (secs, step = 0.05) => { for (let t = 0; t < secs - 1e-9; t += step) { ctx.elapsed += step; hm.update(step, ctx); } };
+  return { ...r, hm, ctx, run };
+}
+
+test('hat man: nothing for 90 s, then a blackout, placed in the dark, shown when the lights return', () => {
+  const { hm, run, world, calls, figure } = scene();
+  run(HATMAN.firstAfter - 0.1);
+  assert.equal(hm.state, 'idle');
+  assert.ok(!world.out);
+  run(0.15);
+  assert.equal(hm.state, 'blackout');
+  assert.ok(hm.dark && world.out, 'power out');
+  assert.ok(!calls.includes('place'), 'not placed yet');
+  run(HATMAN.placeAt + 0.05);
+  assert.ok(calls.includes('place') && world.out, 'placed while dark');
+  run(HATMAN.blackout - HATMAN.placeAt);
+  assert.equal(hm.state, 'shown');
+  assert.ok(!hm.dark && !world.out && hm.visible, 'lights back, he is there');
+  assert.ok(Math.abs(figure.position.x - 25) <= HATMAN.vary + 1, `at ${figure.position.x} m`);
+  assert.ok(calls.includes('first'));
+  assert.ok(calls.includes('lamps:0') && calls.at(-1) !== 'lamps:0', 'end lamps out, then back');
+});
+
+test('hat man: due but nowhere in view, he waits until you look down a corridor', () => {
+  const { hm, run, rig } = scene();
+  rig.dir = { x: -1, y: 0, z: 0 }; // facing away from every spot
+  run(HATMAN.firstAfter + 20);
+  assert.equal(hm.state, 'idle');
+  rig.dir = { ...ahead };
+  run(HATMAN.retry + 0.1);
+  assert.equal(hm.state, 'blackout');
+});
+
+const showIt = (s) => { s.hm.force(); s.run(HATMAN.blackout + 0.15); assert.equal(s.hm.state, 'shown'); };
+
+test('hat man: he goes in a flicker: after his life, after 2 s of looking, or when you walk up', () => {
+  // Not looked at straight (you face a little up): his life runs out.
+  let s = scene();
+  s.rig.dir = { x: 1, y: 0.4, z: 0 };
+  showIt(s);
+  s.run(HATMAN.life - 0.2);
+  assert.equal(s.hm.state, 'shown');
+  s.run(0.3);
+  assert.equal(s.hm.state, 'flicker');
+  assert.ok(s.calls.at(-1) === 'lamps:0' && s.calls.includes('hide') && s.world.out, 'hidden while dark');
+  s.run(HATMAN.flicker + 0.05);
+  assert.ok(s.hm.state === 'idle' && !s.world.out, 'lights back, he is gone');
+
+  // Looking straight at him (eye level with his chest).
+  s = scene();
+  showIt(s);
+  s.rig.position.y = HATMAN.hover + HATMAN.height * 0.6;
+  s.rig.dir = { x: 1, y: 0, z: 0 };
+  s.run(HATMAN.lookAway - 0.2);
+  assert.equal(s.hm.state, 'shown');
+  s.run(0.3);
+  assert.equal(s.hm.state, 'flicker');
+
+  // Walking up to him.
+  s = scene();
+  s.rig.dir = { x: 1, y: 0.4, z: 0 };
+  showIt(s);
+  s.ctx.player = { x: s.figure.position.x - HATMAN.tooClose + 0.5, z: 0 };
+  s.run(0.1);
+  assert.equal(s.hm.state, 'flicker');
+});
+
+test('hat man: not in a suite, not while the alien hunts or a trick runs, six a run, a new spot each time', () => {
+  let s = scene();
+  s.ctx.inSuite = true;
+  s.run(HATMAN.firstAfter + 5);
+  assert.equal(s.hm.state, 'idle');
+  s = scene();
+  s.ctx.blocked = true;
+  s.run(HATMAN.firstAfter + 5);
+  assert.equal(s.hm.state, 'idle');
+  // Shown, then the alien starts hunting: he goes.
+  s.ctx.blocked = false;
+  s.rig.dir = { x: 1, y: 0.4, z: 0 };
+  s.run(0.1);
+  s.run(HATMAN.blackout + 0.1);
+  assert.equal(s.hm.state, 'shown');
+  s.ctx.blocked = true;
+  s.run(0.1);
+  assert.equal(s.hm.state, 'flicker');
+
+  s = scene();
+  s.rig.dir = { x: 1, y: 0.4, z: 0 };
+  const placed = [];
+  const place = s.figure.place.bind(s.figure);
+  s.figure.place = (x, z, ...rest) => { placed.push(x); place(x, z, ...rest); };
+  s.run(HATMAN.firstAfter + HATMAN.gap[1] * 8 + 60, 0.1);
+  assert.equal(placed.length, HATMAN.perRun);
+  assert.equal(new Set(placed).size, placed.length);
+  assert.equal(s.hm.sightings, HATMAN.perRun);
+});
+
+test('hat man: a blackout puts every room light out', () => {
+  const r = roomState({ id: 'storage', safe: false, x: 0, y: 0, w: 1, h: 1, index: 0 });
+  r.blackout = true;
+  assert.ok(roomLightLevel(r, 0.016, 1, null, true) < 0.05);
+  r.blackout = false;
+  assert.ok(roomLightLevel(r, 0, 1, null, true) > 0.5);
 });
 
 // A stand-in figure and camera.
@@ -80,128 +158,14 @@ function rigs() {
   const figure = {
     position: { x: 0, y: 1.5, z: 0 },
     place(x, z) { this.position.x = x; this.position.z = z; calls.push('place'); },
-    setBacklight() {}, setAlpha(k) { this.alpha = k; }, hide() { calls.push('hide'); }, update() {},
+    setAlpha(k) { this.alpha = k; }, hide() { calls.push('hide'); }, update() {},
     showCameo() { calls.push('cameo'); }, hideCameo() { calls.push('hideCameo'); },
     setLamps(k) { calls.push('lamps:' + k); },
   };
   const rig = { position: { x: 0, y: 1.6, z: 0 }, dir: { x: 0, y: 0, z: -1 }, forward() { return this.dir; } };
-  const world = { beats: 0, dimBeat() { this.beats++; } };
+  const world = { beats: 0, out: false, dimBeat() { this.beats++; }, setBlackout(on) { this.out = on; } };
   return { calls, figure, rig, world };
 }
-
-test('hat man: a warning lands on the alien\'s next corridor, with the lights dipping', () => {
-  const { figure, rig, world, calls } = rigs();
-  let first = 0;
-  const hm = new HatMan(figure, layout, { rig, world, lineClear: () => true, onFirst: () => first++, rand: () => 0.5 });
-  const { start, path } = route();
-  const alien = { pos: at(start), path, state: 'patrol', dormant: 0 };
-  const hit = predictCorridor(alien, layout);
-  // Stand in the airlock, where the alien is headed (its path ends close by).
-  const player = at(layout.room('airlock').spot);
-  hm.update(0.1, { alien, stage: 0, elapsed: 120, isInView: () => false, player, inSuite: false, trickActive: false });
-  assert.ok(hm.visible, 'he appeared');
-  assert.equal(hm.corridor, hit.corridor);
-  assert.ok(Math.hypot(hm.spot.x - player.x, hm.spot.z - player.z) >= HATMAN.minDist);
-  assert.equal(world.beats, 1);
-  assert.equal(first, 1);
-  assert.ok(calls.includes('lamps:' + HATMAN.dipLevel), 'corridor-end lamps dip too');
-  for (let t = 0; t < HATMAN.dip + 0.1; t += 0.1) hm.update(0.1, { alien, stage: 0, elapsed: 121, isInView: () => false, player, inSuite: false, trickActive: false });
-  assert.ok(calls.includes('lamps:1'), 'and come back');
-});
-
-test('hat man: the limits: 90 s first, 90 s apart, 6 a run, not in a suite or during a trick, route within 30 m', () => {
-  const { figure, rig, world } = rigs();
-  const hm = new HatMan(figure, layout, { rig, world, lineClear: () => true });
-  const { start, path } = route();
-  const alien = { pos: at(start), path, state: 'patrol', dormant: 0 };
-  const player = at(layout.room('airlock').spot);
-  const ctx = (o = {}) => ({ alien, stage: 0, elapsed: 200, isInView: () => false, player, inSuite: false, trickActive: false, ...o });
-  assert.ok(hm.canWarn(ctx()));
-  assert.ok(!hm.canWarn(ctx({ elapsed: 60 })), 'first 90 s');
-  assert.ok(!hm.canWarn(ctx({ inSuite: true })), 'in a suite');
-  assert.ok(!hm.canWarn(ctx({ trickActive: true })), 'trick running');
-  assert.ok(!hm.canWarn(ctx({ alien: { ...alien, state: 'hunt' } })), 'hunting');
-  const far = { x: pathEnd(alien).x + 40, z: pathEnd(alien).z };
-  assert.ok(!hm.canWarn(ctx({ player: far })), 'route ends too far away');
-  hm.lastWarning = 150;
-  assert.ok(!hm.canWarn(ctx({ elapsed: 200 })), 'cool-down');
-  assert.ok(hm.canWarn(ctx({ elapsed: 240 })), 'cool-down over');
-  hm.warnings = HATMAN.perRun;
-  assert.ok(!hm.canWarn(ctx({ elapsed: 1000 })), 'six a run');
-});
-
-test('hat man: 2 s of looking straight at him and he fades; 4 s once seen and he goes anyway; glancing away resets it', () => {
-  const setup = () => {
-    const r = rigs();
-    const hm = new HatMan(r.figure, layout, { rig: r.rig, world: r.world, lineClear: () => true });
-    hm.visible = true; hm.life = HATMAN.life; hm.looked = 0; hm.fading = -1; hm.seen = false; hm.wait = 30;
-    r.figure.position.x = 0; r.figure.position.z = -10; r.figure.position.y = HATMAN.hover + HATMAN.height * 0.6;
-    r.rig.position.y = HATMAN.hover + HATMAN.height * 0.6; // eye level with his chest, straight ahead
-    return { ...r, hm };
-  };
-  let onScreen = false;
-  const ctx = { elapsed: 0, inSuite: false, alien: { dormant: 0, state: 'patrol' }, player: { x: 0, z: 0 }, isInView: () => onScreen };
-  const run = (hm, secs) => { for (let t = 0; t < secs; t += 0.05) hm.update(0.05, ctx); };
-
-  let { hm, rig, calls } = setup();
-  run(hm, 1.9);
-  assert.ok(hm.visible && hm.fading < 0, 'still there at 1.9 s');
-  run(hm, 0.2 + HATMAN.fade + 0.05);
-  assert.ok(!hm.visible && calls.includes('hide'), 'gone after 2 s of looking plus the fade');
-
-  // On screen but not looked at straight: 4 s from first sight.
-  ({ hm, rig, calls } = setup());
-  rig.dir = { x: 1, y: 0, z: 0 };
-  onScreen = true;
-  run(hm, 3.9);
-  assert.ok(hm.visible);
-  run(hm, 0.2 + HATMAN.fade + 0.05);
-  assert.ok(!hm.visible, 'gone 4 s after you first saw him');
-  onScreen = false;
-
-  ({ hm, rig } = setup());
-  run(hm, 1.5);
-  rig.dir = { x: 1, y: 0, z: 0 }; hm.update(0.05, ctx); // a glance away
-  rig.dir = { x: 0, y: 0, z: -1 };
-  run(hm, 1.5);
-  assert.ok(hm.visible && hm.fading < 0, 'the look timer reset');
-});
-
-test('hat man: unseen, he waits for you to turn round until the alien is due, then goes', () => {
-  const setup = () => {
-    const r = rigs();
-    const hm = new HatMan(r.figure, layout, { rig: r.rig, world: r.world, lineClear: () => true });
-    hm.visible = true; hm.life = HATMAN.life; hm.looked = 0; hm.fading = -1; hm.seen = false; hm.wait = 7;
-    r.figure.position.x = 0; r.figure.position.z = 10; // behind you
-    return { ...r, hm };
-  };
-  const alien = { dormant: 0, state: 'patrol' };
-  const ctx = { elapsed: 0, inSuite: false, alien, player: { x: 0, z: 0 }, isInView: () => false };
-  const run = (hm, secs) => { for (let t = 0; t < secs; t += 0.05) hm.update(0.05, ctx); };
-
-  let { hm } = setup();
-  run(hm, 6);
-  assert.ok(hm.visible && hm.fading < 0, 'outlasts 4 s while unseen');
-  run(hm, 1.1 + HATMAN.fade + 0.05);
-  assert.ok(!hm.visible, 'gone once the alien is due');
-
-  ({ hm } = setup());
-  run(hm, 1);
-  alien.state = 'hunt';
-  run(hm, 0.05 + HATMAN.fade + 0.05);
-  assert.ok(!hm.visible, 'gone as soon as the alien starts hunting');
-});
-
-test('hat man: he prefers a spot a quick turn away to one behind you', () => {
-  // You face +x. One spot 10 m off to your side, one 10 m straight behind.
-  const spots = [{ id: 'c:side', corridor: 'c', x: 0, z: 10 }, { id: 'c:back', corridor: 'c', x: -10, z: 0 }];
-  const from = { x: 0, z: 0 };
-  const opts = { from, stage: 3, rand: () => 0.5 }; // target 6 m: both equally far off
-  assert.equal(chooseSpot(spots, 'c', { ...opts, forward: { x: 1, y: 0, z: 0 } }).id, 'c:side');
-  assert.equal(chooseSpot(spots.reverse(), 'c', { ...opts, forward: { x: 1, y: 0, z: 0 } }).id, 'c:side');
-  // Behind you is still used when it's the only choice.
-  assert.equal(chooseSpot([spots.find((s) => s.id === 'c:back')], 'c', { ...opts, forward: { x: 1, y: 0, z: 0 } }).id, 'c:back');
-});
 
 test('hat man: cameo glass is the pod window and two dead monitors, none in a suite', () => {
   const s = cameoSurfaces(layout);

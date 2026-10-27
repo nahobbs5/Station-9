@@ -203,9 +203,10 @@ export function stepDoor(d, dt) {
   return WALL_H / 2 + (1 - d.t) * (WALL_H - 0.18);
 }
 
-// How bright a room's light is this frame (0..1 times its base), including the Hat Man's dip,
+// How bright a room's light is this frame (0..1 times its base), including the Hat Man's blackout and dip,
 // random stutters, the emergency hum, and the flicker as the alien passes through on patrol.
 export function roomLightLevel(r, dt, time, alien, powered) {
+  if (r.blackout) return 0.02; // the Hat Man's power cut
   let k = r.mult;
   if (r.beat > 0) { r.beat -= dt; k *= 0.25; }
   // Now and then a room's light stutters on its own (about once a minute each).
@@ -230,7 +231,7 @@ export function teleporterLevel(time) {
 // A room's light state, as kept by the renderers.
 export function roomState(room) {
   const base = room.safe ? LIGHTS.SAFE : LIGHTS.EMERGENCY;
-  return { room, base: { ...base }, mult: 1, beat: 0, haunt: 0, glitch: 0 };
+  return { room, base: { ...base }, mult: 1, beat: 0, haunt: 0, glitch: 0, blackout: false };
 }
 // Its base colour and strength with or without main power. The pod bay stays red: its own circuit.
 export function roomBase(room, powered) {

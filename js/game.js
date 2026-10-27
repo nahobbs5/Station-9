@@ -300,7 +300,7 @@ export function startGame(createView) {
       // Take what fits; the rest stays in the crate for later.
       if (!crateLeft.length) return;
       if (inventory.full) { intercom.say(LINES.handsFull); return; }
-      while (crateLeft.length && !inventory.full) gotNoisemaker(crateLeft.shift());
+      while (crateLeft.length && !inventory.full) { gotNoisemaker(crateLeft.shift()); world.takeFromCrate(); }
       if (!crateLeft.length) world.setPickupLabel('crate', 'Empty crate');
       audio.playAt('clatter', target.pos, { volume: 0.5 });
     } else if (target.kind === 'pickup') {
@@ -482,10 +482,10 @@ export function startGame(createView) {
   // At a grate: tap E to dive in (or out) fast and loud, hold it to slip through quietly. Inside:
   // crawl with W/S, look about (within limits), and keep still while it listens.
   // Returns the grate you could use right now (for the prompt), or null.
-  function updateVent(dt) {
+  function updateVent(dt, aimed = null) {
     const acted = ePressed || player.flashClicked;
     const wasInside = vent.inside;
-    const grate = vent.inside ? vent.exitGrate() : grateAt(vents, player.pos, player.crouching);
+    const grate = vent.inside ? vent.exitGrate() : aimed ? null : grateAt(vents, player.pos, player.crouching);
     ventRefused = Math.max(0, ventRefused - dt);
     if (grate && (vent.mode === 'out' || vent.mode === 'in')) {
       ventHold = eHeld && eDownAt >= 0 ? elapsed - eDownAt : 0;
@@ -618,7 +618,10 @@ export function startGame(createView) {
       audio.footstep(step.mode);
       makeNoise(player.pos, step.loudness * activeNoise.maskAt(player.pos.x, player.pos.z)); // a Buzz Pod covers them
     }
-    ventGrate = updateVent(dt);
+    // Something you're aiming at (a terminal, door, pickup) beats a grate you happen to be beside:
+    // look down at the grating, or at the low vent, to use that instead.
+    const aimed = vent.inside ? null : findTarget(rig, world.interactables);
+    ventGrate = updateVent(dt, aimed);
     if (state !== 'playing') return; // caught in a vent
     if (player.flashClicked) {
       player.flashClicked = false;
@@ -626,7 +629,7 @@ export function startGame(createView) {
     }
 
     // What you're looking at (nothing while you're in a vent, or at a grate: E is for the grate).
-    const target = vent.inside || ventGrate ? null : findTarget(rig, world.interactables);
+    const target = vent.inside || ventGrate ? null : aimed;
     let repairing = false;
     // E with nothing to use (and no grate) skips to the next line of dialogue.
     if (ePressed && !target && !ventGrate && !vent.inside) skipDialogue();
@@ -679,9 +682,11 @@ export function startGame(createView) {
 
     tricks.update(dt);
     hatman.update(dt, {
-      alien, stage, elapsed, isInView, player: player.pos,
-      inSuite: suiteNow !== null || vent.inside, trickActive: !!tricks.active,
+      stage, elapsed, player: player.pos,
+      inSuite: suiteNow !== null || vent.inside,
+      blocked: alien.state === 'hunt' || !!tricks.active,
     });
+    if (hatman.dark) rig.flashlight = 0; // the flashlight dies with the power
     intercom.update(dt);
     if (toastTimer > 0 && (toastTimer -= dt) <= 0) $('toast').hidden = true;
 

@@ -173,6 +173,7 @@ export function startGame(createView) {
   function debugKey(e) {
     if (e.code === 'Backquote') { if (!e.repeat) setAlienOff(!alienOff); return true; }
     if (e.code === 'AltLeft' || e.code === 'AltRight') return true; // keep the browser's menu out of it
+    if (e.altKey && e.code === 'KeyR') { if (!e.repeat) phantoms.summon('screen-room'); return true; } // every terminal in the room
     const i = DEBUG_KEYS.indexOf(e.code);
     if (i < 0) return false;
     if (e.repeat) return true;
@@ -186,7 +187,7 @@ export function startGame(createView) {
     addEventListener('keyup', (e) => { if (e.code === 'AltLeft' || e.code === 'AltRight') e.preventDefault(); });
     addEventListener('wheel', (e) => { if (state === 'playing' && e.deltaY) inventory.cycle(Math.sign(e.deltaY)); }, { passive: true });
     console.info('Debug keys: 1-9 ' + KIND_IDS.join(', ') + ' · 0 Hat Man · Alt+1-0, Alt+-, Alt+=, Alt+Backspace ' +
-      SCREEN_IDS.map((id) => id.slice(7)).join(', ') + ' (on a monitor) · ` alien off/on · wheel picks a noise-maker');
+      SCREEN_IDS.map((id) => id.slice(7)).join(', ') + ' (on a monitor) · Alt+R every terminal in the room · ` alien off/on · wheel picks a noise-maker');
   }
   addEventListener('keydown', (e) => {
     if (state !== 'playing') return;

@@ -2,13 +2,13 @@
 // and lights. Placement comes from js/worldplan.js and textures from js/textures.js.
 import { TILE, WALL_H, cellCenter, key } from '../layout.js';
 import {
-  wallTexture, floorTextures, ceilingTexture, doorTexture, posterTexture, mapTexture, wallSpot,
+  wallTexture, floorTextures, ceilingTexture, doorTexture, mapTexture, wallSpot,
   consoleScreen, LIVE_SCREENS, keyboardTexture, stickyNote, mugTexture, housingTexture, hazardTexture, crtTexture,
   tapeBanner, tapeDeckTexture,
   commsCallScreen, reactorPlateTexture, switchPanelTexture, SWITCH_GROUPS,
 } from '../textures.js';
 import {
-  wallPanels, guideStrips, propPlacement, propHeight, POSTERS, WALL_MAP, EMBLEM, looseItems,
+  wallPanels, guideStrips, propPlacement, propHeight, posterPlacements, WALL_MAP, EMBLEM, looseItems,
   stepDoor, roomLightLevel, teleporterLevel, roomState, roomBase, doorFrames, FRAME, kickPlateSpans, generatorFixtures,
 } from '../worldplan.js';
 import { buildDecor } from './decor.js';
@@ -518,7 +518,23 @@ export function buildWorld(scene, layout) {
     mesh.rotation.y = s.rot + Math.PI;
     mesh.material = pbr(scene, { map: TWall(canvas), roughness: 0.9 });
   };
-  for (const [room, side, lines, accent, wM, hM] of POSTERS) poster(room, side, posterTexture(lines, accent), wM, hM);
+  // The poster art (assets/posters/, placed by posterPlacements), each in a thin dark frame.
+  const posterFrameMat = pbr(scene, { color: 0x2a2b2d, roughness: 0.5, metalness: 0.6 });
+  for (const pp of posterPlacements(layout)) {
+    const frame = MeshBuilder.CreateBox('poster-frame', { width: pp.w + 0.05, height: pp.h + 0.05, depth: 0.025 }, scene);
+    frame.position.set(pp.x, pp.y, pp.z);
+    frame.rotation.y = pp.rot;
+    frame.material = posterFrameMat;
+    const art = MeshBuilder.CreatePlane('poster', { width: pp.w, height: pp.h }, scene);
+    art.parent = frame;
+    art.position.z = 0.014;
+    art.rotation.y = Math.PI;
+    const tex = new BABYLON.Texture(`assets/posters/${pp.id}.jpg`, scene, false, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
+    tex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+    tex.uScale = -1; // mirrored back, as for the emblem
+    tex.anisotropicFilteringLevel = 4;
+    art.material = pbr(scene, { map: tex, roughness: 0.85 });
+  }
   poster(WALL_MAP.room, WALL_MAP.side, mapTexture(layout), WALL_MAP.w, WALL_MAP.h, WALL_MAP.y);
 
   // The station emblem on the airlock's back wall, in a dark frame.

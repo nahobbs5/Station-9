@@ -91,16 +91,48 @@ export function propPlacement(layout, p) {
 export const PROP_HEIGHT = { crate: 0.7, log: 1.0 };
 export const propHeight = (p) => PROP_HEIGHT[p.kind] ?? 1;
 
-// Posters: [room, wall side, lines, accent colour, width, height].
+// Posters: art cut from the two poster sheets in reference files/ ("Propaganda in the Rust",
+// "Tomorrow's Frontier") into assets/posters/<id>.jpg, with its aspect (width / height). Each wall
+// gets one, or two side by side, in the middle of a room wall with no door.
+export const POSTER_ART = {
+  'labor-keeps': 0.79, observe: 0.535, discipline: 0.68, grow: 0.615, coffee: 0.62, conserve: 0.59,
+  healthy: 0.68, 'farther-harder': 0.65, resources: 0.58, 'labor-builds': 0.635,
+  'safer-farther': 0.67, brighter: 0.65, 'life-travels': 0.64, 'new-worlds': 0.61, 'same-skies': 0.62,
+  'difficult-work': 0.69, discover: 2.5,
+};
 export const POSTERS = [
-  ['airlock', 'n', ['YOUR LABOR', 'IS OUR', 'FREEDOM.'], '#b3332a'],
-  ['crew', 'w', ['YOUR WELLNESS', 'IS OUR', 'WAYPOINT.'], '#2f6e6a'],
-  ['storage', 'n', ['SMALL STEPS.', 'BIG', 'POSSIBILITIES.'], '#b3332a'],
-  ['generator', 'w', ['POWER', 'KEEPS US', 'TOGETHER.'], '#c8781e'],
-  ['comms', 'e', ["WE'RE", 'ALWAYS', 'LISTENING.'], '#b3332a'],
-  ['teleporter', 'w', ['STEP IN.', 'STEP OUT.', 'STEP UP.'], '#2f4f6e'],
-  ['pod', 'e', ['LEAVING', 'SO SOON?', "WE'LL MISS YOU."], '#b3332a'],
+  { room: 'airlock', side: 'n', art: ['safer-farther', 'new-worlds'] },
+  { room: 'crew', side: 'w', art: ['coffee', 'life-travels'] },
+  { room: 'crew', side: 's', art: ['healthy'] },
+  { room: 'crew', side: 'e', art: ['conserve'] },
+  { room: 'storage', side: 'n', art: ['resources', 'grow'] },
+  { room: 'generator', side: 'w', art: ['discipline', 'farther-harder'] },
+  { room: 'comms', side: 'e', art: ['observe', 'same-skies'] },
+  { room: 'comms', side: 'w', art: ['brighter'] },
+  { room: 'teleporter', side: 'w', art: ['discover'] },
+  { room: 'pod', side: 'e', art: ['difficult-work', 'labor-builds'] },
+  { room: 'storage', side: 's', art: ['labor-keeps'] }, // above the noise-maker crate
 ];
+const POSTER_H = 1.55, WIDE_H = 1.05, POSTER_Y = 1.7, PAIR_GAP = 0.3;
+
+// Every poster as hung: { id, room, x, y, z, rot, w, h }. A pair sits either side of the wall's middle.
+export function posterPlacements(layout) {
+  const out = [];
+  for (const { room, side, art } of POSTERS) {
+    const s = wallSpot(layout.room(room), side);
+    const along = [Math.cos(s.rot), -Math.sin(s.rot)]; // the wall's direction
+    const sizes = art.map((id) => { const h = POSTER_ART[id] > 1.5 ? WIDE_H : POSTER_H; return [POSTER_ART[id] * h, h]; });
+    const total = sizes.reduce((t, [w]) => t + w, 0) + PAIR_GAP * (art.length - 1);
+    let k = -total / 2;
+    art.forEach((id, i) => {
+      const [w, h] = sizes[i];
+      const off = k + w / 2;
+      k += w + PAIR_GAP;
+      out.push({ id, room, x: s.x + along[0] * off, y: POSTER_Y, z: s.z + along[1] * off, rot: s.rot, w, h });
+    });
+  }
+  return out;
+}
 // The station map on the control room wall, and the emblem sign in the airlock.
 export const WALL_MAP = { room: 'control', side: 'n', w: 2.4, h: 2.1, y: 1.85 };
 export const EMBLEM = { room: 'airlock', side: 's', src: 'images/emblem.jpg', frame: 1.9, size: 1.75, y: 1.75 };

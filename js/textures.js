@@ -212,42 +212,6 @@ export function drawMascot(g, cx, cy, r) {
   g.restore();
 }
 
-export function posterTexture(lines, accent) {
-  const rand = seeded(lines.join('').length);
-  return canvasTexture(512, 768, (g, w, h) => {
-    g.fillStyle = '#e4d6b0'; g.fillRect(0, 0, w, h);
-    g.fillStyle = '#2f4f6e'; // sunburst
-    g.beginPath(); g.moveTo(w, h * 0.35); g.lineTo(w * 0.1, h); g.lineTo(w, h); g.fill();
-    drawMascot(g, w * 0.62, h * 0.58, 110);
-    g.textAlign = 'left';
-    g.font = 'bold 74px Oswald, Impact, sans-serif';
-    lines.forEach((line, i) => {
-      g.fillStyle = i === lines.length - 1 ? accent : '#2b2b2b';
-      g.fillText(line, 34, 100 + i * 80);
-    });
-    g.fillStyle = '#2b2b2b';
-    // The tagline, shrunk until it fits the poster's width.
-    const tagline = 'VANTORA TRANSIT GROUP · YOUR LABOR IS OUR FREEDOM.';
-    let size = 30;
-    do g.font = `bold ${size}px Oswald, Impact, sans-serif`; while (g.measureText(tagline).width > w - 68 && --size > 14);
-    g.fillText(tagline, 34, h - 36);
-    // Aged paper: darker edges, fine specks and a water streak or two (no big spots).
-    const age = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.72);
-    age.addColorStop(0, 'rgba(60,45,25,0)'); age.addColorStop(1, 'rgba(60,45,25,0.35)');
-    g.fillStyle = age; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 220; i++) { g.fillStyle = `rgba(40,30,18,${0.2 + rand() * 0.4})`; g.fillRect(rand() * w, rand() * h, 1 + rand() * 2.5, 1 + rand() * 2.5); }
-    for (let i = 0; i < 2; i++) {
-      const x = rand() * w, sw = 6 + rand() * 14, top = rand() * h * 0.3;
-      const streak = g.createLinearGradient(0, top, 0, h);
-      streak.addColorStop(0, 'rgba(90,70,40,0.18)'); streak.addColorStop(1, 'rgba(90,70,40,0)');
-      g.fillStyle = streak; g.fillRect(x, top, sw, h - top);
-    }
-    scratches(g, w, h, rand, 20, 0.12);
-    g.fillStyle = 'rgba(0,0,0,0.25)';
-    g.fillRect(w * 0.7, 0, 40, h * 0.2); // a tear
-  });
-}
-
 export function mapTexture(layout) {
   return canvasTexture(512, 448, (g, w, h) => {
     g.fillStyle = '#1d2422'; g.fillRect(0, 0, w, h);

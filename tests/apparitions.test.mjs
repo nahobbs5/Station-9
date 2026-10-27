@@ -180,7 +180,7 @@ test('apparitions: sounds stop when one goes early', () => {
 
 // Debug summons (js/game.js ?debug keys) and the computer screen apparitions (js/screenapparitions.js).
 import { lineClear } from '../js/layout.js';
-import { SCREEN, SCREEN_KINDS, SCREEN_IDS, FEEDS, consoleScreens, pickScreen, screenLook, phaseOf } from '../js/screenapparitions.js';
+import { SCREEN, SCREEN_KINDS, SCREEN_IDS, FEEDS, ROOM_EVENT, consoleScreens, roomScreens, pickScreen, screenLook, phaseOf } from '../js/screenapparitions.js';
 
 const clear = (a, b) => lineClear(layout, a, b, () => false);
 const consoles = consoleScreens(layout);
@@ -261,7 +261,7 @@ test('screen apparitions: the nearest monitor facing you, ahead, in clear sight'
 test('screen apparitions: they come up in the normal rotation on a monitor, never while switched off', () => {
   const s = consoles[0], fx = Math.sin(s.rotY), fz = Math.cos(s.rotY);
   const player = { x: s.x + fx * 4, z: s.z + fz * 4 };
-  const ctx = baseCtx({ player, eye: { ...player, y: 1.6 }, forward: { x: -fx, y: 0, z: -fz } });
+  const ctx = baseCtx({ player, eye: { ...player, y: 1.6 }, forward: { x: -fx, y: 0, z: -fz }, elapsed: 1000 });
   for (const enabled of [true, false]) {
     const feed = fakeFeed();
     const { a, fig } = make({ feed, consoles, rand: seeded(3) });
@@ -334,4 +334,62 @@ test('screen apparitions: the monitor cuts to a corridor camera that breaks down
   assert.deepEqual(seq, [null, 'feed-normal', 'feed-interference', 'feed-glitch', 'feed-fade', null]);
   const face = [0.6, 0.7, 0.8].map((k) => screenLook('screen-face', k, () => 0.3));
   assert.ok(face.every((L) => L.art === 1 && L.shift >= 8 && L.tint === 'mono'), 'the face peaks with a colour shift');
+});
+
+// Pacing: fewer apparitions, terminals rarer still, and the rare whole-room terminal event.
+const crewConsoles = consoles.filter((c) => c.room === 'crew');
+const inCrew = floor.find((s) => s.room === 'crew' && crewConsoles.some((c) => clear(s, c.front)));
+
+test('pacing: 75-130 s between apparitions; terminals wait 2 minutes, then 3 minutes after each', () => {
+  assert.deepEqual(APPARITION.gap, [75, 130]);
+  const feed = fakeFeed();
+  const { a } = make({ feed, consoles, rand: seeded(4) });
+  const s = consoles[0];
+  a.find = (id) => (id in SCREEN_KINDS ? { x: s.x, y: s.y, z: s.z, screen: s } : null); // only terminals fit
+  const ctx = baseCtx();
+  const starts = [];
+  let was = null;
+  for (let t = 0; t < 900; t += 0.1) {
+    ctx.elapsed = t;
+    a.update(0.1, ctx);
+    if (feed.on && !was) starts.push(t);
+    was = feed.on;
+  }
+  assert.ok(starts.length >= 2, `${starts}`);
+  assert.ok(starts[0] >= APPARITION.screenFirst, `first at ${starts[0]}`);
+  for (let i = 1; i < starts.length; i++) assert.ok(starts[i] - starts[i - 1] >= APPARITION.screenGap, `${starts}`);
+});
+
+test('pacing: terminal kinds weigh less than the field-guide nine', () => {
+  const sum = (ids, T) => ids.reduce((n, id) => n + T[id].weight, 0);
+  assert.ok(sum(SCREEN_IDS, SCREEN_KINDS) < sum(KIND_IDS, KINDS) / 3);
+});
+
+test('room event: every terminal in Crew Quarters at once, none from a corridor', () => {
+  assert.ok(crewConsoles.length >= 3 && inCrew);
+  const p = { x: inCrew.x, z: inCrew.z };
+  assert.deepEqual(roomScreens(consoles, layout, p).map((c) => c.key).sort(), crewConsoles.map((c) => c.key).sort());
+  const corridor = floor.find((s) => s.corridor);
+  assert.equal(roomScreens(consoles, layout, corridor).length, 0);
+  const { a } = make({ feed: fakeFeed(), consoles, lineClear: clear });
+  const place = a.find(ROOM_EVENT.id, baseCtx({ player: p }));
+  assert.ok(place && place.screens.length === crewConsoles.length && SCREEN_IDS.includes(place.as));
+  assert.equal(a.find(ROOM_EVENT.id, baseCtx({ player: { x: corridor.x, z: corridor.z } })), null);
+});
+
+test('room event: once a run, never before 6 minutes; all the room plays one kind in sync', () => {
+  const shows = [];
+  const feed = { show(keys, id) { shows.push({ keys, id }); }, set() {}, hide() {} };
+  const { a } = make({ feed, consoles, lineClear: clear, rand: seeded(9) });
+  const real = a.find.bind(a);
+  a.find = (id, ctx) => (id === ROOM_EVENT.id ? real(id, ctx) : null); // only the room event fits
+  const ctx = baseCtx({ player: { x: inCrew.x, z: inCrew.z } });
+  for (let t = 0; t < 1500; t += 0.1) { ctx.elapsed = t; a.update(0.1, ctx); if (t < ROOM_EVENT.firstAfter) assert.equal(shows.length, 0); }
+  assert.equal(shows.length, 1);
+  assert.equal(shows[0].keys.length, crewConsoles.length);
+  assert.ok(SCREEN_IDS.includes(shows[0].id));
+  // A debug summon (Alt+R) shows it straight away, again.
+  a.summon(ROOM_EVENT.id);
+  a.update(0.1, ctx);
+  assert.equal(shows.length, 2);
 });

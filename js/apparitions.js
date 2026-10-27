@@ -9,11 +9,13 @@
 import { cellOf, cellCenter, WALL_H } from './layout.js';
 import { inSuite } from './suiteplan.js';
 import { corridorSpots } from './hatman.js';
-import { SCREEN, SCREEN_KINDS, SCREEN_IDS, pickScreen } from './screenapparitions.js';
+import { SCREEN, SCREEN_KINDS, SCREEN_IDS, ROOM_EVENT, pickScreen, roomScreens } from './screenapparitions.js';
 
 export const APPARITION = {
   firstAfter: 35,   // nothing in the first 35 s
-  gap: [45, 90],    // seconds between apparitions (random in this range)
+  gap: [75, 130],   // seconds between apparitions (random in this range)
+  screenFirst: 120, // no terminal apparitions in the first 2 minutes...
+  screenGap: 180,   // ...or within 3 minutes of the last one, so they stay a surprise
   retry: 2,         // due, but nothing fits where you are: look again this often
   minDist: 3,       // never closer than this
   alienClear: 10,   // never within this of the alien
@@ -41,8 +43,9 @@ export const KINDS = {
 export const KIND_IDS = Object.keys(KINDS);
 
 // A field-guide kind or a computer screen one (js/screenapparitions.js).
-const kindOf = (id) => KINDS[id] ?? SCREEN_KINDS[id];
-const isScreen = (id) => id in SCREEN_KINDS;
+// 'screen-room' is the rare one where every terminal in the room goes off at once.
+const kindOf = (id) => KINDS[id] ?? SCREEN_KINDS[id] ?? (id === ROOM_EVENT.id ? ROOM_EVENT : undefined);
+const isScreen = (id) => id in SCREEN_KINDS || id === ROOM_EVENT.id;
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const isSafeAt = (layout, p) => layout.isSafe(cellOf(p.x), cellOf(p.z)) || inSuite(layout, p) !== null;
@@ -111,7 +114,8 @@ export class Apparitions {
     this.consoles = feed ? consoles : [];
     this.next = APPARITION.firstAfter;
     this.active = null;
-    this.ids = this.consoles.length ? [...KIND_IDS, ...SCREEN_IDS] : KIND_IDS;
+    this.ids = this.consoles.length ? [...KIND_IDS, ...SCREEN_IDS, ROOM_EVENT.id] : KIND_IDS;
+    this.sinceScreen = Infinity; // seconds since the last terminal apparition ended
     this.shown = Object.fromEntries(this.ids.map((k) => [k, 0]));
     this.forced = null;
     this.pending = null; // a debug summon, shown next update whatever the rules
@@ -130,6 +134,7 @@ export class Apparitions {
   // ctx: { elapsed, player: { x, z }, eye: { x, y, z }, forward: { x, y, z }, alien: { x, z },
   //        inSafe (in a safe room or a vent), blocked (alien hunting, Hat Man or a trick), dark (power out) }
   update(dt, ctx) {
+    if (!this.active?.screen) this.sinceScreen += dt;
     if (this.pending) {
       const id = this.pending;
       this.pending = null;
@@ -145,8 +150,10 @@ export class Apparitions {
     if (!this.enabled || ctx.inSafe || ctx.blocked || ctx.dark) return;
     this.next -= dt;
     if (this.next > 0) return;
-    const ids = (this.forced ? [this.forced] : this.ids).filter((k) =>
-      this.forced || (this.shown[k] < (kindOf(k).maxPerRun ?? Infinity)));
+    const screensOk = this.sinceScreen >= APPARITION.screenGap && (ctx.elapsed ?? 0) >= APPARITION.screenFirst;
+    const ids = (this.forced ? [this.forced] : this.ids).filter((k) => this.forced ||
+      (this.shown[k] < (kindOf(k).maxPerRun ?? Infinity) && (!isScreen(k) || screensOk) &&
+       (ctx.elapsed ?? 0) >= (kindOf(k).firstAfter ?? 0)));
     const fits = [];
     for (const id of ids) {
       const place = this.find(id, ctx);
@@ -162,6 +169,15 @@ export class Apparitions {
   find(id, ctx) {
     const L = this.layout, lc = (a, b) => this.lineClear(a, b), rand = this.rand;
     const floorY = (s) => ({ ...s, y: 0 }); // the plane's bottom on the floor
+    if (id === ROOM_EVENT.id) {
+      // Every terminal in the room you're in (two or more, at least one in clear sight), all
+      // playing the same one. Its sound comes from the middle of them.
+      const list = this.feed ? roomScreens(this.consoles, L, ctx.player) : [];
+      if (list.length < 2 || !list.some((s) => lc(ctx.player, s.front))) return null;
+      const n = list.length;
+      return { x: list.reduce((a, s) => a + s.x, 0) / n, y: 1.12, z: list.reduce((a, s) => a + s.z, 0) / n,
+        screens: list, as: SCREEN_IDS[Math.floor(rand() * SCREEN_IDS.length)] };
+    }
     if (isScreen(id)) {
       // On a console monitor you're facing, a few metres off.
       const s = this.feed && pickScreen(this.consoles, ctx, lc);
@@ -226,6 +242,7 @@ export class Apparitions {
   // A debug summon that found no usual spot: straight ahead of you, 5 m off (4 or 3 if a wall is
   // nearer), in clear sight. Screens: the nearest monitor in clear sight, any angle, up to 15 m.
   ahead(id, ctx) {
+    if (id === ROOM_EVENT.id) return null; // only in a room with terminals
     if (isScreen(id)) {
       const s = this.feed && pickScreen(this.consoles, ctx, (a, b) => this.lineClear(a, b), { loose: true });
       return s && { x: s.x, y: s.y, z: s.z, screen: s };
@@ -245,11 +262,14 @@ export class Apparitions {
     this.forced = null;
     if (!debug) this.shown[id]++; // a debug show doesn't use up the child's one appearance
     if (isScreen(id)) {
-      this.active = { id, t: 0, leaving: -1, place, debug, screen: true };
-      this.feed.show(place.screen.key, id);
-      // A breath for the gas mask, otherwise a quiet hiss of static from the monitor.
-      this.active.snd = this.sound(k.sound ?? 'radio', { x: place.x, y: place.y, z: place.z },
-        { volume: k.volume ?? 0.35, ref: 2, loop: true, duration: k.life + 0.2, bus: 'alien' });
+      // The whole room plays one kind (place.as); otherwise it's this kind on one monitor.
+      const as = place.as ?? id, room = !!place.screens;
+      this.active = { id, as, t: 0, leaving: -1, place, debug, screen: true, room };
+      this.feed.show(room ? place.screens.map((s) => s.key) : place.screen.key, as);
+      // A breath for the gas mask, otherwise a hiss of static from the monitor (louder for a room).
+      const look = SCREEN_KINDS[as];
+      this.active.snd = this.sound(look.sound ?? 'radio', { x: place.x, y: place.y, z: place.z },
+        { volume: room ? 0.5 : look.volume ?? 0.35, ref: room ? 4 : 2, loop: true, duration: k.life + 0.2, bus: 'alien' });
       return;
     }
     // A reflection placed ahead (no glass near) stands like the others.
@@ -269,7 +289,7 @@ export class Apparitions {
   leave() { const a = this.active; if (a.leaving < 0 && a.t >= APPARITION.minShow) a.leaving = 0; }
 
   end() {
-    if (this.active.screen) this.feed.hide();
+    if (this.active.screen) { this.feed.hide(); this.sinceScreen = 0; }
     else this.figure.hide();
     const s = this.active.snd;
     if (s) { s.stop(); s.dispose?.(); }
@@ -292,8 +312,9 @@ export class Apparitions {
     if (!a.debug && (ctx.inSafe || ctx.dark || ctx.blocked)) { this.end(); return; }
     if (a.screen) {
       // It plays out on the monitor, unless you walk right up to it.
-      if (a.t >= k.life || (!a.debug && a.t >= APPARITION.minShow && dist(a.place, ctx.player) < SCREEN.tooClose)) { this.end(); return; }
-      this.feed.set(a.id, a.t / k.life, a.t);
+      const near = !a.room && !a.debug && a.t >= APPARITION.minShow && dist(a.place, ctx.player) < SCREEN.tooClose;
+      if (a.t >= k.life || near) { this.end(); return; }
+      this.feed.set(a.as, a.t / k.life, a.t);
       return;
     }
     if (a.leaving >= 0) {

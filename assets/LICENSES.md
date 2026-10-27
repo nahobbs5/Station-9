@@ -22,3 +22,4 @@ They're credited in the game anyway (js/credits.js).
 | `models/propane_tank/` (glTF + 1K textures) | Propane Tank | Slinc, [Poly Haven](https://polyhaven.com/a/propane_tank) | CC0 |
 | `models/metal_jerrycan/` (glTF + 1K textures) | Metal Jerrycan | Sean Buckley, [Poly Haven](https://polyhaven.com/a/metal_jerrycan) | CC0 |
 | `models/industrial_caged_sconce/` (glTF + 1K textures) | Industrial Caged Sconce | Ulan Cabanilla, [Poly Haven](https://polyhaven.com/a/industrial_caged_sconce) | CC0 |
+| `posters/*.jpg` | Wall posters | Cut from the project's own concept sheets ("Station 9_ Propaganda in the Rust", "Station 9_ Tomorrow’s Frontier") | Project art |

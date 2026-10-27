@@ -29,8 +29,11 @@ export function makeScreenFeed(world) {
     return c;
   });
 
-  let cur = null; // { feed, base, id, last }
-  const r = Math.random;
+  let cur = null; // { feeds: [{ feed, base }], id, last }
+  // The frame's randomness (tears, grain, flicker), replayed for every monitor in a room so they
+  // all glitch together.
+  let seed = 1;
+  const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
   // The picture fills the screen (cropped top and bottom), a little above centre for faces.
   function drawArt(img, alpha, slide, dx = 0) {
@@ -41,12 +44,12 @@ export function makeScreenFeed(world) {
     g.globalAlpha = 1;
   }
 
-  function draw(L, t) {
+  function draw(L, t, base) {
     g.globalCompositeOperation = 'source-over';
     if (L.blackout) { g.fillStyle = '#000'; g.fillRect(0, 0, W, H); return; }
     // Underneath: the camera feed, or the usual screen; rolled up the picture when the feed slips.
     const roll = ((L.roll % 1) + 1) % 1 * H;
-    const under = L.feed && art[L.feed]?.naturalWidth ? art[L.feed] : cur.base;
+    const under = L.feed && art[L.feed]?.naturalWidth ? art[L.feed] : base;
     g.drawImage(under, 0, -roll, W, H);
     if (roll) g.drawImage(under, 0, H - roll, W, H);
     // The figure: the feed cuts to a dark camera picture.
@@ -104,13 +107,14 @@ export function makeScreenFeed(world) {
   }
 
   return {
-    // Start one on this console (key: its prop id).
-    show(key, id) {
+    // Start one on this console, or on several at once (keys: prop ids), all in sync.
+    show(keys, id) {
       if (cur) this.hide();
-      const feed = world.consoleFeed(key);
-      if (!feed) return;
-      cur = { feed, base: feed.normal(), id, last: -1 };
-      feed.lit(true);
+      const feeds = [keys].flat().map((k) => world.consoleFeed(k)).filter(Boolean)
+        .map((feed) => ({ feed, base: feed.normal() }));
+      if (!feeds.length) return;
+      cur = { feeds, id, last: -1 };
+      for (const f of feeds) f.feed.lit(true);
     },
     // k: how far through its life (0-1); t: seconds in.
     set(id, k, t) {
@@ -118,13 +122,19 @@ export function makeScreenFeed(world) {
       cur.last = t;
       const L = screenLook(id, k);
       if (L.repeat) return; // the last frame again
-      draw(L, t);
-      redraw(cur.feed.texture, work, { mirror: true });
+      const frameSeed = 1 + Math.floor(Math.random() * 2147483645);
+      for (const f of cur.feeds) {
+        seed = frameSeed;
+        draw(L, t, f.base);
+        redraw(f.feed.texture, work, { mirror: true });
+      }
     },
     hide() {
       if (!cur) return;
-      redraw(cur.feed.texture, cur.feed.normal(), { mirror: true });
-      cur.feed.lit(false);
+      for (const f of cur.feeds) {
+        redraw(f.feed.texture, f.feed.normal(), { mirror: true });
+        f.feed.lit(false);
+      }
       cur = null;
     },
   };

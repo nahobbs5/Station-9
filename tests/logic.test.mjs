@@ -955,3 +955,29 @@ test('noise-makers: each noise names its item, and a spent item is reported once
   assert.deepEqual(a.drainEnded(), [item]);
   assert.deepEqual(a.drainEnded(), [], 'only once');
 });
+
+test('posters: every one has its art, hangs in a normal room, clear of doors and of each other', async () => {
+  const { existsSync } = await import('node:fs');
+  const { posterPlacements, POSTER_ART } = await import('../js/worldplan.js');
+  const layout = buildLayout();
+  const all = posterPlacements(layout);
+  assert.equal(all.length, 17);
+  for (const p of all) {
+    assert.ok(POSTER_ART[p.id], `${p.id} has an aspect`);
+    assert.ok(existsSync(new URL(`../assets/posters/${p.id}.jpg`, import.meta.url)), `${p.id}.jpg exists`);
+    const room = layout.room(p.room);
+    assert.ok(!room.safe, `${p.id} not in a safe room`);
+    // Its whole width stays on this room's wall, and not by a door.
+    const along = [Math.cos(p.rot), -Math.sin(p.rot)];
+    for (const k of [-p.w / 2, 0, p.w / 2]) {
+      const x = p.x + along[0] * k + Math.sin(p.rot) * 0.5, z = p.z + along[1] * k + Math.cos(p.rot) * 0.5;
+      const cx = Math.floor(x / TILE), cz = Math.floor(z / TILE);
+      assert.ok(layout.isFloor(cx, cz), `${p.id} edge over floor`);
+      assert.ok(!layout.doors.some((d) => Math.abs(d.cx - cx) + Math.abs(d.cz - cz) <= 1), `${p.id} clear of doors`);
+    }
+  }
+  for (const a of all) for (const b of all) {
+    if (a === b || a.rot !== b.rot) continue;
+    assert.ok(Math.hypot(a.x - b.x, a.z - b.z) >= (a.w + b.w) / 2, `${a.id} and ${b.id} don't overlap`);
+  }
+});

@@ -9,23 +9,27 @@ import { inSuite } from './suiteplan.js';
 import { propPlacement } from './worldplan.js';
 
 // Keys are 'screen-<art>'. life: seconds (the board says 0.5-3; at least 2, so you can see them). weight: how likely it's picked
-// when a monitor is in view (low, so screens stay a minority and some stay rare).
+// when a monitor is in view (low, so screens stay rarer than the field-guide nine and keep surprising you).
 export const SCREEN_KINDS = {
-  'screen-hatman':     { art: 'hatman',     life: 2.2, weight: 0.35 },
-  'screen-gasmask':    { art: 'gasmask',    life: 2.6, weight: 0.4, sound: 'breath', volume: 0.3 },
-  'screen-patient':    { art: 'patient',    life: 2.6, weight: 0.4 },
-  'screen-astronaut':  { art: 'astronaut',  life: 2.0, weight: 0.35 },
-  'screen-child':      { art: 'child',      life: 2.0, weight: 0.25 },
-  'screen-reflection': { art: 'reflection', life: 2.0, weight: 0.3 },
-  'screen-shadow':     { art: 'shadow',     life: 2.0, weight: 0.35 },
-  'screen-hanging':    { art: 'hanging',    life: 2.0, weight: 0.3 },
-  'screen-crew':       { art: 'crew',       life: 3.0, weight: 0.4 },
-  'screen-message':    { art: 'message',    life: 2.6, weight: 0.35 },
-  'screen-empty':      { art: 'empty',      life: 3.0, weight: 0.3 },
-  'screen-alien':      { art: 'alien',      life: 2.0, weight: 0.15 },
-  'screen-face':       { art: 'feed-peak',  life: 2.2, weight: 0.25 }, // the board's "Apparition Peak" face
+  'screen-hatman':     { art: 'hatman',     life: 2.2, weight: 0.175 },
+  'screen-gasmask':    { art: 'gasmask',    life: 2.6, weight: 0.2, sound: 'breath', volume: 0.3 },
+  'screen-patient':    { art: 'patient',    life: 2.6, weight: 0.2 },
+  'screen-astronaut':  { art: 'astronaut',  life: 2.0, weight: 0.175 },
+  'screen-child':      { art: 'child',      life: 2.0, weight: 0.125 },
+  'screen-reflection': { art: 'reflection', life: 2.0, weight: 0.15 },
+  'screen-shadow':     { art: 'shadow',     life: 2.0, weight: 0.175 },
+  'screen-hanging':    { art: 'hanging',    life: 2.0, weight: 0.15 },
+  'screen-crew':       { art: 'crew',       life: 3.0, weight: 0.2 },
+  'screen-message':    { art: 'message',    life: 2.6, weight: 0.175 },
+  'screen-empty':      { art: 'empty',      life: 3.0, weight: 0.15 },
+  'screen-alien':      { art: 'alien',      life: 2.0, weight: 0.075 },
+  'screen-face':       { art: 'feed-peak',  life: 2.2, weight: 0.125 }, // the board's "Apparition Peak" face
 };
 export const SCREEN_IDS = Object.keys(SCREEN_KINDS);
+// The rare one: every terminal in the room you're in goes off at once, all showing the same
+// screen apparition in sync. Once a run at most, never in the first six minutes.
+export const ROOM_EVENT = { id: 'screen-room', life: 3.5, weight: 0.6, maxPerRun: 1, firstAfter: 360 };
+
 // The camera feed the monitor cuts to first, one picture per stage (the board's Static & Flicker Rules row).
 export const FEEDS = ['feed-normal', 'feed-interference', 'feed-glitch', 'feed-fade'];
 export const SCREEN_ARTS = [...new Set([...SCREEN_IDS.map((id) => SCREEN_KINDS[id].art), ...FEEDS])];
@@ -54,12 +58,19 @@ export function consoleScreens(layout) {
     const { x, z, rotY } = propPlacement(layout, p);
     const fx = Math.sin(rotY), fz = Math.cos(rotY);
     // The screen: 0.045 m in front of the desk's centre, 1.12 m up (js/babylon/world.js makeConsole).
-    const s = { key: p.id, x: x + fx * 0.045, y: 1.12, z: z + fz * 0.045, rotY, front: { x: x + fx * 1.05, z: z + fz * 1.05 } };
+    const s = { key: p.id, room: p.room, x: x + fx * 0.045, y: 1.12, z: z + fz * 0.045, rotY, front: { x: x + fx * 1.05, z: z + fz * 1.05 } };
     if (layout.isSafe(cellOf(s.x), cellOf(s.z)) || inSuite(layout, s) !== null) continue;
     if (layout.room(p.room)?.safe) continue;
     out.push(s);
   }
   return out;
+}
+
+// The terminals in the room you're standing in (none in a corridor or a safe room).
+export function roomScreens(screens, layout, player) {
+  const room = layout.roomAt(cellOf(player.x), cellOf(player.z));
+  if (!room || room.safe) return [];
+  return screens.filter((s) => s.room === room.id);
 }
 
 // Does this monitor face you? (You're on its screen side.)

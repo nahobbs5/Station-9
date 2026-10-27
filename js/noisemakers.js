@@ -71,6 +71,12 @@ export class Inventory {
     if (t) this.selected = t;
     return t;
   }
+  // The mouse wheel (debug mode, where 1-3 summon apparitions): the next or previous kind.
+  cycle(dir) {
+    const i = TYPES.indexOf(this.selected);
+    this.selected = TYPES[(i + (dir < 0 ? -1 : 1) + TYPES.length) % TYPES.length];
+    return this.selected;
+  }
   // Take one to throw: the selected kind, or failing that the next one you have. null if none.
   take() {
     const order = [this.selected, ...TYPES.filter((t) => t !== this.selected)];
@@ -85,31 +91,34 @@ export class Inventory {
 // The noise-makers that have landed and are going off: when each makes its noise, and how
 // much a running Buzz Pod covers your footsteps.
 export class ActiveNoise {
-  constructor() { this.items = []; }
+  constructor() { this.items = []; this.ended = []; }
   // pos: where it is, read each time it goes off (a live object, so a rolling Echo Seed's later
   // chitters come from where it rolled to).
   place(type, pos) {
-    this.items.push({ type, pos, age: 0, next: 0, step: 0 });
+    this.items.push({ type, pos, age: 0, next: 0, step: 0, heard: false });
   }
-  // Advance time; returns the noises due now: [{ x, z, loudness, type }].
+  // Advance time; returns the noises due now: [{ x, z, loudness, type, first, item }]. The game
+  // marks item.heard when the alien hears one.
   update(dt) {
     const out = [];
     for (let i = this.items.length - 1; i >= 0; i--) {
       const it = this.items[i], def = NOISEMAKERS[it.type];
       if (def.emits) {
         while (it.step < def.emits.length && def.emits[it.step][0] <= it.age) {
-          out.push({ x: it.pos.x, z: it.pos.z, loudness: def.emits[it.step][1], type: it.type, first: it.step === 0 });
+          out.push({ x: it.pos.x, z: it.pos.z, loudness: def.emits[it.step][1], type: it.type, first: it.step === 0, item: it });
           it.step++;
         }
       } else if (it.age >= it.next && it.age < def.life) {
-        out.push({ x: it.pos.x, z: it.pos.z, loudness: def.loudness, type: it.type, first: it.next === 0 });
+        out.push({ x: it.pos.x, z: it.pos.z, loudness: def.loudness, type: it.type, first: it.next === 0, item: it });
         it.next += def.every;
       }
       it.age += dt;
-      if (it.age >= def.life) this.items.splice(i, 1);
+      if (it.age >= def.life) this.ended.push(...this.items.splice(i, 1));
     }
     return out;
   }
+  // Items that ran out since the last call.
+  drainEnded() { const e = this.ended; this.ended = []; return e; }
   // Multiplier for your footstep noise at (x, z): lower near a running Buzz Pod.
   maskAt(x, z) {
     let k = 1;

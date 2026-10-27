@@ -15,7 +15,7 @@ import { makeCanvas } from './textures.js';
 export const HATMAN = {
   distances: [25, 18, 12, 6], // metres from you, by repairs done
   vary: 1.5,                  // +/- metres, so he's never quite where you expect
-  firstAfter: 90,             // nothing in the first 90 s
+  firstAfter: 35,             // nothing in the first 35 s
   gap: [120, 180],            // seconds between reveals (random in this range)
   retry: 0.5,                 // due but nowhere in view to put him: look again this often
   perRun: 6,                  // reveals per run
@@ -148,13 +148,18 @@ export class HatMan {
   // For testing from the console: station9.hatman.force()
   force() { this.next = 0; if (this.reveals >= HATMAN.perRun) this.reveals = HATMAN.perRun - 1; }
 
+  // Debug keys (js/game.js, ?debug): a reveal now, whatever the setting, the suites or the alien.
+  // He stands where he normally would if he can; failing that, any corridor spot ahead in clear
+  // sight; failing that, 6 m straight ahead (nearer if a wall is in the way).
+  summon() { this.force(); this.debugNext = true; }
+
   // ctx: { stage, elapsed, inSuite, blocked (the alien hunts, or a trick is running), player: { x, z } }
   update(dt, ctx) {
     if (this.dipLeft > 0 && (this.dipLeft -= dt) <= 0 && this.state === 'idle') this.figure.setLamps?.(1);
     if (this.cameoLeft > 0 && (this.cameoLeft -= dt) <= 0) this.figure.hideCameo();
     this.t += dt;
     // Switched off: nothing new (a reveal already under way still finishes, so the lights come back).
-    if (this.state === 'idle' && !this.enabled) return;
+    if (this.state === 'idle' && !this.enabled && !this.debugNext) return;
     if (this.state === 'idle') this.idle(dt, ctx);
     else if (this.state === 'blackout') this.duringBlackout(ctx);
     else if (this.state === 'shown') this.whileShown(dt, ctx);
@@ -164,17 +169,39 @@ export class HatMan {
   idle(dt, ctx) {
     if (this.reveals >= HATMAN.perRun) return;
     this.next -= dt;
-    if (this.next > 0 || ctx.inSuite || ctx.blocked || this.cameoActive) return;
-    const spot = chooseSpot(this.spots, {
-      from: ctx.player, forward: this.rig.forward(), stage: ctx.stage, used: this.used,
-      lineClear: (a, b) => this.lineClear(a, b), rand: this.rand,
+    const debug = this.debugNext;
+    if (this.next > 0 || (!debug && (ctx.inSuite || ctx.blocked || this.cameoActive))) return;
+    const lc = (a, b) => this.lineClear(a, b);
+    let spot = chooseSpot(this.spots, {
+      from: ctx.player, forward: this.rig.forward(), stage: ctx.stage, used: debug ? new Set() : this.used, lineClear: lc, rand: this.rand,
     });
+    if (!spot && debug) spot = this.debugSpot(ctx.player, lc);
     if (!spot) { this.next = HATMAN.retry; return; }
+    this.debugNext = false;
+    this.debugShow = debug;
     this.spot = spot;
-    this.used.add(spot.id);
-    this.reveals++;
+    if (!debug) { this.used.add(spot.id); this.reveals++; } // a debug reveal doesn't use up the run's six
     this.placed = false;
     this.lights(false, 'blackout');
+  }
+
+  // A debug summon's fallback: the nearest-to-12 m corridor spot ahead in clear sight (any distance
+  // past 3 m), else a point straight ahead, 6 m off or as far as the floor goes.
+  debugSpot(from, lc) {
+    const f = this.rig.forward(), flen = Math.hypot(f.x, f.z) || 1;
+    let best = null, bestErr = Infinity;
+    for (const s of this.spots) {
+      const d = dist(s, from);
+      if (d < HATMAN.minDist || ((s.x - from.x) * f.x + (s.z - from.z) * f.z) / (d * flen) < HATMAN.viewCos) continue;
+      const err = Math.abs(d - 12);
+      if (err < bestErr && lc(from, s)) { best = s; bestErr = err; }
+    }
+    if (best) return best;
+    for (const d of [6, 5, 4, HATMAN.minDist]) {
+      const p = { x: from.x + (f.x / flen) * d, z: from.z + (f.z / flen) * d };
+      if (this.layout.walkDistance(p.x, p.z) >= 0.4 && lc(from, p)) return { id: 'debug', ...p };
+    }
+    return null;
   }
 
   duringBlackout(ctx) {
@@ -182,7 +209,7 @@ export class HatMan {
       this.placed = true;
       const s = this.spot, p = ctx.player;
       // Walked right up to it in the dark: skip this one.
-      if (dist(s, p) < HATMAN.minDist || ctx.inSuite) { this.spot = null; return; }
+      if (dist(s, p) < HATMAN.minDist || (ctx.inSuite && !this.debugShow)) { this.spot = null; return; }
       // His red backdrop light goes just behind him, away from you down the corridor.
       const d = dist(s, p) || 1;
       this.figure.place(s.x, s.z, s.x + ((s.x - p.x) / d) * 0.9, s.z + ((s.z - p.z) / d) * 0.9);
@@ -199,7 +226,8 @@ export class HatMan {
     this.figure.update(ctx.elapsed);
     // Looking away resets the count: it takes two steady seconds.
     this.looked = this.lookingAt() ? this.looked + dt : 0;
-    if (this.looked >= HATMAN.lookAway || this.t >= HATMAN.life || ctx.inSuite || ctx.blocked ||
+    const held = !this.debugShow && (ctx.inSuite || ctx.blocked);
+    if (this.looked >= HATMAN.lookAway || this.t >= HATMAN.life || held ||
         dist(this.figure.position, ctx.player) < HATMAN.tooClose) {
       this.figure.hide();
       this.lights(false, 'flicker');
@@ -212,6 +240,7 @@ export class HatMan {
     this.figure.setLamps?.(on ? 1 : 0);
     this.state = state;
     this.t = 0;
+    if (state === 'idle') this.debugShow = false;
     if (state === 'idle') this.next = HATMAN.gap[0] + this.rand() * (HATMAN.gap[1] - HATMAN.gap[0]);
   }
 

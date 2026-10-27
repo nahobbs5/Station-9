@@ -29,6 +29,8 @@ export const LINES = {
   graffiti: 'That wall will be cleaned soon.',
   needPower: 'That system requires main power. Safety first!',
   needComms: 'Pod launch requires a confirmed rescue window. Please contact Comms first.',
+  // A thrown noise-maker (not a Buzz Pod) ran out and the alien never heard it. First time only.
+  wasted: "I told you not to waste it, but no no no you wouldn't listen.",
   noDecoys: 'You are out of noise-makers. Supplies are limited. Supplies have always been limited.',
   door: (n) => `Door ${n} is open for your convenience.`,
   caught: 'Technician status: reassigned. Thank you for your contribution. Your labor is our freedom.',
@@ -39,6 +41,22 @@ export const LINES = {
     'Technician. You are not on the list. Please stay.',
   ],
 };
+
+// Lines from text/marigold.txt (parsed by parseLines) replace the built-in ones above, in place,
+// so everything that imports LINES sees them. "suiteDoor.quiet" sets a nested line, "door" is a
+// template with {n} for the door number, and winAll is always a list. Unknown keys are skipped.
+export function applyLines(map) {
+  for (const [key, value] of Object.entries(map)) {
+    const [top, sub] = key.split('.');
+    const cur = sub ? LINES[top]?.[sub] : LINES[top];
+    if (cur === undefined || top === 'intro') { console.warn(`marigold.txt: unknown line "${key}"`); continue; }
+    const one = Array.isArray(value) ? value[value.length - 1] : value;
+    if (sub) LINES[top][sub] = one;
+    else if (Array.isArray(cur)) LINES[top] = [].concat(value);
+    else if (typeof cur === 'function') LINES[top] = (n) => one.replaceAll('{n}', n);
+    else LINES[top] = one;
+  }
+}
 
 export class Intercom {
   constructor(el) {

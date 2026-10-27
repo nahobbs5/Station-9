@@ -378,11 +378,6 @@ export class GameAudio {
       const voice = Math.sin(t * 2 * Math.PI * (180 + 60 * Math.sin(t * 2 * Math.PI * 5))) * 0.5;
       return { v: (v * 0.6 + voice * v * 1.5) * burst, s: v };
     });
-    // ...and a far-off two-tone alarm, a second long.
-    this.buffers.alarm = make(1, (t) => {
-      const f = Math.floor(t * 4) % 2 ? 660 : 880;
-      return Math.sign(Math.sin(t * 2 * Math.PI * f)) * 0.25 * Math.min(1, (1 - t) * 8);
-    });
     // Heartbeat: lub-dub.
     this.buffers.beat = make(0.5, (t) => {
       const lub = t < 0.15 ? Math.sin(t * 2 * Math.PI * 55) * Math.sin((t / 0.15) * Math.PI) : 0;

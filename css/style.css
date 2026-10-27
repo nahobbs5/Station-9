@@ -36,7 +36,7 @@ h2 { font-family: var(--display); font-size: clamp(36px, 6vw, 64px); letter-spac
 #splash { cursor: pointer; background: rgba(0,0,0,0.92); }
 #splash .press { margin-top: 32px; color: var(--dim); letter-spacing: 0.3em; text-transform: uppercase; font-size: 14px; animation: blink 2.4s ease-in-out infinite; }
 @keyframes blink { 50% { opacity: 0.25; } }
-@media (prefers-reduced-motion: reduce) { #splash .press { animation: none; } }
+@media (prefers-reduced-motion: reduce) { #splash .press, #subtitle::after, #tape::after { animation: none; } }
 .tagline { letter-spacing: 0.4em; color: var(--dim); margin: 4px 0 24px; }
 .blurb { max-width: 560px; line-height: 1.6; }
 .controls {
@@ -147,6 +147,16 @@ button.link:hover { background: none; color: var(--ink); }
   content: ''; display: inline-block; margin-right: 8px; vertical-align: 1px;
   border-left: 7px solid #8fe0cf; border-top: 4px solid transparent; border-bottom: 4px solid transparent;
 }
+
+/* A dim hint that a click moves to the next line (skipDialogue in js/game.js). */
+#subtitle::after { content: 'CLICK TO SKIP'; }
+#tape::after { content: 'CLICK: NEXT LINE  \00B7  T: STOP TAPE'; white-space: pre; }
+#subtitle::after, #tape::after {
+  display: block; text-align: right; margin-top: 5px;
+  font-size: 11px; letter-spacing: 0.2em; color: #8fe0cf;
+  animation: skip-hint 2.4s ease-in-out infinite;
+}
+@keyframes skip-hint { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 
 #map { position: absolute; right: 20px; bottom: 20px; }
 #dev-tag { position: absolute; right: 20px; top: 16px; font-size: 11px; letter-spacing: 0.2em; color: #e8912a; opacity: 0.8; }

@@ -925,3 +925,33 @@ test('a repair clank that carries reaches the alien across the station; an ordin
   assert.equal(send(false), 'patrol');
   assert.equal(send(true), 'investigate');
 });
+
+test('marigold.txt: parses, covers every line, and fills LINES', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { parseLines } = await import('../js/textfiles.js');
+  const { LINES, applyLines } = await import('../js/intercom.js');
+  const sample = parseLines('# note\n\npower: Hi: there\nwinAll: one\nwinAll: two\nblank:\n');
+  assert.deepEqual(sample, { power: 'Hi: there', winAll: ['one', 'two'] });
+  const map = parseLines(readFileSync(new URL('../text/marigold.txt', import.meta.url), 'utf8'));
+  const want = Object.entries(LINES).filter(([k]) => k !== 'intro')
+    .flatMap(([k, v]) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.keys(v).map((s) => `${k}.${s}`) : [k]));
+  assert.deepEqual(Object.keys(map).sort(), want.sort());
+  applyLines(map);
+  assert.equal(LINES.door(3), 'Door 3 is open for your convenience.');
+  assert.equal(LINES.suiteDoor.quiet, map['suiteDoor.quiet']);
+  assert.deepEqual(LINES.winAll, map.winAll);
+});
+
+test('noise-makers: each noise names its item, and a spent item is reported once', async () => {
+  const { ActiveNoise, NOISEMAKERS } = await import('../js/noisemakers.js');
+  const a = new ActiveNoise(); a.place('echo', { x: 10, z: 10 });
+  const out = [];
+  for (let t = 0; t < NOISEMAKERS.echo.life - 1; t += 0.1) out.push(...a.update(0.1));
+  const [item] = a.items;
+  assert.ok(out.length && out.every((n) => n.item === item), 'every noise points back to its item');
+  assert.equal(item.heard, false);
+  assert.deepEqual(a.drainEnded(), [], 'still running');
+  for (let t = 0; t < 2; t += 0.1) a.update(0.1);
+  assert.deepEqual(a.drainEnded(), [item]);
+  assert.deepEqual(a.drainEnded(), [], 'only once');
+});

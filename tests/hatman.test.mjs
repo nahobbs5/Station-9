@@ -51,7 +51,7 @@ function scene({ spots = row([4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26]) } = 
   return { ...r, hm, ctx, run };
 }
 
-test('hat man: nothing for 90 s, then a blackout, placed in the dark, shown when the lights return', () => {
+test('hat man: nothing for 35 s, then a blackout, placed in the dark, shown when the lights return', () => {
   const { hm, run, world, calls, figure } = scene();
   run(HATMAN.firstAfter - 0.1);
   assert.equal(hm.state, 'idle');
@@ -205,4 +205,24 @@ test('hat man: the Apparitions setting off means no reveals and no cameo', () =>
   s.hm.force();
   s.run(0.1);
   assert.equal(s.hm.state, 'blackout', 'back on: he comes');
+});
+
+test('hat man: a debug summon reveals him at once, even with no corridor spot ahead, in a suite, or switched off', () => {
+  // Stand on a real corridor spot, looking along the corridor; no marker spots to choose from.
+  const cs = corridorSpots(layout);
+  const i = cs.findIndex((s, j) => cs[j + 1]?.corridor === s.corridor);
+  const s0 = cs[i], s1 = cs[i + 1];
+  const { hm, run, ctx, rig } = scene({ spots: [] });
+  const len = Math.hypot(s1.x - s0.x, s1.z - s0.z);
+  rig.dir = { x: (s1.x - s0.x) / len, y: 0, z: (s1.z - s0.z) / len };
+  ctx.player = { x: s0.x, z: s0.z };
+  ctx.inSuite = true; ctx.blocked = true;
+  hm.enabled = false;
+  hm.force();
+  run(1);
+  assert.equal(hm.state, 'idle', 'force() still follows the rules');
+  hm.summon();
+  run(HATMAN.blackout + 0.15);
+  assert.equal(hm.state, 'shown');
+  assert.equal(hm.reveals, 0, 'does not use up the run');
 });

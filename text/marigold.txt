@@ -1,0 +1,59 @@
+# Marigold's lines during play (the opening announcements are in intro.txt; the tapes are in lore.txt).
+#
+# Each line is   key: what she says
+# Keep the keys (the part before the first colon) exactly as they are; only change the text after it.
+# Colons inside the text are fine. Lines starting with # are notes and are ignored.
+# If a key is missing or left blank, the game uses its built-in line instead.
+
+# --- Repairs and the ending ---
+# Main power comes back on.
+power: Main power restored! The station is now forty percent brighter. So are you, dear.
+# The rescue call goes out from Comms.
+comms: Rescue call sent. A replacement crew will arrive in approximately... well, whenever they finish making the ship. In the meantime, please proceed to the Escape Pod Bay. And remember, Your labor is our freedom.
+# You try the comms console before main power is on.
+needPower: That system requires main power. Safety first!
+# You try an escape pod before the rescue call.
+needComms: Pod launch requires a confirmed rescue window. Please contact Comms first.
+# You launch an escape pod.
+win: Safe travels, Technician. Your labor is our freedom.
+# You launch after reading all twelve terminals: she reads a roll call instead (each winAll line in order).
+winAll: Tomas. Imani. Lena. Priya. Wes. Jun. Ada. Sam. All present.
+winAll: Technician. You are not on the list. Please stay.
+# The alien catches you.
+caught: Technician status: reassigned. Thank you for your contribution. Your labor is our freedom.
+
+# --- The alien ---
+# It starts a hunt (always the first time, then about 1 time in 3).
+hunt: Please stay calm. A wellness check is on its way to you.
+# The first time a noise you made carries across the station.
+carried: That one carried. Something on this station has excellent hearing.
+
+# --- Noise-makers ---
+# The first noise-maker you pick up, whatever kind.
+crate: A noise-maker! Throw it with Q to redirect unwanted attention. Attention is our most precious resource. Please do not waste it.
+# The first time you pick up each other kind.
+nm_echo: Echo Seed. It rolls, and then it chatters. It sounds like someone you used to know.
+nm_shard: Resonance Shard. One clear note that carries a very long way. Use it far from yourself.
+nm_buzz: Buzz Pod. It hums for a while and covers your footsteps nearby. Like a good colleague.
+# You try to carry a fourth.
+handsFull: Your hands are full. Three noise-makers is the safe limit. We checked.
+# You press Q with none left.
+noDecoys: You are out of noise-makers. Our stock is limited due to supply chain problems with the colonies.
+# You throw a noisemaker when there's no alien around.
+wasted: I told you not to waste it, but no no no you wouldn't listen.
+
+# --- Strange happenings ---
+# The first time you see the Hat Man.
+hatman: Please disregard any colleagues you may see in the corridors. These are just phantoms of your imagination and can usually be fixed by a good night's sleep.
+# A door opens by itself. {n} is replaced by the door's number.
+door: Door {n} is open for your convenience.
+
+# --- The wellness suites (inside, she only speaks at the door) ---
+# Stepping into the Wellness Room.
+suiteDoor.wellness: Welcome to your wellness suite. Please take a seat.
+# Stepping into the Quiet Room.
+suiteDoor.quiet: You seem tired. We built this room specifically for you to rest. Giving you a few minutes to rest means that you can do more labor for us.
+# Stepping into either suite while the alien is hunting you.
+suiteHunt: Please stay where you are. This is the safest place in the station.
+# Getting close to the writing on the Quiet Room wall.
+graffiti: That wall will be cleaned soon, whenever we can afford a new janitor. 

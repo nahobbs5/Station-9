@@ -8,6 +8,22 @@ export function parseIntro(src) {
   return lines(src).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
 }
 
+// marigold.txt: "key: text" per line (split at the first colon). A key given more than once
+// becomes a list, in order. Blank text is skipped so the built-in line is used.
+export function parseLines(src) {
+  const out = {};
+  for (const raw of lines(src)) {
+    const l = raw.trim();
+    if (!l || l.startsWith('#')) continue;
+    const m = l.match(/^([\w.]+)\s*:\s*(.*)$/);
+    if (!m || !m[2]) continue;
+    const [, key, text] = m;
+    if (key in out) out[key] = [].concat(out[key], text);
+    else out[key] = text;
+  }
+  return out;
+}
+
 // lore.txt: each entry starts with "=== t01: Title", then "key: value" lines,
 // a blank line, and the body text (which can have several paragraphs).
 // Optional keys: "voice: pitch 0.8, rate 0.95" and "audio: tapes/t03.mp3".

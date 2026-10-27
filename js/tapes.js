@@ -50,7 +50,7 @@ export class TapePlayer {
     this.entry = entry;
     this.lines = tapeScript(entry, SPEAKERS);
     this.i = 0;
-    this.el.head.textContent = `TAPE ${entry.id.slice(1)} · ${entry.title}   [T] stop · click skip`;
+    this.el.head.textContent = `TAPE ${entry.id.slice(1)} · ${entry.title}`;
     this.el.speaker.textContent = '';
     this.el.line.textContent = '…';
     this.el.box.hidden = false;

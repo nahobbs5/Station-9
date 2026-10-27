@@ -1,22 +1,25 @@
 // Apparitions from the field guide (reference files/Station 9_ Apparition Field Guide.png):
 // "Glitches. Memories. Something else. Brief encounters. Not real. But they feel real."
 // The Hat Man has his own module (js/hatman.js). These are the other nine. They share one queue:
-// one at a time, every 45-90 s after the first 90 s, each only where it fits. Nothing ever appears
+// one at a time, every 45-90 s after the first 35 s, each only where it fits. Nothing ever appears
 // in the safe rooms (Wellness and Quiet), and stepping into one sends a showing apparition away.
 // Everything here honours the menu's Apparitions setting (Apparitions.enabled).
+// The computer screen apparitions (js/screenapparitions.js) join the same queue when there's a feed.
 // No engine here; js/babylon/apparitions.js draws them from the art in assets/apparitions/.
 import { cellOf, cellCenter, WALL_H } from './layout.js';
 import { inSuite } from './suiteplan.js';
 import { corridorSpots } from './hatman.js';
+import { SCREEN, SCREEN_KINDS, SCREEN_IDS, pickScreen } from './screenapparitions.js';
 
 export const APPARITION = {
-  firstAfter: 90,   // nothing in the first 90 s
+  firstAfter: 35,   // nothing in the first 35 s
   gap: [45, 90],    // seconds between apparitions (random in this range)
   retry: 2,         // due, but nothing fits where you are: look again this often
   minDist: 3,       // never closer than this
   alienClear: 10,   // never within this of the alien
   lookCos: Math.cos((10 * Math.PI) / 180), // "looking straight at it"
   glitchOut: 0.25,  // seconds of glitching as one vanishes
+  minShow: 2,       // every one stays at least this long before it can go (looked at, walked up to)
 };
 
 const deg = (d) => (d * Math.PI) / 180;
@@ -25,17 +28,21 @@ const deg = (d) => (d * Math.PI) / 180;
 // 'pale' (a faint pale shape, for glass). glow: the haze a dark one stands against, so it reads. h: plane height in metres (the figure fills ~85% of it);
 // aspect: plane width / height (the crop's). level: art brightness (default 1.5). weight: how likely it's picked when it fits.
 export const KINDS = {
-  gasmask:    { tint: 'art',   h: 2.1,  aspect: 0.92, weight: 1,   life: 3,   sound: 'breath' },
+  gasmask:    { tint: 'art',   h: 2.1,  aspect: 0.92, weight: 1,   life: 3,   sound: 'breath', volume: 0.35 },
   patient:    { tint: 'art',   h: 2.0,  aspect: 0.91, weight: 1.2, life: 4,   level: 2.4 },
   astronaut:  { tint: 'art',   h: 2.1,  aspect: 0.9,  weight: 1.2, life: 5 },
-  child:      { tint: 'art',   h: 1.5,  aspect: 0.87, weight: 0.5, life: 1.8, maxPerRun: 1, level: 2.2 },
+  child:      { tint: 'art',   h: 2.3,  aspect: 0.82, weight: 0.5, life: 2.5, maxPerRun: 1, level: 1.6, glow: 0xd8b49a },
   shadow:     { tint: 'black', h: 2.5,  aspect: 0.86, weight: 1,   life: 4,   glow: 0x7f95b0 },
   crew:       { tint: 'art',   h: 2.1,  aspect: 0.88, weight: 1,   life: 6 },
-  reflection: { tint: 'pale',  h: 0.8,  aspect: 0.88, weight: 1,   life: 2 },
+  reflection: { tint: 'pale',  h: 0.8,  aspect: 0.88, weight: 1,   life: 2.5 },
   static:     { tint: 'art',   h: 2.1,  aspect: 0.89, weight: 1,   life: 3,   sound: 'radio' },
-  hanging:    { tint: 'black', h: 2.2,  aspect: 0.84, weight: 0.8, life: 0.9, glow: 0xff2a18 },
+  hanging:    { tint: 'black', h: 2.2,  aspect: 0.84, weight: 0.8, life: 2.5, glow: 0xff2a18 },
 };
 export const KIND_IDS = Object.keys(KINDS);
+
+// A field-guide kind or a computer screen one (js/screenapparitions.js).
+const kindOf = (id) => KINDS[id] ?? SCREEN_KINDS[id];
+const isScreen = (id) => id in SCREEN_KINDS;
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const isSafeAt = (layout, p) => layout.isSafe(cellOf(p.x), cellOf(p.z)) || inSuite(layout, p) !== null;
@@ -87,8 +94,10 @@ export function pickSpot(spots, ctx, { near, far, minAngle = 0, maxAngle = 30, w
 export class Apparitions {
   // figure: the renderer's { show(kind), pose({ x, y, z, alpha, jitter, flipX, rotY, w, h }), hide() }
   // deps: { lineClear(a, b), sound(name, pos, opts) -> handle with stop() or null,
-  //         grates (js/vents.js grateSpots), surfaces (js/hatman.js cameoSurfaces), rand }
-  constructor(figure, layout, { lineClear = () => true, sound = () => null, grates = [], surfaces = [], rand = Math.random } = {}) {
+  //         grates (js/vents.js grateSpots), surfaces (js/hatman.js cameoSurfaces), rand,
+  //         feed: the screen renderer's { show(key, id), set(id, k, t), hide() } (js/babylon/screens.js),
+  //         consoles: js/screenapparitions.js consoleScreens }. No feed: no screen apparitions.
+  constructor(figure, layout, { lineClear = () => true, sound = () => null, grates = [], surfaces = [], rand = Math.random, feed = null, consoles = [] } = {}) {
     this.figure = figure;
     this.layout = layout;
     this.lineClear = lineClear;
@@ -98,10 +107,14 @@ export class Apparitions {
     this.rand = rand;
     this.floor = floorSpots(layout);
     this.corridor = corridorSpots(layout).filter((s) => !isSafeAt(layout, s));
+    this.feed = feed;
+    this.consoles = feed ? consoles : [];
     this.next = APPARITION.firstAfter;
     this.active = null;
-    this.shown = Object.fromEntries(KIND_IDS.map((k) => [k, 0]));
+    this.ids = this.consoles.length ? [...KIND_IDS, ...SCREEN_IDS] : KIND_IDS;
+    this.shown = Object.fromEntries(this.ids.map((k) => [k, 0]));
     this.forced = null;
+    this.pending = null; // a debug summon, shown next update whatever the rules
     this.enabled = true; // the menu's Apparitions setting
   }
 
@@ -110,23 +123,38 @@ export class Apparitions {
   // For testing from the console: station9.apparitions.force('patient') (or no id for any).
   force(id = null) { this.next = 0; this.forced = id; }
 
+  // Debug keys (js/game.js, ?debug): show this one now. It goes where it would normally go if it
+  // can, otherwise a few metres ahead of you; the setting, safe rooms and the rest don't stop it.
+  summon(id) { if (kindOf(id)) this.pending = id; }
+
   // ctx: { elapsed, player: { x, z }, eye: { x, y, z }, forward: { x, y, z }, alien: { x, z },
   //        inSafe (in a safe room or a vent), blocked (alien hunting, Hat Man or a trick), dark (power out) }
   update(dt, ctx) {
+    if (this.pending) {
+      const id = this.pending;
+      this.pending = null;
+      const place = this.find(id, ctx) ?? this.ahead(id, ctx);
+      if (place) {
+        if (this.active) this.end();
+        this.start(id, place, ctx, { debug: true });
+        return;
+      }
+      console.info(`No room for ${id} here${isScreen(id) ? ': no monitor in view' : ''}.`);
+    }
     if (this.active) { this.step(dt, ctx); return; }
     if (!this.enabled || ctx.inSafe || ctx.blocked || ctx.dark) return;
     this.next -= dt;
     if (this.next > 0) return;
-    const ids = (this.forced ? [this.forced] : KIND_IDS).filter((k) =>
-      this.forced || (this.shown[k] < (KINDS[k].maxPerRun ?? Infinity)));
+    const ids = (this.forced ? [this.forced] : this.ids).filter((k) =>
+      this.forced || (this.shown[k] < (kindOf(k).maxPerRun ?? Infinity)));
     const fits = [];
     for (const id of ids) {
       const place = this.find(id, ctx);
       if (place) fits.push({ id, place });
     }
     if (!fits.length) { this.next = APPARITION.retry; return; }
-    let r = this.rand() * fits.reduce((s, f) => s + KINDS[f.id].weight, 0);
-    const pick = fits.find((f) => (r -= KINDS[f.id].weight) <= 0) ?? fits[fits.length - 1];
+    let r = this.rand() * fits.reduce((s, f) => s + kindOf(f.id).weight, 0);
+    const pick = fits.find((f) => (r -= kindOf(f.id).weight) <= 0) ?? fits[fits.length - 1];
     this.start(pick.id, pick.place, ctx);
   }
 
@@ -134,6 +162,11 @@ export class Apparitions {
   find(id, ctx) {
     const L = this.layout, lc = (a, b) => this.lineClear(a, b), rand = this.rand;
     const floorY = (s) => ({ ...s, y: 0 }); // the plane's bottom on the floor
+    if (isScreen(id)) {
+      // On a console monitor you're facing, a few metres off.
+      const s = this.feed && pickScreen(this.consoles, ctx, lc);
+      return s && { x: s.x, y: s.y, z: s.z, screen: s };
+    }
     switch (id) {
       case 'gasmask': {
         // Damaged areas or ventilation: the Generator Room, or near a vent grate.
@@ -152,8 +185,8 @@ export class Apparitions {
         return s && { ...s, y: 0.5 };
       }
       case 'child': {
-        // At the far end of the corridor you're looking down.
-        const s = pickSpot(this.corridor, ctx, { near: 14, far: 22, maxAngle: 20 }, lc, rand);
+        // Down the corridor you're looking along, near enough to make out.
+        const s = pickSpot(this.corridor, ctx, { near: 5, far: 9, maxAngle: 20 }, lc, rand);
         return s && floorY(s);
       }
       case 'shadow': {
@@ -190,27 +223,54 @@ export class Apparitions {
     return null;
   }
 
-  start(id, place, ctx) {
-    const k = KINDS[id];
+  // A debug summon that found no usual spot: straight ahead of you, 5 m off (4 or 3 if a wall is
+  // nearer), in clear sight. Screens: the nearest monitor in clear sight, any angle, up to 15 m.
+  ahead(id, ctx) {
+    if (isScreen(id)) {
+      const s = this.feed && pickScreen(this.consoles, ctx, (a, b) => this.lineClear(a, b), { loose: true });
+      return s && { x: s.x, y: s.y, z: s.z, screen: s };
+    }
+    const f = ctx.forward, flen = Math.hypot(f.x, f.z) || 1;
+    for (const d of [5, 4, APPARITION.minDist]) {
+      const p = { x: ctx.player.x + (f.x / flen) * d, z: ctx.player.z + (f.z / flen) * d };
+      if (this.layout.walkDistance(p.x, p.z) < 0.4 || !this.lineClear(ctx.player, p)) continue;
+      const y = id === 'astronaut' ? 0.5 : id === 'hanging' ? WALL_H - KINDS.hanging.h : 0;
+      return { ...p, y };
+    }
+    return null;
+  }
+
+  start(id, place, ctx, { debug = false } = {}) {
+    const k = kindOf(id);
     this.forced = null;
-    this.shown[id]++;
+    if (!debug) this.shown[id]++; // a debug show doesn't use up the child's one appearance
+    if (isScreen(id)) {
+      this.active = { id, t: 0, leaving: -1, place, debug, screen: true };
+      this.feed.show(place.screen.key, id);
+      // A breath for the gas mask, otherwise a quiet hiss of static from the monitor.
+      this.active.snd = this.sound(k.sound ?? 'radio', { x: place.x, y: place.y, z: place.z },
+        { volume: k.volume ?? 0.35, ref: 2, loop: true, duration: k.life + 0.2, bus: 'alien' });
+      return;
+    }
+    // A reflection placed ahead (no glass near) stands like the others.
+    const h = id === 'reflection' ? (place.glass ? place.glass.h * 0.9 : 1.8) : k.h;
     const a = this.active = {
-      id, t: 0, leaving: -1, looked: 0, place,
-      pose: { x: place.x, y: place.y, z: place.z, alpha: 1, jitter: 0, flipX: false, rotY: place.rotY ?? null, h: id === 'reflection' ? place.glass.h * 0.9 : k.h },
+      id, t: 0, leaving: -1, looked: 0, place, debug,
+      pose: { x: place.x, y: place.y, z: place.z, alpha: 1, jitter: 0, flipX: false, rotY: place.rotY ?? null, h },
       jumpIn: 0, home: { x: place.x, z: place.z }, startPlayer: { x: ctx.player.x, z: ctx.player.z },
     };
     a.pose.w = a.pose.h * k.aspect;
     this.figure.show(id);
-    if (k.sound) a.snd = this.sound(k.sound, { x: place.x, y: 1.6, z: place.z }, { volume: 1, ref: 3, loop: true, duration: k.life + 0.5, bus: 'alien' });
-    if (id === 'static') this.alarmAt = 0.8 + this.rand();
+    if (k.sound) a.snd = this.sound(k.sound, { x: place.x, y: 1.6, z: place.z }, { volume: k.volume ?? 1, ref: 3, loop: true, duration: k.life + 0.5, bus: 'alien' });
     this.figure.pose(a.pose);
   }
 
-  // Start going (a short glitch-out), unless already on the way.
-  leave() { if (this.active.leaving < 0) this.active.leaving = 0; }
+  // Start going (a short glitch-out), unless already on the way or it hasn't had its couple of seconds.
+  leave() { const a = this.active; if (a.leaving < 0 && a.t >= APPARITION.minShow) a.leaving = 0; }
 
   end() {
-    this.figure.hide();
+    if (this.active.screen) this.feed.hide();
+    else this.figure.hide();
     const s = this.active.snd;
     if (s) { s.stop(); s.dispose?.(); }
     this.active = null;
@@ -226,14 +286,23 @@ export class Apparitions {
   }
 
   step(dt, ctx) {
-    const a = this.active, k = KINDS[a.id], P = a.pose;
+    const a = this.active, k = kindOf(a.id), P = a.pose;
     a.t += dt;
-    // Safe rooms stay clean, and a hunt or a blackout ends it at once.
-    if (ctx.inSafe || ctx.dark || ctx.blocked) { this.end(); return; }
+    // Safe rooms stay clean, and a hunt or a blackout ends it at once (not a debug summon).
+    if (!a.debug && (ctx.inSafe || ctx.dark || ctx.blocked)) { this.end(); return; }
+    if (a.screen) {
+      // It plays out on the monitor, unless you walk right up to it.
+      if (a.t >= k.life || (!a.debug && a.t >= APPARITION.minShow && dist(a.place, ctx.player) < SCREEN.tooClose)) { this.end(); return; }
+      this.feed.set(a.id, a.t / k.life, a.t);
+      return;
+    }
     if (a.leaving >= 0) {
       a.leaving += dt;
-      if (a.leaving >= (a.id === 'shadow' ? 0.4 : APPARITION.glitchOut)) { this.end(); return; }
-      if (a.id === 'shadow') { // melts: fades and sinks
+      const fades = a.id === 'shadow' || a.id === 'child';
+      if (a.leaving >= (fades ? 0.4 : APPARITION.glitchOut)) { this.end(); return; }
+      if (a.id === 'child') { // fades where she stands
+        P.alpha = 1 - a.leaving / 0.4; P.jitter = 0;
+      } else if (a.id === 'shadow') { // melts: fades and sinks
         P.alpha = 1 - a.leaving / 0.4; P.y = a.place.y - a.leaving * 1.2; P.jitter = 0.2;
       } else {
         P.jitter = 1; P.alpha = this.rand() < 0.5 ? 0.15 : 0.9;
@@ -278,9 +347,8 @@ export class Apparitions {
         if (a.looked >= 2) this.leave();
         break;
       }
-      case 'child': // turns to look at you, then she's gone
-        P.flipX = t > 1;
-        P.jitter = t > 0.95 && t < 1.1 ? 1 : 0.05;
+      case 'child': // stands and stares, then she's gone
+        P.jitter = 0;
         break;
       case 'shadow': // melts away the moment you look at it
         P.jitter = 0.15;
@@ -291,6 +359,7 @@ export class Apparitions {
         if (d < 6) this.leave();
         break;
       case 'reflection': { // a figure in the glass that moves against you
+        if (!a.place.glass) { P.alpha = Math.min(1, t / 0.3) * 0.85; P.jitter = 0.1; break; } // debug: no glass
         const g = a.place.glass, rx = Math.cos(g.rotY), rz = -Math.sin(g.rotY); // the glass's sideways
         const side = (ctx.player.x - a.startPlayer.x) * rx + (ctx.player.z - a.startPlayer.z) * rz;
         const off = Math.max(-0.35, Math.min(0.35, -side * 0.8 + Math.sin(t * 2.2) * 0.06)) * g.w * 0.5;
@@ -299,13 +368,9 @@ export class Apparitions {
         P.jitter = 0.1;
         break;
       }
-      case 'static': // flickers like a bad transmission, with radio fragments and an alarm
+      case 'static': // flickers like a bad transmission, with radio fragments
         P.alpha = rand() < 0.2 ? 0.1 : 0.6 + rand() * 0.4;
         P.jitter = 0.9;
-        if (this.alarmAt != null && t >= this.alarmAt) {
-          this.alarmAt = null;
-          this.sound('alarm', { x: P.x, y: 2, z: P.z }, { volume: 0.7, ref: 3, bus: 'alien' });
-        }
         break;
       case 'hanging':
         P.jitter = 0.1;

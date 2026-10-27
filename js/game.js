@@ -9,10 +9,11 @@ import { renderCredits } from './credits.js';
 import { findTarget, Throwables } from './interact.js';
 import { Tricks } from './tricks.js';
 import { HatMan, cameoSurfaces, corridorEndLamps } from './hatman.js';
-import { Apparitions } from './apparitions.js';
-import { Intercom, LINES } from './intercom.js';
+import { Apparitions, KIND_IDS } from './apparitions.js';
+import { consoleScreens, SCREEN_IDS } from './screenapparitions.js';
+import { Intercom, LINES, applyLines } from './intercom.js';
 import { Minimap, revealAround } from './minimap.js';
-import { parseIntro, parseLore } from './textfiles.js';
+import { parseIntro, parseLore, parseLines } from './textfiles.js';
 import { TapePlayer } from './tapes.js';
 import { CameraRig } from './rig.js';
 import { inSuite, graffitiWall, GRAFFITI_RANGE } from './suiteplan.js';
@@ -75,6 +76,9 @@ export function startGame(createView) {
     sound: (name, pos, opts) => audio.playAt(name, pos, opts),
     grates: grateSpots(layout),
     surfaces: cameoSurfaces(layout),
+    // The computer screen apparitions play on the consoles' monitors (js/screenapparitions.js).
+    feed: view.screens,
+    consoles: consoleScreens(layout),
   });
 
   let apparitions = true; // the menu setting (read from storage below)
@@ -153,16 +157,43 @@ export function startGame(createView) {
     if (layout.isSafe(cellOf(n.x), cellOf(n.z))) return; // safe rooms are soundproofed
     const heard = heardLoudness(layout, n, alien.pos, isDoorClosed);
     // A clank that carries is heard wherever it is on the station.
-    alien.hear(n, n.carry ? carryHeard(heard, Math.hypot(n.x - alien.pos.x, n.z - alien.pos.z)) : heard);
+    if (alien.hear(n, n.carry ? carryHeard(heard, Math.hypot(n.x - alien.pos.x, n.z - alien.pos.z)) : heard)) n.heard = true;
   });
-  const makeNoise = (pos, loudness, source = 'player', { carry = false } = {}) => noise.emit({ x: pos.x, z: pos.z, loudness, source, carry });
+  // Returns the noise, with heard: true if the alien heard it.
+  const makeNoise = (pos, loudness, source = 'player', { carry = false } = {}) => {
+    const n = { x: pos.x, z: pos.z, loudness, source, carry, heard: false };
+    noise.emit(n);
+    return n;
+  };
 
   // Input --------------------------------------------------------------------------
+  // Debug keys (?debug only): 1-9 the field-guide nine, 0 the Hat Man, Alt+1...0, Alt+- and Alt+=
+  // the twelve screen ones, ` the alien off and on. Noise-makers move to the mouse wheel.
+  const DEBUG_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal'];
+  function debugKey(e) {
+    if (e.code === 'Backquote') { if (!e.repeat) setAlienOff(!alienOff); return true; }
+    if (e.code === 'AltLeft' || e.code === 'AltRight') return true; // keep the browser's menu out of it
+    const i = DEBUG_KEYS.indexOf(e.code);
+    if (i < 0) return false;
+    if (e.repeat) return true;
+    if (e.altKey) phantoms.summon(SCREEN_IDS[i]);
+    else if (i < KIND_IDS.length) phantoms.summon(KIND_IDS[i]);
+    else if (e.code === 'Digit0') hatman.summon();
+    else return false;
+    return true;
+  }
+  if (DEBUG) {
+    addEventListener('keyup', (e) => { if (e.code === 'AltLeft' || e.code === 'AltRight') e.preventDefault(); });
+    addEventListener('wheel', (e) => { if (state === 'playing' && e.deltaY) inventory.cycle(Math.sign(e.deltaY)); }, { passive: true });
+    console.info('Debug keys: 1-9 ' + KIND_IDS.join(', ') + ' · 0 Hat Man · Alt+1-0, Alt+-, Alt+= ' +
+      SCREEN_IDS.map((id) => id.slice(7)).join(', ') + ' (on a monitor) · ` alien off/on · wheel picks a noise-maker');
+  }
   addEventListener('keydown', (e) => {
     if (state !== 'playing') return;
+    if (DEBUG && debugKey(e)) { e.preventDefault(); return; }
     if (e.code === 'KeyE') { if (!e.repeat) { ePressed = true; eDownAt = elapsed; } eHeld = true; }
     if (e.code === 'KeyQ' && !e.repeat && !vent.inside) throwDecoy();
-    if (/^Digit[123]$/.test(e.code) && !e.repeat && !vent.inside) inventory.select(+e.code.slice(5));
+    if (!DEBUG && /^Digit[123]$/.test(e.code) && !e.repeat && !vent.inside) inventory.select(+e.code.slice(5));
     if (e.code === 'KeyM' && !e.repeat) $('map').hidden = !$('map').hidden;
     if (e.code === 'KeyT' && !e.repeat) tapes.stop();
   });
@@ -281,7 +312,8 @@ export function startGame(createView) {
     // Never let sound loading block the game: give it a few seconds, then go anyway.
     if (await Promise.race([audio.load(), wait(8000).then(() => 'timeout')]) === 'timeout') console.warn('Sound loading timed out; starting anyway.');
     try {
-      const [loreText, introText] = await Promise.all(['text/lore.txt', 'text/intro.txt'].map(loadText));
+      const [loreText, introText, marigoldText] = await Promise.all(['text/lore.txt', 'text/intro.txt', 'text/marigold.txt'].map(loadText));
+      if (marigoldText) applyLines(parseLines(marigoldText));
       if (loreText) lore = new Map(parseLore(loreText).map((e) => [e.id, e]));
       else console.warn('Lore did not load; terminals will show as offline.');
       const intro = introText && parseIntro(introText);
@@ -384,7 +416,7 @@ export function startGame(createView) {
 
   // A repair's clank. Each one has a chance to carry right across the station (js/noise.js REPAIR);
   // Marigold mentions it the first time one does.
-  let carriedOnce = false;
+  let carriedOnce = false, saidWasted = false;
   function clank(target, mode) {
     const r = REPAIR[mode];
     audio.playAt('clank', target.pos, { volume: mode === 'tap' ? 0.95 : 0.7, rate: 0.8 + Math.random() * 0.4 });
@@ -701,9 +733,14 @@ export function startGame(createView) {
     });
     // Each landed noise-maker goes off on its own schedule; the alien takes them as lures.
     for (const n of activeNoise.update(dt)) {
-      makeNoise(n, n.loudness, 'decoy');
+      if (makeNoise(n, n.loudness, 'decoy').heard) n.item.heard = true;
       if (n.type === 'echo') audio.playAt('clicks', n, { volume: 0.9, rate: 1.6, duration: 0.9 });
       else if (n.type === 'shard') audio.playAt('ring', n, { volume: 1.1, ref: 4 });
+    }
+
+    // The first lure that runs out unheard gets a comment (Buzz Pods mask footsteps; they don't count).
+    for (const it of activeNoise.drainEnded()) {
+      if (!it.heard && it.type !== 'buzz' && !saidWasted) { saidWasted = true; intercom.say(LINES.wasted); }
     }
 
     tapes.update(dt);
@@ -787,7 +824,7 @@ export function startGame(createView) {
     $('stamina-bar').classList.toggle('tired', player.exhausted);
     // Noise-makers: each kind and how many, the one Q throws in brackets.
     $('decoys').textContent = inventory.found
-      ? TYPES.map((t) => { const s = `${NOISEMAKERS[t].short} ×${inventory.counts[t]}`; return t === inventory.selected ? `[${s}]` : s; }).join(' · ') + `   Q throw · 1-3 choose · ${inventory.total}/${MAX_CARRY}`
+      ? TYPES.map((t) => { const s = `${NOISEMAKERS[t].short} ×${inventory.counts[t]}`; return t === inventory.selected ? `[${s}]` : s; }).join(' · ') + `   Q throw · ${DEBUG ? 'wheel' : '1-3'} choose · ${inventory.total}/${MAX_CARRY}`
       : '';
     $('mode').textContent = player.mode === 'crouch' ? 'CROUCHED' : player.mode === 'sprint' ? 'SPRINTING' : '';
 
@@ -869,7 +906,7 @@ export function startGame(createView) {
 
   // Handy for debugging in the browser console.
   window.station9 = {
-    alien, player, world, layout, hatman, tricks, apparitions: phantoms, progress, loreRead, explored, tapes, audio, intercom, vent, vents, decor: world.decor,
+    alien, player, world, layout, hatman, tricks, apparitions: phantoms, screens: view.screens, progress, loreRead, explored, tapes, audio, intercom, vent, vents, decor: world.decor,
     renderer: view.renderer, view, rig, engine: view.name, inventory, activeNoise, throwables,
     get lore() { return lore; }, get state() { return state; }, get stage() { return stage; },
     get alienOff() { return alienOff; }, set alienOff(v) { setAlienOff(!!v); },

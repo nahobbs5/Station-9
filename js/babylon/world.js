@@ -230,6 +230,7 @@ export function buildWorld(scene, layout) {
   const badgeMat = basic(scene, 0xf2a92e);
   const mugMat = pbr(scene, { map: TWall(mugTexture()), roughness: 0.5 });
   const consoles = [];
+  let screenStage = 0; // repairs done, for redrawing the live screens
   // Scanlines and darkened edges over every screen, so they read as old curved CRT glass.
   const crtMat = basic(scene, 0x000000, { opacity: T(crtTexture()) });
   crtMat.disableDepthWrite = true;
@@ -270,7 +271,7 @@ export function buildWorld(scene, layout) {
       const handle = part(MeshBuilder.CreateTorus('handle', { diameter: 0.06, thickness: 0.012, tessellation: 12 }, scene), mug, 0.05, 0, 0, mugMat);
       handle.rotation.x = Math.PI / 2;
     }
-    consoles.push({ p, tex, screen, live: LIVE_SCREENS.has(p.screen), flicker: 0 });
+    consoles.push({ p, tex, screen, glow, live: LIVE_SCREENS.has(p.screen), flicker: 0 });
     // The status light: bottom right of the bezel, in the group's frame (the monitor tilts slightly).
     return { lightPos: [0.33, 0.74 + 0.07, -0.2 + screenZ + 0.01] };
   }
@@ -559,11 +560,23 @@ export function buildWorld(scene, layout) {
     markRead(id) { if (props[id]) props[id].status.emissiveColor = srgb(READ); },
     // Repairs change what some screens say (power online, signal sent, launch window open).
     setProgress(stage) {
+      screenStage = stage;
       for (const c of consoles) {
         if (!c.live) continue;
         redraw(c.tex, consoleScreen(c.p.screen, { stage, layout }), { mirror: true });
         c.flicker = 0.6;
       }
+    },
+    // A console's screen, for the screen apparitions (js/babylon/screens.js), by prop id.
+    // texture: its DynamicTexture; normal(): a fresh canvas of what it usually shows;
+    // lit(on): its glow on (a dead monitor lights up while something plays on it) or back as it was.
+    consoleFeed(id) {
+      const c = consoles.find((q) => q.p.id === id);
+      return c && {
+        texture: c.tex,
+        normal: () => consoleScreen(c.p.screen, { stage: c.live ? screenStage : 0, layout }),
+        lit: (on) => c.glow.setEnabled(on || c.p.screen !== 'off'),
+      };
     },
     // A noise-maker has been taken: it goes, and so does the prompt to take it.
     takePickup(id) {

@@ -50,7 +50,7 @@ export class TapePlayer {
     this.entry = entry;
     this.lines = tapeScript(entry, SPEAKERS);
     this.i = 0;
-    this.el.head.textContent = `TAPE ${entry.id.slice(1)} · ${entry.title}   [T] stop`;
+    this.el.head.textContent = `TAPE ${entry.id.slice(1)} · ${entry.title}   [T] stop · click skip`;
     this.el.speaker.textContent = '';
     this.el.line.textContent = '…';
     this.el.box.hidden = false;
@@ -72,6 +72,30 @@ export class TapePlayer {
   // The game paused or resumed (speech synthesis is paused separately, for everyone).
   pause() { this.file?.pause(); }
   resume() { if (this.state === 'file') this.file?.play().catch(() => {}); }
+
+  // Jump to the next sentence now (click or E): its caption shows and its voice starts at once.
+  // On the last sentence, the tape ends. Returns true if there was a tape to skip.
+  skip() {
+    if (!this.entry) return false;
+    if (this.state === 'file') {
+      const f = this.file;
+      const i = this.i + 1;
+      if (i >= this.lines.length || !f?.duration) { this.stop(); return true; }
+      f.currentTime = this.marks[i - 1] * f.duration; // where line i's share of the file begins
+      this.i = i;
+      this.caption(this.lines[i]);
+      return true;
+    }
+    // While a sentence is being spoken, move past it. Between sentences, this.i already points
+    // at the next one, so it's simply said straight away.
+    if (this.state === 'speaking') {
+      if (this.utter) { this.utter = null; speechSynthesis.cancel(); } // dropped first, so its onend can't advance again
+      this.i++;
+    }
+    if (this.i >= this.lines.length) { this.stop(); return true; }
+    this.say();
+    return true;
+  }
 
   // Marigold has something urgent: drop the current sentence and say it again afterwards.
   interrupt() {

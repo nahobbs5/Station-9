@@ -1,21 +1,25 @@
-// Babylon.js renderer for the alien, built from the shared rig in js/alienshape.js.
-// Tentacle segments and strands are instances of a few base meshes, to keep draw calls down.
+// Babylon.js renderer for the alien (Alien Behavior Guide), built from the shared rig and poses in
+// js/alienshape.js. Limb segments are instances of a few base meshes, to keep draw calls down.
+// One glow material (eyes, core, tentacle tips) takes the state's colour, and so does its one light.
 import { ALIEN, alienRig, lump, poseAlien } from '../alienshape.js';
 import { pbr, basic, linear, TUNING } from './util.js';
 
 export function makeAlienView(scene) {
   const BABYLON = window.BABYLON;
-  const { MeshBuilder, TransformNode, PointLight, Vector3, Quaternion } = BABYLON;
+  const { MeshBuilder, TransformNode, PointLight, Vector3, Quaternion, Color3 } = BABYLON;
   const rig = alienRig();
   const node = (name, parent) => { const n = new TransformNode(name, scene); n.parent = parent; return n; };
   const group = new TransformNode('alien', scene);
-  const inner = node('alien-inner', group); // leans forward when it hunts
+  const inner = node('alien-inner', group); // leans forward as it gets intent
+  const headHolder = node('alien-head-holder', inner);
   const skin = pbr(scene, { color: ALIEN.skin.color, roughness: ALIEN.skin.roughness, metalness: ALIEN.skin.metalness });
-  const strandMat = pbr(scene, { color: ALIEN.strand.color, roughness: ALIEN.strand.roughness, metalness: ALIEN.strand.metalness });
+  // A faint purple sheen on the chitin, as on the guide.
+  if (skin.sheen) { skin.sheen.isEnabled = true; skin.sheen.color = new Color3(0.22, 0.16, 0.4); skin.sheen.intensity = 0.12; }
+  const glowMat = basic(scene, 0x7a6cff);
 
-  // Body: a squashed, lumpy sphere.
-  const body = MeshBuilder.CreateSphere('alien-body', { diameter: ALIEN.bodyRadius * 2, segments: 16, updatable: true }, scene);
-  const positions = body.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+  // The head: a long, ridged sphere, face forward (+z).
+  const head = MeshBuilder.CreateSphere('alien-head', { diameter: ALIEN.headRadius * 2, segments: 20, updatable: true }, scene);
+  const positions = head.getVerticesData(BABYLON.VertexBuffer.PositionKind);
   for (let i = 0; i < positions.length; i += 3) {
     const [x, y, z] = [positions[i], positions[i + 1], positions[i + 2]];
     const len = Math.hypot(x, y, z) || 1;
@@ -23,70 +27,66 @@ export function makeAlienView(scene) {
     positions[i] = x * k; positions[i + 1] = y * k; positions[i + 2] = z * k;
   }
   const normals = [];
-  BABYLON.VertexData.ComputeNormals(positions, body.getIndices(), normals);
-  body.updateVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
-  body.updateVerticesData(BABYLON.VertexBuffer.NormalKind, normals);
-  body.material = skin;
-  body.scaling.set(...ALIEN.bodyScale);
-  const bodyHolder = node('alien-body-holder', inner);
-  bodyHolder.position.y = ALIEN.bodyY;
-  body.parent = bodyHolder;
-
-  const eyeMat = basic(scene, ALIEN.eye.color, { alpha: ALIEN.eye.opacity });
+  BABYLON.VertexData.ComputeNormals(positions, head.getIndices(), normals);
+  head.updateVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
+  head.updateVerticesData(BABYLON.VertexBuffer.NormalKind, normals);
+  head.material = skin;
+  head.parent = headHolder;
+  head.scaling.set(...ALIEN.headScale);
+  // Eyes and crown sit on the head's surface: rig positions are on the unit head, so scale them
+  // here rather than parenting them to the stretched mesh (which would stretch them too).
+  const onHead = (pos) => pos.map((v, i) => v * ALIEN.headScale[i]);
   for (const e of rig.eyes) {
-    const eye = MeshBuilder.CreateSphere('eye', { diameter: e.r * 2, segments: 3 }, scene);
-    eye.material = eyeMat;
-    eye.parent = bodyHolder;
-    eye.position.set(...e.pos);
+    const eye = MeshBuilder.CreateSphere('alien-eye', { diameter: e.r * 2, segments: 6 }, scene);
+    eye.material = glowMat; eye.parent = headHolder; eye.position.set(...onHead(e.pos));
   }
+  // The glowing core on its underside.
+  const core = MeshBuilder.CreateSphere('alien-core', { diameter: 0.16, segments: 8 }, scene);
+  core.material = glowMat; core.parent = headHolder; core.position.set(0, -0.36, 0.05); core.scaling.set(1, 0.5, 1);
 
-  // One strand mesh, hanging down from its top; everything else is an instance of it.
-  const strand = MeshBuilder.CreateCylinder('strand', { diameterTop: ALIEN.strand.r0 * 2, diameterBottom: ALIEN.strand.r1 * 2, height: 1, tessellation: 4 }, scene);
-  strand.bakeTransformIntoVertices(BABYLON.Matrix.Translation(0, -0.5, 0));
-  strand.material = strandMat;
-  strand.isVisible = false;
-  const addStrand = (parent, s) => {
-    const inst = strand.createInstance('strand');
-    inst.parent = parent;
-    inst.position.set(...s.pos);
-    inst.scaling.y = s.scaleY;
-    if (s.rot) inst.rotation.set(...s.rot);
-  };
-  for (const s of rig.bodyStrands) addStrand(bodyHolder, s);
-
-  // Tentacle segments: one base mesh per size, starting at the joint and reaching up its length.
-  const segBase = rig.segments.map((s) => {
-    const m = MeshBuilder.CreateCylinder('segment', { diameterTop: s.r1 * 2, diameterBottom: s.r0 * 2, height: s.len, tessellation: 7 }, scene);
-    m.bakeTransformIntoVertices(BABYLON.Matrix.Translation(0, s.len / 2, 0));
-    m.material = skin;
-    m.isVisible = false;
-    return m;
+  // Limb segments: one base mesh per size (and per material), starting at the joint and reaching
+  // up its length; every segment is an instance.
+  const baseMeshes = (segs, prefix) => segs.map((s, j) => {
+    const make = (mat, name) => {
+      const m = MeshBuilder.CreateCylinder(name, { diameterTop: s.r1 * 2, diameterBottom: s.r0 * 2, height: s.len, tessellation: 7 }, scene);
+      m.bakeTransformIntoVertices(BABYLON.Matrix.Translation(0, s.len / 2, 0));
+      m.material = mat; m.isVisible = false;
+      return m;
+    };
+    return { skin: make(skin, `${prefix}-${j}`), glow: make(glowMat, `${prefix}-glow-${j}`) };
   });
-  const tentacles = rig.tentacles.map((t) => {
-    const root = node('tentacle', inner);
-    root.position.set(...t.root);
-    root.rotationQuaternion = new Quaternion(...t.quat);
-    let parent = root;
-    const joints = t.joints.map((jd, j) => {
-      const joint = node('joint', parent);
-      if (j > 0) joint.position.y = rig.segments[j - 1].len;
+  const tentacleBase = baseMeshes(rig.segments, 'alien-seg');
+  const crownBase = baseMeshes(rig.crownSegments, 'alien-spine');
+  const buildLimb = (limb, parent, segs, bases, glowFrom) => {
+    const root = node('limb', parent);
+    root.position.set(...limb.root);
+    root.rotationQuaternion = new Quaternion(...limb.quat);
+    let p = root;
+    const joints = limb.joints.map((jd, j) => {
+      const joint = node('joint', p);
+      if (j > 0) joint.position.y = segs[j - 1].len;
       joint.rotation.x = jd.base;
-      segBase[j].createInstance('segment').parent = joint;
-      for (const s of jd.strands) addStrand(joint, s);
-      parent = joint;
+      bases[j][j >= glowFrom ? 'glow' : 'skin'].createInstance('alien-limb').parent = joint;
+      p = joint;
       return joint;
     });
-    return { t, joints };
-  });
+    return { limb, joints };
+  };
+  // The tentacles hang from a holder under the head that turns (the twirl); the crown rides the head.
+  const spinner = node('alien-spinner', headHolder);
+  const limbs = [
+    ...rig.tentacles.map((t) => buildLimb(t, spinner, rig.segments, tentacleBase, rig.segments.length - ALIEN.glowTips)),
+    ...rig.crown.map((c) => buildLimb({ ...c, root: onHead(c.root) }, headHolder, rig.crownSegments, crownBase, rig.crownSegments.length)),
+  ];
 
-  // A dull red glow that shows it for a moment when a hunt starts. Always there, at zero
-  // intensity when off, because adding or removing lights recompiles shaders.
-  const reveal = new PointLight('alien-reveal', new Vector3(...ALIEN.reveal.pos), scene);
-  reveal.parent = group;
-  reveal.diffuse = linear(ALIEN.reveal.color);
-  reveal.specular = reveal.diffuse;
-  reveal.range = ALIEN.reveal.distance;
-  reveal.intensity = 0;
+  // Its own faint bioluminescence in the state's colour, which also flares red as a hunt starts.
+  // Always there (at low intensity), because adding or removing lights recompiles shaders.
+  const light = new PointLight('alien-glow', new Vector3(...ALIEN.light.pos), scene);
+  light.parent = group;
+  light.range = ALIEN.light.range;
+  light.intensity = 0;
+  let reveal = 0;
+  const revealColor = linear(ALIEN.reveal.color);
 
   const u = {};
   return {
@@ -96,11 +96,21 @@ export function makeAlienView(scene) {
       group.position.set(p.x, 0, p.z);
       group.rotation.y = p.yaw;
       inner.rotation.x = p.lean;
-      bodyHolder.position.y = p.bodyY;
-      for (const { t, joints } of tentacles) {
-        joints.forEach((joint, j) => { const [x, z] = p.joint(t, j); joint.rotation.x = x; joint.rotation.z = z; });
+      headHolder.position.y = p.headY;
+      headHolder.rotation.y = p.look;
+      spinner.rotation.y = p.spin - p.look; // the pinwheel turns on its own, whatever the head does
+      for (const { limb, joints } of limbs) {
+        joints.forEach((joint, j) => { const [x, z] = p.joint(limb, j); joint.rotation.x = x; joint.rotation.z = z; });
       }
+      const [r, g, b] = p.glow.color;
+      const lv = p.glow.level;
+      glowMat.emissiveColor.set(r * lv, g * lv, b * lv);
+      // The light: the state glow, plus the hunt's red flare.
+      const c = new Color3(r, g, b).toLinearSpace();
+      light.diffuse = Color3.Lerp(c, revealColor, Math.min(1, reveal));
+      light.specular = light.diffuse;
+      light.intensity = (ALIEN.light.max * lv * 0.5 + ALIEN.reveal.max * reveal) * TUNING.light;
     },
-    setReveal(k) { reveal.intensity = ALIEN.reveal.max * k * TUNING.light; },
+    setReveal(k) { reveal = Math.max(0, k); },
   };
 }

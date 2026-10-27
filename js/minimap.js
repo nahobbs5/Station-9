@@ -16,10 +16,10 @@ const COLORS = {
 //   generator  bolt  } on the repair console; state 'now' (current job), 'done' or 'later'
 //   comms      waves }
 //   pod        pod   }
-//   crate      on the noise-maker crate until you take it
+//   crate      on the noise-maker crate until it's empty, and on each noise-maker still lying about
 //   terminal   on each terminal you've seen; state 'read' or 'unread'
 // grates: the vents' grates (js/vents.js), shown once you've seen their cell.
-export function mapMarkers(layout, explored, { stage = 0, gotCrate = false, loreRead = new Set(), terminals = [], grates = [] } = {}) {
+export function mapMarkers(layout, explored, { stage = 0, gotCrate = false, loreRead = new Set(), terminals = [], grates = [], pickups = [] } = {}) {
   const seenCell = (x, z) => explored[z * layout.w + x] === 1;
   const seenRoom = (r) => {
     for (let z = r.y; z < r.y + r.h; z++) for (let x = r.x; x < r.x + r.w; x++) if (seenCell(x, z)) return true;
@@ -37,6 +37,8 @@ export function mapMarkers(layout, explored, { stage = 0, gotCrate = false, lore
   });
   const crate = prop('crate');
   if (crate && !gotCrate && seenRoom(layout.room(crate.room))) out.push({ kind: 'crate', x: crate.cell[0] + 0.5, z: crate.cell[1] + 0.5 });
+  // Noise-makers still lying about, once you've seen where they are (js/noisemakers.js; metres in).
+  for (const p of pickups) if (seenCell(Math.floor(p.x / TILE), Math.floor(p.z / TILE))) out.push({ kind: 'crate', x: p.x / TILE, z: p.z / TILE });
   for (const t of terminals) {
     if (seenCell(t.cell[0], t.cell[1])) out.push({ kind: 'terminal', x: t.cell[0] + 0.5, z: t.cell[1] + 0.5, state: loreRead.has(t.id) ? 'read' : 'unread' });
   }
@@ -155,7 +157,7 @@ export class Minimap {
   }
 
   // s: { player, explored, doors, terminals: [{ id, cell }], loreRead: Set, stage, gotCrate, time }
-  draw({ player, explored, doors, terminals, loreRead, stage, gotCrate, time, grates = [] }) {
+  draw({ player, explored, doors, terminals, loreRead, stage, gotCrate, time, grates = [], pickups = [] }) {
     const { g, layout: L } = this;
     const seen = (x, z) => L.inBounds(x, z) && explored[z * L.w + x] === 1;
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -189,7 +191,7 @@ export class Minimap {
     }
 
     // Symbols: safe rooms, repair jobs (the current one pulses), the crate, terminals.
-    for (const m of mapMarkers(L, explored, { stage, gotCrate, loreRead, terminals, grates })) {
+    for (const m of mapMarkers(L, explored, { stage, gotCrate, loreRead, terminals, grates, pickups })) {
       const color = m.kind === 'safe' ? COLORS.hatch
         : m.kind === 'terminal' ? (m.state === 'read' ? COLORS.terminalRead : COLORS.terminal)
         : m.kind === 'crate' || m.kind === 'vent' ? COLORS.label

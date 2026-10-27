@@ -495,8 +495,9 @@ test('shared plans are the same every load (both engines build the same station)
   assert.deepEqual(wallPanels(layout), wallPanels(layout));
   const rigA = alienRig(), rigB = alienRig();
   assert.deepEqual(rigA, rigB);
-  assert.equal(rigA.tentacles.length, 14);
-  for (const t of rigA.tentacles) assert.ok(Math.abs(Math.hypot(...t.quat) - 1) < 1e-9, 'tentacle rotation is a unit quaternion');
+  assert.equal(rigA.tentacles.length, 12);
+  assert.equal(rigA.crown.length, 6);
+  for (const t of [...rigA.tentacles, ...rigA.crown]) assert.ok(Math.abs(Math.hypot(...t.quat) - 1) < 1e-9, 'tentacle rotation is a unit quaternion');
   const clutter = new Set(planDecor(layout).clutter.map((c) => c.cell.join(',')));
   const items = looseItems(layout, clutter);
   assert.ok(items.length > 0);
@@ -751,5 +752,111 @@ test('decor, models and loose items keep off the escape pod and its ramp', async
   for (const it of items) {
     assert.ok(!nearPod(it.x, it.z, 0.3), 'a loose item on the pod');
     for (const [cx, cz] of it.spots) assert.ok(!podCell(cx, cz), `loose items could be moved to ${cx},${cz} under the pod`);
+  }
+});
+
+test('noise-makers: a small carry limit, fallback when the chosen kind runs out', async () => {
+  const { Inventory, MAX_CARRY } = await import('../js/noisemakers.js');
+  const inv = new Inventory();
+  assert.equal(inv.take(), null);
+  assert.ok(inv.add('echo') && inv.add('shard') && inv.add('buzz'));
+  assert.equal(inv.total, MAX_CARRY);
+  assert.equal(inv.add('echo'), false, 'hands full');
+  inv.select(3);
+  assert.equal(inv.take(), 'buzz');
+  inv.select(3);
+  assert.notEqual(inv.take(), null, 'falls back to another kind');
+  assert.equal(inv.total, 1);
+});
+
+test('noise-makers go off on schedule, and a Buzz Pod covers footsteps only while it runs', async () => {
+  const { ActiveNoise, NOISEMAKERS } = await import('../js/noisemakers.js');
+  const run = (type, seconds) => {
+    const a = new ActiveNoise(); a.place(type, { x: 10, z: 10 });
+    const out = [];
+    for (let t = 0; t < seconds; t += 0.05) out.push(...a.update(0.05));
+    return { a, out };
+  };
+  assert.deepEqual(run('echo', 4).out.map((n) => n.loudness), [16, 11, 9]);
+  assert.deepEqual(run('shard', 4).out.map((n) => n.loudness), [30]);
+  const b = run('buzz', 15).out;
+  assert.equal(b.length, Math.ceil(NOISEMAKERS.buzz.life / NOISEMAKERS.buzz.every));
+  const a = new ActiveNoise(); a.place('buzz', { x: 10, z: 10 });
+  a.update(1);
+  assert.equal(a.maskAt(12, 10), NOISEMAKERS.buzz.mask.factor);
+  assert.equal(a.maskAt(20, 10), 1);
+  for (let t = 0; t < 13; t += 0.5) a.update(0.5);
+  assert.equal(a.maskAt(12, 10), 1, 'stops covering once it has run down');
+});
+
+test('noise-maker pickups: seven in all, in rooms, off grates and the pod, none in the pod bay', async () => {
+  const { pickupPlacements, PICKUPS, CRATE_CONTENTS } = await import('../js/noisemakers.js');
+  const { grateSpots } = await import('../js/vents.js');
+  const { nearPod } = await import('../js/worldplan.js');
+  const spots = pickupPlacements(layout);
+  assert.equal(spots.length, PICKUPS.length);
+  assert.equal(spots.length + CRATE_CONTENTS.length, 7);
+  for (const p of spots) {
+    const room = layout.roomAt(Math.floor(p.x / TILE), Math.floor(p.z / TILE));
+    assert.ok(room && !room.safe && room.id !== 'pod', `${p.id} in ${room?.id}`);
+    assert.equal(room.id, PICKUPS.find((q) => q.id === p.id).room);
+    assert.ok(!nearPod(p.x, p.z, 1));
+    for (const g of grateSpots(layout)) assert.ok(Math.hypot(g.x - p.x, g.z - p.z) > 1, `${p.id} by grate ${g.id}`);
+  }
+});
+
+test('click / E skips to the next line: Marigold first, then a tape', async () => {
+  const { Intercom } = await import('../js/intercom.js');
+  const { TapePlayer } = await import('../js/tapes.js');
+  const el = () => ({ hidden: true, textContent: '' });
+  const ic = new Intercom(el());
+  ic.voice = false;
+  for (const t of ['one', 'two', 'three']) ic.say(t);
+  ic.update(0.016);
+  assert.equal(ic.el.textContent, 'one');
+  assert.ok(ic.skip());
+  ic.update(0.016);
+  assert.equal(ic.el.textContent, 'two');
+  ic.skip(); ic.update(0.016); ic.skip(); ic.update(0.016);
+  assert.equal(ic.skip(), false, 'nothing left to skip');
+
+  const audio = { tapeStart() {}, tapeStop() {} };
+  const tape = new TapePlayer({ audio, intercom: ic, el: { box: el(), head: el(), speaker: el(), line: el() } });
+  tape.voice = false;
+  tape.play({ id: 'L01', title: 'Test', author: 'Wes', text: 'First sentence here. Second sentence here. Third sentence here.' });
+  tape.update(1); // past the lead-in: the first sentence shows
+  const first = tape.el.line.textContent;
+  assert.ok(tape.skip());
+  assert.notEqual(tape.el.line.textContent, first);
+  assert.equal(tape.i, 1);
+  while (tape.playing) tape.skip();
+  assert.equal(tape.playing, false, 'skipping the last sentence ends the tape');
+  assert.equal(tape.skip(), false);
+});
+
+test('the alien looks and moves differently in each state (Alien Behavior Guide)', async () => {
+  const { alienMood, ALIEN_LOOK, poseAlien, alienRig, limbPoints } = await import('../js/alienshape.js');
+  for (const state of ['patrol', 'investigate', 'hunt', 'lost', 'listen', 'tear', 'torn', 'waitOther']) {
+    assert.ok(ALIEN_LOOK[alienMood({ state, dormant: 0 })], state);
+  }
+  assert.equal(alienMood({ state: 'hunt', dormant: 5 }), 'dormant');
+  assert.equal(alienMood({ state: 'hunt', dormant: 0, warning: true }), 'warn');
+  assert.equal(alienMood({ state: 'listen', dormant: 0, rushing: true }), 'hunt');
+  // Glow blends: still purple straight after a hunt starts, red a second later.
+  const u = {}, al = { pos: { x: 0, z: 0 }, heading: 0, state: 'patrol', dormant: 0 };
+  for (let t = 0; t < 2; t += 0.05) poseAlien(u, al, t);
+  al.state = 'hunt';
+  const red = (p) => p.glow.color[0] > p.glow.color[2];
+  assert.ok(!red(poseAlien(u, al, 2.05)), 'no jump on the first frame');
+  let p; for (let t = 2.1; t < 3.2; t += 0.05) p = poseAlien(u, al, t);
+  assert.ok(red(p), 'red once it has blended');
+  assert.ok(p.glow.level > ALIEN_LOOK.patrol.glow);
+  // It floats: tentacle tips clear the floor but hang low, in every mood.
+  const rig = alienRig();
+  for (const mood of ['patrol', 'investigate', 'hunt', 'lost']) {
+    const uu = {}, a = { pos: { x: 0, z: 0 }, heading: 0, state: mood, dormant: 0 };
+    let q; for (let t = 0; t < 3; t += 0.05) q = poseAlien(uu, a, t);
+    const lows = rig.tentacles.map((t) => Math.min(...limbPoints(t, rig.segments, (l, j) => q.joint(l, j)).map((pt) => pt[1])));
+    assert.ok(Math.min(...lows) > 0.05 && Math.min(...lows) < 0.6, `${mood}: lowest tip ${Math.min(...lows).toFixed(2)}`);
   }
 });

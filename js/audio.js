@@ -256,6 +256,17 @@ export class GameAudio {
     // The soft click that warns a door is about to open by itself.
     this.buffers.click = make(0.05, (t) => (noise() * 0.6 + Math.sin(t * 2 * Math.PI * 1900)) * Math.exp(-t * 160));
     // A noise-maker landing: a metallic rattle.
+    // Noise-makers. The Resonance Shard: a high glassy ring that beats slowly and hangs in the air.
+    this.buffers.ring = make(2.8, (t) => (Math.sin(t * 2 * Math.PI * 1800) * 0.5 + Math.sin(t * 2 * Math.PI * 2703) * 0.35 * (0.6 + 0.4 * Math.sin(t * 2 * Math.PI * 3)))
+      * Math.exp(-t * 1.4) * Math.min(1, t * 200));
+    // The Buzz Pod: a low insect drone with a fast wobble (looped while it runs).
+    this.buffers.buzz = make(2, (t) => {
+      const ph = (t * 110) % 1;
+      return ((ph * 2 - 1) * 0.5 + Math.sin(t * 2 * Math.PI * 220) * 0.2) * (0.6 + 0.4 * Math.sin(t * 2 * Math.PI * 9)) * 0.7;
+    });
+    // A small glassy tick (a shard landing) and a soft thud (a pod landing).
+    this.buffers.tick = make(0.25, (t) => Math.sin(t * 2 * Math.PI * 3200) * Math.exp(-t * 40) * 0.6);
+    this.buffers.thud = make(0.3, (t) => (Math.sin(t * 2 * Math.PI * 90) + noise() * 0.2) * Math.exp(-t * 22) * 0.8);
     this.buffers.clatter = make(0.9, (t) => {
       let v = 0;
       for (const [on, f] of [[0, 1800], [0.11, 2650], [0.24, 3900], [0.4, 2200]]) {

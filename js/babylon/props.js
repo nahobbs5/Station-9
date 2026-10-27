@@ -1,6 +1,7 @@
 // Babylon.js meshes for the Hat Man and thrown noise-makers. Their behaviour is shared
 // (HatMan in js/hatman.js, Throwables in js/interact.js); these are just the visible parts.
-import { basic, linear, hsl, toTexture, compose, instances, TUNING } from './util.js';
+import { basic, linear, hsl, toTexture, compose, instances, TUNING, pbr } from './util.js';
+import { noisemakerShell } from '../textures.js';
 import { HATMAN, hatmanSilhouette, hatmanReflection } from '../hatman.js';
 
 export const HATMAN_BACKLIGHT = 7;
@@ -43,6 +44,8 @@ export function makeHatmanFigure(scene) {
   cameo.material = refMat;
   cameo.setEnabled(false);
 
+  let lampMat = null, lampColor = null; // the corridor-end lamps, once added
+
   return {
     position: plane.position,
     place(x, z, lightX, lightZ) {
@@ -69,23 +72,90 @@ export function makeHatmanFigure(scene) {
     // Thin warm strips either side of each doorway, unlit (they cost no lights, and they bloom).
     addLamps(lamps) {
       const strip = MeshBuilder.CreateBox('end-lamp', { width: 0.05, height: 1.1, depth: 0.03 }, scene);
-      strip.material = basic(scene, 0xffc890);
+      strip.material = lampMat = basic(scene, 0xffc890);
+      lampColor = lampMat.emissiveColor.clone();
       instances(strip, lamps.map((l) => compose([l.x, 1.35, l.z], [0, l.rotY, 0], [1, 1, 1])));
       return strip;
     },
+    // They dip with the room lights when he appears (k = 1 is full brightness).
+    setLamps(k) { if (lampMat) lampColor.scaleToRef(k, lampMat.emissiveColor); },
   };
 }
 
-// A thrown noise-maker: orange while flying, pulsing once it lands.
-export function ballMaker(scene) {
+// Noise-makers (Alien Noise Makers sheet), for pickups and thrown ones alike, about 0.2 m across
+// and lit only by their own glow. Each: { root, position, glow(l), spin(d), remove() }.
+// echo: a holed green-purple husk with orange light inside. shard: a blue-violet crystal in a
+// bronze cage. buzz: a holed husk glowing purple, trailing glowing tendrils.
+export function noisemakerMaker(scene) {
   const BABYLON = window.BABYLON;
-  return () => {
-    const mesh = BABYLON.MeshBuilder.CreateSphere('ball', { diameter: 0.18, segments: 6 }, scene);
-    mesh.material = basic(scene, 0xff6a33);
+  const { MeshBuilder } = BABYLON;
+  // Each one gets its own material (so it can glow on its own), sharing one pair of canvas
+  // textures per kind. (Cloning a material would clone its canvas textures blank.)
+  const shellTex = {};
+  const shell = (type) => {
+    if (!shellTex[type]) {
+      const t = noisemakerShell(type);
+      shellTex[type] = { husk: toTexture(scene, t.husk, { anisotropy: 4 }), glow: toTexture(scene, t.glow) };
+    }
+    const m = pbr(scene, { map: shellTex[type].husk, roughness: 0.55, metalness: 0.2 });
+    m.emissiveTexture = shellTex[type].glow;
+    m.emissiveColor = new BABYLON.Color3(1, 1, 1);
+    return m;
+  };
+  const bronze = pbr(scene, { color: 0x8a6a3a, roughness: 0.4, metalness: 0.9 });
+  return (type) => {
+    const root = new BABYLON.TransformNode('noisemaker-' + type, scene);
+    const spinner = new BABYLON.TransformNode('nm-spin', scene);
+    spinner.parent = root;
+    const parts = [], mats = [];
+    const part = (m) => { m.parent = spinner; m.isPickable = false; parts.push(m); return m; };
+    let glowMat, base;
+    if (type === 'shard') {
+      const crystal = part(MeshBuilder.CreatePolyhedron('shard', { type: 1, size: 0.07 }, scene));
+      crystal.scaling.set(0.8, 2.2, 0.8);
+      glowMat = basic(scene, 0x5a7bff, { alpha: 0.85 });
+      crystal.material = glowMat; mats.push(glowMat);
+      for (const [y, d] of [[0.07, 0.11], [-0.06, 0.12]]) {
+        const band = part(MeshBuilder.CreateTorus('cage', { diameter: d, thickness: 0.012, tessellation: 12 }, scene));
+        band.position.y = y; band.rotation.z = 0.3; band.material = bronze;
+      }
+      const rib = part(MeshBuilder.CreateCylinder('cage', { diameter: 0.012, height: 0.3, tessellation: 5 }, scene));
+      rib.position.x = 0.05; rib.rotation.z = 0.15; rib.material = bronze;
+      base = [0.35, 0.48, 1];
+    } else {
+      const husk = part(MeshBuilder.CreateSphere(type, { diameter: 0.2, segments: 10 }, scene));
+      if (type === 'echo') husk.scaling.set(1, 0.9, 1.15);
+      const mat = shell(type);
+      husk.material = mat; mats.push(mat); glowMat = mat;
+      base = type === 'echo' ? [1, 0.55, 0.2] : [0.75, 0.35, 1];
+      if (type === 'buzz') {
+        const tipMat = basic(scene, 0xb05cff); mats.push(tipMat);
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2;
+          const t = part(MeshBuilder.CreateCylinder('tendril', { diameterTop: 0.012, diameterBottom: 0.004, height: 0.16, tessellation: 5 }, scene));
+          t.position.set(Math.cos(a) * 0.06, -0.12, Math.sin(a) * 0.06);
+          t.rotation.set(Math.sin(a) * 0.35, 0, -Math.cos(a) * 0.35);
+          t.material = bronze;
+          const tip = part(MeshBuilder.CreateSphere('tip', { diameter: 0.022, segments: 4 }, scene));
+          tip.position.set(Math.cos(a) * 0.09, -0.2, Math.sin(a) * 0.09);
+          tip.material = tipMat;
+        }
+      }
+    }
+    const set = (l) => {
+      const c = new BABYLON.Color3(base[0] * l * 2, base[1] * l * 2, base[2] * l * 2);
+      glowMat.emissiveColor = c;
+    };
+    set(0.35);
     return {
-      position: mesh.position,
-      glow(l) { mesh.material.emissiveColor = hsl(0.04, 1, l); },
-      remove() { mesh.material.dispose(); mesh.dispose(); },
+      root,
+      position: root.position,
+      glow: set,
+      spin(d) { spinner.rotation.z -= d / 0.1; },
+      bob(t) { spinner.position.y = 0.02 * Math.sin(t * 1.6); spinner.rotation.y = t * 0.4; },
+      remove() { for (const m of mats) m.dispose(); for (const p of parts) p.dispose(); spinner.dispose(); root.dispose(); },
     };
   };
 }
+// Thrown ones use the same meshes.
+export const ballMaker = noisemakerMaker;

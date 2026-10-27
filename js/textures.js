@@ -1208,3 +1208,31 @@ export function switchPanelTexture() {
     for (let i = 0; i < 200; i++) { g.fillStyle = `rgba(110,55,22,${0.3 + rand() * 0.4})`; g.fillRect(rand() * w, rand() * h, 1 + rand() * 3, 1 + rand() * 2); }
   });
 }
+
+// Noise-maker shells (Alien Noise Makers sheet): an organic husk pocked with holes. The colour map
+// is the husk; the glow map is light showing through the holes (orange for the Echo Seed, purple
+// for the Buzz Pod).
+export function noisemakerShell(type) {
+  const rand = seeded(type === 'echo' ? 73 : 79);
+  const holes = Array.from({ length: 16 }, () => [rand() * 256, 20 + rand() * 88, 8 + rand() * 16]);
+  const husk = makeCanvas(256, 128, (g, w, h) => {
+    const base = g.createLinearGradient(0, 0, w, h);
+    if (type === 'echo') { base.addColorStop(0, '#3d4a2a'); base.addColorStop(0.5, '#4a3458'); base.addColorStop(1, '#2f4a33'); }
+    else { base.addColorStop(0, '#4a4a2c'); base.addColorStop(0.6, '#3a3a24'); base.addColorStop(1, '#4b3b52'); }
+    g.fillStyle = base; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 80; i++) { g.fillStyle = `rgba(${rand() < 0.5 ? '140,170,90' : '120,80,150'},${0.15 + rand() * 0.2})`; g.beginPath(); g.arc(rand() * w, rand() * h, 2 + rand() * 6, 0, 7); g.fill(); }
+    for (const [x, y, r] of holes) {
+      g.fillStyle = '#0b0a0c'; g.beginPath(); g.ellipse(x, y, r, r * 0.8, 0, 0, 7); g.fill();
+      g.strokeStyle = 'rgba(160,190,110,0.35)'; g.lineWidth = 2; g.stroke(); // a ridged rim
+    }
+  }, { wrap: true });
+  const glow = makeCanvas(256, 128, (g) => {
+    g.fillStyle = '#000'; g.fillRect(0, 0, 256, 128);
+    for (const [x, y, r] of holes) {
+      const c = g.createRadialGradient(x, y, 0, x, y, r);
+      c.addColorStop(0, type === 'echo' ? 'rgba(255,170,60,1)' : 'rgba(190,90,255,1)'); c.addColorStop(1, 'rgba(0,0,0,1)');
+      g.fillStyle = c; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+    }
+  }, { wrap: true });
+  return { husk, glow };
+}

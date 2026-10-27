@@ -18,7 +18,12 @@ export const HATMAN = {
   perRun: 6,                  // warnings per run
   firstAfter: 90,             // the trick rule: nothing in the first 90 s
   lookAway: 2,                // seconds of looking straight at him before he goes
-  life: 4,                    // seconds he stays at most
+  life: 4,                    // seconds he stays once you've seen him
+  linger: 2,                  // unseen, he waits until the alien is due in his corridor, plus this
+  dip: 1,                     // seconds the lights dip when he appears (the tell)
+  dipLevel: 0.2,              // corridor-end lamps drop to this during the dip
+  behindCos: Math.cos((2 * Math.PI) / 3), // more than 120 degrees from where you face is "behind you"
+  behindPenalty: 8,           // metres of distance error a spot behind you counts as
   fade: 0.3,                  // seconds to fade out
   cameo: 1.5,                 // seconds the reflection shows
   cameoRange: 3,              // metres from dark glass for a cameo
@@ -88,17 +93,26 @@ export function pathEnd(alien) {
 
 // Pick his spot on that corridor: unused this run, at least 3 m away, out of view right now but in
 // clear line of sight (so he's there when you turn), and as close as possible to the target distance.
-export function chooseSpot(spots, corridor, { from, stage, used = new Set(), isInView = () => false, lineClear = () => true, rand = Math.random }) {
+// With forward (which way you face), a spot behind you scores worse than one a quick turn away.
+export function chooseSpot(spots, corridor, { from, stage, used = new Set(), isInView = () => false, lineClear = () => true, rand = Math.random, forward = null }) {
   const target = HATMAN.distances[Math.min(stage, HATMAN.distances.length - 1)] + (rand() * 2 - 1) * HATMAN.vary;
   let best = null, bestErr = Infinity;
   for (const s of spots) {
     if (s.corridor !== corridor || used.has(s.id)) continue;
     const d = dist(s, from);
     if (d < HATMAN.minDist || isInView(s) || !lineClear(from, s)) continue;
-    const err = Math.abs(d - target);
+    let err = Math.abs(d - target);
+    if (forward && behind(forward, from, s, d)) err += HATMAN.behindPenalty;
     if (err < bestErr) { bestErr = err; best = s; }
   }
   return best;
+}
+
+// Is spot s (d metres away) more than 120 degrees from the way you face?
+function behind(forward, from, s, d) {
+  const flen = Math.hypot(forward.x, forward.z);
+  if (!flen || !d) return false;
+  return ((s.x - from.x) * forward.x + (s.z - from.z) * forward.z) / (d * flen) < HATMAN.behindCos;
 }
 
 // Dark glass for the reflection cameo: switched-off monitors and windows, never in a suite.
@@ -142,7 +156,7 @@ export function corridorEndLamps(layout) {
 
 // The Hat Man himself: when a warning starts, how long he stays, the look-away, and the cameo.
 // figure: the renderer's { place(x, z, lightX, lightZ), setBacklight(k), setAlpha(k), hide(), update(time),
-//   showCameo(surface), hideCameo(), position }
+//   showCameo(surface), hideCameo(), setLamps(k) (corridor-end lamp brightness), position }
 // rig: the camera ({ position, forward() }). lineClear(a, b): nothing solid (or a shut door) between.
 // world: { dimBeat(seconds) }. onFirst(): called the first time he's ever placed.
 export class HatMan {
@@ -161,6 +175,7 @@ export class HatMan {
     this.visible = false;
     this.cameoLeft = 0;
     this.sightings = 0;
+    this.dipLeft = 0;
   }
 
   get position() { return this.figure.position; }
@@ -168,6 +183,7 @@ export class HatMan {
 
   // ctx: { alien, stage, elapsed, inSuite, trickActive, isInView(pos), player: { x, z } }
   update(dt, ctx) {
+    if (this.dipLeft > 0 && (this.dipLeft -= dt) <= 0) this.figure.setLamps?.(1);
     if (this.cameoLeft > 0 && (this.cameoLeft -= dt) <= 0) this.figure.hideCameo();
     if (this.visible) { this.updateVisible(dt, ctx); return; }
     if (this.canWarn(ctx)) this.tryWarn(ctx);
@@ -186,6 +202,7 @@ export class HatMan {
     if (!route) return false;
     const spot = chooseSpot(this.spots, route.corridor, {
       from: player, stage, used: this.used, isInView, lineClear: (a, b) => this.lineClear(a, b), rand: this.rand,
+      forward: this.rig.forward(),
     });
     if (!spot) return false;
     // His backdrop light goes just behind him, away from you down the corridor.
@@ -199,11 +216,13 @@ export class HatMan {
     this.corridor = route.corridor;
     this.visible = true;
     this.life = HATMAN.life;
+    this.wait = route.eta + HATMAN.linger; // unseen, he goes about when the alien gets there
+    this.seen = false;
     this.looked = 0;
     this.fading = -1;
     this.warnings++;
     this.lastWarning = elapsed;
-    this.world.dimBeat(0.45); // the tell
+    this.dip(); // the tell
     if (this.sightings++ === 0) this.onFirst();
     return true;
   }
@@ -226,10 +245,27 @@ export class HatMan {
       if (this.fading >= HATMAN.fade) this.hide();
       return;
     }
+    const looking = this.lookingAt();
+    if (!this.seen && (looking || ctx.isInView?.(this.position))) this.seen = true;
+    if (!this.seen) {
+      // Waiting for you to turn round. He goes once the alien is due, or if it stops patrolling.
+      this.wait -= dt;
+      const { alien } = ctx;
+      const patrolling = alien && alien.dormant <= 0 && (alien.state === 'patrol' || alien.state === 'investigate');
+      if (this.wait <= 0 || !patrolling || ctx.inSuite) this.fading = 0;
+      return;
+    }
     this.life -= dt;
     // Looking away resets the count: it takes two steady seconds.
-    this.looked = this.lookingAt() ? this.looked + dt : 0;
+    this.looked = looking ? this.looked + dt : 0;
     if (this.looked >= HATMAN.lookAway || this.life <= 0 || ctx.inSuite) this.fading = 0;
+  }
+
+  // The lights dip for a beat, the corridor-end lamps too.
+  dip() {
+    this.world.dimBeat(HATMAN.dip);
+    this.dipLeft = HATMAN.dip;
+    this.figure.setLamps?.(HATMAN.dipLevel);
   }
 
   hide() {
@@ -243,7 +279,7 @@ export class HatMan {
     if (this.visible || this.cameoActive) return false;
     this.figure.showCameo(surface);
     this.cameoLeft = HATMAN.cameo;
-    this.world.dimBeat(0.45);
+    this.dip();
     return true;
   }
 }

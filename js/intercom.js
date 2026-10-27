@@ -13,7 +13,11 @@ export const LINES = {
   power: 'Main power restored! The station is now forty percent brighter. So are you.',
   comms: 'Rescue call sent. A shuttle will arrive in approximately... soon. Please proceed to the Escape Pod Bay. Your labor is our freedom.',
   hunt: 'Please stay calm. A wellness check is on its way to you.',
-  crate: 'Noise-makers! Throw one with Q to redirect unwanted attention. Attention is our most precious resource.',
+  crate: 'A noise-maker! Throw it with Q to redirect unwanted attention. Attention is our most precious resource. Please do not waste it.',
+  nm_echo: 'Echo Seed. It rolls, and then it chatters. It sounds like someone you used to know.',
+  nm_shard: 'Resonance Shard. One clear note that carries a very long way. Use it far from yourself.',
+  nm_buzz: 'Buzz Pod. It hums for a while and covers your footsteps nearby. Like a good colleague.',
+  handsFull: 'Your hands are full. Three noise-makers is the safe limit. We checked.',
   hatman: 'Please disregard any colleagues you may see in the corridors. Everyone is fine.',
   // The wellness suites (reference files/wellness rooms.md). Inside, Marigold speaks only at the door.
   suiteDoor: {
@@ -24,7 +28,7 @@ export const LINES = {
   graffiti: 'That wall will be cleaned soon.',
   needPower: 'That system requires main power. Safety first!',
   needComms: 'Pod launch requires a confirmed rescue window. Please contact Comms first.',
-  noDecoys: 'You are out of noise-makers. Storage has plenty. Storage has always had plenty.',
+  noDecoys: 'You are out of noise-makers. Supplies are limited. Supplies have always been limited.',
   door: (n) => `Door ${n} is open for your convenience.`,
   caught: 'Technician status: reassigned. Thank you for your contribution. Your labor is our freedom.',
   win: 'Safe travels, Technician. Your labor is our freedom.',
@@ -88,6 +92,16 @@ export class Intercom {
     this.talkLimit = this.timer + 4;
     u.onend = u.onerror = () => { this.talking = false; };
     speechSynthesis.speak(u);
+  }
+
+  // Skip the line showing now: it stops, and the next queued line (if any) comes straight up.
+  skip() {
+    if (this.timer <= 0) return false;
+    this.timer = 0;
+    this.el.hidden = true;
+    this.talking = false;
+    if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+    return true;
   }
 
   stop() {

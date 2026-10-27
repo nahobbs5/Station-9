@@ -16,12 +16,15 @@ Restore main power in the Generator Room, send a rescue call from Comms, then pr
 | C | Crouch (quiet, slow) |
 | E | Use, or hold to repair |
 | F | Flashlight (it can only see you if you're moving or lit, and the click is a small noise) |
-| Q | Throw a noise-maker (pick them up in Storage) |
+| Q | Throw a noise-maker · 1–3 choose which kind |
 | M | Show or hide the minimap (it only shows what you've seen) |
 | T | Stop the audio log that's playing |
+| Click / E | Skip to the next line of dialogue (E only when you're not aiming at something to use) |
 | Esc | Pause |
 
-Tips: every state sounds different. Slow clicks mean it's patrolling, quick clicks and a murmur mean it's investigating, and when the hum cuts out and the clicking stops, it's about to hunt. Closed doors slow it down and muffle your noise. A noise-maker thrown away from you pulls it off your trail. Teal hatches lead to two safe rooms it can never enter.
+Tips: every state sounds different. Slow clicks mean it's patrolling, quick clicks and a murmur mean it's investigating, and when the hum cuts out and the clicking stops, it's about to hunt. Closed doors slow it down and muffle your noise. A noise-maker thrown away from you pulls it off your trail.
+
+**Noise-makers** are scarce: seven in the whole station (five lying on furniture, two in the Storage crate), and you can carry three. The **Echo Seed** rolls and chitters three times; the **Resonance Shard** rings once and carries a long way; the **Buzz Pod** hums for 12 seconds, keeps pulling the alien over and covers your footsteps within 6 m. Tuning and placement are in `js/noisemakers.js`. Teal hatches lead to two safe rooms it can never enter.
 
 **Bonus:** twelve staff terminals play audio logs that tell the station's story. They play in your earpiece, so you can keep moving while you listen. Each one you play adds to your score, and hearing all twelve changes the ending.
 
@@ -74,6 +77,7 @@ Plain JavaScript modules and canvas-drawn textures, with Babylon.js loaded from 
 | `js/player.js` | Movement, mouse look, stamina, flashlight |
 | `js/rig.js` | The camera as plain data, which the renderer copies onto its camera |
 | `js/interact.js` | What you're looking at, and thrown noise-makers |
+| `js/noisemakers.js` | The three noise-makers, where they're found, your inventory, and the ones going off |
 | `js/tricks.js` | Environment tricks (lights, doors, phantom footsteps, props) and the Hat Man |
 | `js/audio.js` | Positional sound (plain Web Audio), synthesized effects, heartbeat, music |
 | `js/worldplan.js` | Where walls, props, posters and loose chairs go; how doors and room lights behave |

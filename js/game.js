@@ -16,6 +16,7 @@ import { TapePlayer } from './tapes.js';
 import { CameraRig } from './rig.js';
 import { inSuite, graffitiWall, GRAFFITI_RANGE } from './suiteplan.js';
 import { VENT, VentState, grateAt, nearestGrate, clampYaw, lookingOut, ventPoint } from './vents.js';
+import { NOISEMAKERS, TYPES, Inventory, ActiveNoise, CRATE_CONTENTS, pickupPlacements, MAX_CARRY } from './noisemakers.js';
 
 const $ = (id) => document.getElementById(id);
 const ORDER = REPAIRS;
@@ -26,7 +27,6 @@ const OBJECTIVES = {
 };
 const DORMANT = 30;     // seconds of quiet before the alien wakes
 const CATCH_DIST = 1.3;
-const DECOYS_MAX = 3;
 const SCORE = { lore: 100, repair: 250, escape: 1000, timeBonusFrom: 900 };
 // ?debug lets automated tests play without pointer lock.
 const DEBUG = new URLSearchParams(location.search).has('debug');
@@ -60,7 +60,7 @@ export function startGame(createView) {
     audio, intercom,
     el: { box: $('tape'), head: $('tape-head'), speaker: $('tape-speaker'), line: $('tape-line') },
   });
-  const throwables = new Throwables(view.makeBall, (x, z) => blockedAt(x, z, 0.05));
+  const throwables = new Throwables(view.makeBall, (x, z) => blockedAt(x, z, 0.05), NOISEMAKERS);
   // The Hat Man (reference files/Hatman.md). Marigold mentions him once, the first time he's out.
   const hatman = new HatMan(view.hatman, layout, {
     rig, world,
@@ -92,8 +92,12 @@ export function startGame(createView) {
   let elapsed = 0;
   let stage = 0;
   const progress = { generator: 0, comms: 0, pod: 0 };
-  let decoys = 0;
-  let gotCrate = false;
+  // Noise-makers (js/noisemakers.js): what you carry, what's going off, what's still lying about.
+  const inventory = new Inventory();
+  const activeNoise = new ActiveNoise();
+  const crateLeft = [...CRATE_CONTENTS];
+  const pickupsLeft = new Map(pickupPlacements(layout).map((p) => [p.id, p]));
+  const typesFound = new Set();
   let noiseLevel = 0;
   let pulseTimer = 0;
   let nagTimer = 0;
@@ -143,9 +147,20 @@ export function startGame(createView) {
     if (state !== 'playing') return;
     if (e.code === 'KeyE') { if (!e.repeat) { ePressed = true; eDownAt = elapsed; } eHeld = true; }
     if (e.code === 'KeyQ' && !e.repeat && !vent.inside) throwDecoy();
+    if (/^Digit[123]$/.test(e.code) && !e.repeat && !vent.inside) inventory.select(+e.code.slice(5));
     if (e.code === 'KeyM' && !e.repeat) $('map').hidden = !$('map').hidden;
     if (e.code === 'KeyT' && !e.repeat) tapes.stop();
   });
+  // A click skips to the next line of dialogue (Marigold's, then a tape's).
+  addEventListener('mousedown', (e) => {
+    if (state === 'playing' && e.button === 0 && document.pointerLockElement) skipDialogue();
+  });
+  let lastSkip = -1;
+  function skipDialogue() {
+    if (elapsed - lastSkip < 0.15) return; // a double click shouldn't skip two lines
+    lastSkip = elapsed;
+    if (!intercom.skip()) tapes.skip();
+  }
   addEventListener('keyup', (e) => {
     if (e.code !== 'KeyE') return;
     eHeld = false;
@@ -257,10 +272,18 @@ export function startGame(createView) {
 
   // Actions -------------------------------------------------------------------------
   function throwDecoy() {
-    if (decoys <= 0) { if (gotCrate) intercom.say(LINES.noDecoys); return; }
-    decoys--;
+    const type = inventory.take();
+    if (!type) { if (inventory.found) intercom.say(LINES.noDecoys); return; }
     stats.decoys++;
-    throwables.spawn(rig);
+    throwables.spawn(rig, type);
+  }
+
+  function gotNoisemaker(type) { if (inventory.add(type)) noteNoisemaker(type); }
+  // Marigold explains each kind the first time you pick one up.
+  function noteNoisemaker(type) {
+    if (typesFound.has(type)) return;
+    typesFound.add(type);
+    intercom.say(typesFound.size === 1 ? LINES.crate : LINES[`nm_${type}`]);
   }
 
   function press(target) {
@@ -274,10 +297,18 @@ export function startGame(createView) {
       audio.playAt('door', { x: d.x, z: d.z }, { volume: 0.8, duration: 2.4, rate: 1.15 });
       makeNoise(d, player.mode === 'sprint' ? LOUDNESS.doorSlam : LOUDNESS.door);
     } else if (target.kind === 'crate') {
-      decoys = DECOYS_MAX;
-      if (!gotCrate) intercom.say(LINES.crate);
-      gotCrate = true;
+      // Take what fits; the rest stays in the crate for later.
+      if (!crateLeft.length) return;
+      if (inventory.full) { intercom.say(LINES.handsFull); return; }
+      while (crateLeft.length && !inventory.full) gotNoisemaker(crateLeft.shift());
+      if (!crateLeft.length) world.setPickupLabel('crate', 'Empty crate');
       audio.playAt('clatter', target.pos, { volume: 0.5 });
+    } else if (target.kind === 'pickup') {
+      if (!inventory.add(target.type)) { intercom.say(LINES.handsFull); return; }
+      noteNoisemaker(target.type);
+      pickupsLeft.delete(target.id);
+      world.takePickup(target.id);
+      audio.playAt('tick', target.pos, { volume: 0.5 });
     } else if (target.kind === 'log') {
       if (tapes.id === target.id) tapes.stop();
       else playTape(target);
@@ -585,7 +616,7 @@ export function startGame(createView) {
     const step = player.update(dt, elapsed);
     if (step) {
       audio.footstep(step.mode);
-      makeNoise(player.pos, step.loudness);
+      makeNoise(player.pos, step.loudness * activeNoise.maskAt(player.pos.x, player.pos.z)); // a Buzz Pod covers them
     }
     ventGrate = updateVent(dt);
     if (state !== 'playing') return; // caught in a vent
@@ -597,6 +628,8 @@ export function startGame(createView) {
     // What you're looking at (nothing while you're in a vent, or at a grate: E is for the grate).
     const target = vent.inside || ventGrate ? null : findTarget(rig, world.interactables);
     let repairing = false;
+    // E with nothing to use (and no grate) skips to the next line of dialogue.
+    if (ePressed && !target && !ventGrate && !vent.inside) skipDialogue();
     if (target) {
       if (ePressed && target.kind !== 'repair') press(target);
       if (eHeld && target.kind === 'repair' && progress[target.id] < 1) repairing = repair(target, dt);
@@ -606,10 +639,17 @@ export function startGame(createView) {
     if (!repairing) pulseTimer = 0;
     if (state !== 'playing') return; // the pod repair can end the game
 
-    throwables.update(dt, elapsed, (pos) => {
-      audio.playAt('clatter', pos, { volume: 1.0 });
-      makeNoise(pos, LOUDNESS.decoy, 'decoy');
+    throwables.update(dt, elapsed, (pos, type, item) => {
+      audio.playAt(type === 'echo' ? 'clatter' : type === 'shard' ? 'tick' : 'thud', pos, { volume: 0.9 });
+      activeNoise.place(type, item.ball.position); // follows it if it rolls
+      if (type === 'buzz') audio.playAt('buzz', item.ball.position, { volume: 0.9, loop: true, duration: NOISEMAKERS.buzz.life, ref: 3 });
     });
+    // Each landed noise-maker goes off on its own schedule; the alien takes them as lures.
+    for (const n of activeNoise.update(dt)) {
+      makeNoise(n, n.loudness, 'decoy');
+      if (n.type === 'echo') audio.playAt('clicks', n, { volume: 0.9, rate: 1.6, duration: 0.9 });
+      else if (n.type === 'shard') audio.playAt('ring', n, { volume: 1.1, ref: 4 });
+    }
 
     tapes.update(dt);
 
@@ -661,7 +701,7 @@ export function startGame(createView) {
     if (mapTimer > 0 || $('map').hidden) return;
     mapTimer = 0.1;
     minimap.draw({
-      player, explored, terminals, loreRead, stage, gotCrate,
+      player, explored, terminals, loreRead, stage, gotCrate: !crateLeft.length, pickups: [...pickupsLeft.values()],
       grates: vents.flatMap((v) => v.grates),
       doors: world.doors,
       time: elapsed,
@@ -682,7 +722,10 @@ export function startGame(createView) {
     $('noise-bar').classList.toggle('loud', noiseLevel >= 10);
     $('stamina-bar').style.width = `${player.stamina * 100}%`;
     $('stamina-bar').classList.toggle('tired', player.exhausted);
-    $('decoys').textContent = gotCrate ? `Noise-makers: ${decoys}  [Q]` : '';
+    // Noise-makers: each kind and how many, the one Q throws in brackets.
+    $('decoys').textContent = inventory.found
+      ? TYPES.map((t) => { const s = `${NOISEMAKERS[t].short} ×${inventory.counts[t]}`; return t === inventory.selected ? `[${s}]` : s; }).join(' · ') + `   Q throw · 1-3 choose · ${inventory.total}/${MAX_CARRY}`
+      : '';
     $('mode').textContent = player.mode === 'crouch' ? 'CROUCHED' : player.mode === 'sprint' ? 'SPRINTING' : '';
 
     let prompt = '';
@@ -737,7 +780,7 @@ export function startGame(createView) {
   // Handy for debugging in the browser console.
   window.station9 = {
     alien, player, world, layout, hatman, tricks, progress, loreRead, explored, tapes, audio, intercom, vent, vents, decor: world.decor,
-    renderer: view.renderer, view, rig, engine: view.name,
+    renderer: view.renderer, view, rig, engine: view.name, inventory, activeNoise, throwables,
     get lore() { return lore; }, get state() { return state; }, get stage() { return stage; },
   };
 }

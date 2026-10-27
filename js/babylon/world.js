@@ -20,6 +20,8 @@ import { grateSpots } from '../vents.js';
 import { buildPod } from './pod.js';
 import { POD } from '../podplan.js';
 import { pbr, basic, toTexture, redraw, srgb, linear, compose, instances, TUNING, bevelBox } from './util.js';
+import { noisemakerMaker } from './props.js';
+import { pickupPlacements, NOISEMAKERS } from '../noisemakers.js';
 
 // Console status lights: Marigold until you've heard its tape, then Soft Teal (terminals spec).
 const UNREAD = 0xf2a92e, READ = 0x5fb3a8;
@@ -435,6 +437,16 @@ export function buildWorld(scene, layout) {
     props.genSwitches = setLamps;
   }
 
+  // Noise-makers lying about (js/noisemakers.js): each glows faintly and bobs; take it with E.
+  const makeNoisemaker = noisemakerMaker(scene);
+  const pickups = new Map();
+  for (const pk of pickupPlacements(layout)) {
+    const m = makeNoisemaker(pk.type);
+    m.position.set(pk.x, pk.y + 0.12, pk.z);
+    pickups.set(pk.id, m);
+    interactables.push({ id: pk.id, kind: 'pickup', type: pk.type, label: `Take ${NOISEMAKERS[pk.type].name}`, pos: { x: pk.x, y: pk.y + 0.12, z: pk.z }, range: 2.2 });
+  }
+
   // Pipes, patches, broken lights and leaks. Its sounds go to whoever sets world.onDecorEvent.
   let onDecorEvent = null;
   const decor = buildDecor(scene, layout, { onEvent: (type, at) => onDecorEvent?.(type, at) });
@@ -499,6 +511,7 @@ export function buildWorld(scene, layout) {
     decor.update(dt, time, player);
     suites.update(dt, time);
     vents.update(dt);
+    for (const m of pickups.values()) { m.bob(time); m.glow(0.28 + 0.08 * Math.sin(time * 2.3)); }
     podView?.update(dt);
     // The CRT overlay breathes very slightly, like an old tube's refresh.
     crtMat.alpha = 0.88 + Math.random() * 0.12;
@@ -541,6 +554,14 @@ export function buildWorld(scene, layout) {
         c.flicker = 0.6;
       }
     },
+    // A noise-maker has been taken: it goes, and so does the prompt to take it.
+    takePickup(id) {
+      pickups.get(id)?.remove();
+      pickups.delete(id);
+      const i = interactables.findIndex((it) => it.id === id);
+      if (i >= 0) interactables.splice(i, 1);
+    },
+    setPickupLabel(id, text) { const it = interactables.find((q) => q.id === id); if (it) it.label = text; },
     setStatus(id, hex) { if (props[id]) props[id].status.emissiveColor = srgb(hex); },
     setCommsLit() { redraw(props.commsScreen.tex, commsCallScreen({ sent: true }), { mirror: true }); props.commsScreen.last = 2; },
     // While E is held on a repair: the comms screen walks through the call (redrawn in steps).

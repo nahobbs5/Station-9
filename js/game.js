@@ -1,7 +1,7 @@
 // The game itself: rules, objectives, the alien, tapes, HUD and the main loop. All drawing goes
 // through a "view" (js/babylon/view.js) that startGame() builds, so this file knows nothing about the engine.
 import { buildLayout, cellOf, cellCenter, lineClear, REPAIRS } from './layout.js';
-import { createNoiseBus, heardLoudness, LOUDNESS } from './noise.js';
+import { createNoiseBus, heardLoudness, LOUDNESS, REPAIR, forcing, carryHeard } from './noise.js';
 import { Alien, inSight } from './alien.js';
 import { Player } from './player.js';
 import { GameAudio, Music, MENU_MUSIC, END_MUSIC } from './audio.js';
@@ -9,13 +9,14 @@ import { renderCredits } from './credits.js';
 import { findTarget, Throwables } from './interact.js';
 import { Tricks } from './tricks.js';
 import { HatMan, cameoSurfaces, corridorEndLamps } from './hatman.js';
+import { Apparitions } from './apparitions.js';
 import { Intercom, LINES } from './intercom.js';
 import { Minimap, revealAround } from './minimap.js';
 import { parseIntro, parseLore } from './textfiles.js';
 import { TapePlayer } from './tapes.js';
 import { CameraRig } from './rig.js';
 import { inSuite, graffitiWall, GRAFFITI_RANGE } from './suiteplan.js';
-import { VENT, VentState, grateAt, nearestGrate, clampYaw, lookingOut, ventPoint } from './vents.js';
+import { VENT, VentState, grateAt, nearestGrate, clampYaw, lookingOut, ventPoint, grateSpots } from './vents.js';
 import { NOISEMAKERS, TYPES, Inventory, ActiveNoise, CRATE_CONTENTS, pickupPlacements, MAX_CARRY } from './noisemakers.js';
 
 const $ = (id) => document.getElementById(id);
@@ -68,6 +69,15 @@ export function startGame(createView) {
     onFirst: () => intercom.say(LINES.hatman),
   });
   view.hatman.addLamps(corridorEndLamps(layout));
+  // The other nine from the Apparition Field Guide (js/apparitions.js): one at a time, never in a safe room.
+  const phantoms = new Apparitions(view.apparitions, layout, {
+    lineClear: (a, b) => lineClear(layout, a, b, isDoorClosed),
+    sound: (name, pos, opts) => audio.playAt(name, pos, opts),
+    grates: grateSpots(layout),
+    surfaces: cameoSurfaces(layout),
+  });
+
+  let apparitions = true; // the menu setting (read from storage below)
 
   const fwd = { x: 0, y: 0, z: 0 };
   function isInView(pos) {
@@ -78,13 +88,14 @@ export function startGame(createView) {
     return facing && lineClear(layout, player.pos, pos, isDoorClosed);
   }
   const tricks = new Tricks({
-    layout, world, audio, alien, player, isInView, isDoorClosed, hatman,
+    layout, world, audio, alien, player, isInView, isDoorClosed, hatman, phantoms,
     cameoSurfaces: cameoSurfaces(layout),
     inSuite: () => suiteNow !== null || vent.inside, // no tricks in the suites or the vents
     facing: () => { rig.forward(fwd); return fwd; },
     stage: () => stage,
     busy: () => repairingNow,
     say: (text) => intercom.say(text),
+    apparitions: () => apparitions,
   });
 
   // Game state ------------------------------------------------------------------
@@ -102,6 +113,8 @@ export function startGame(createView) {
   let pulseTimer = 0;
   let nagTimer = 0;
   let ePressed = false, eHeld = false;
+  const repairTaps = []; // times of recent E presses on a repair
+  let forceUntil = -1;   // forcing a repair (rapid taps) until this time
   let repairingNow = false;
   let wasHunting = false;
   let revealTimer = 0;
@@ -138,9 +151,11 @@ export function startGame(createView) {
     if (state !== 'playing') return;
     if (n.source === 'player') noiseLevel = Math.max(noiseLevel, n.loudness);
     if (layout.isSafe(cellOf(n.x), cellOf(n.z))) return; // safe rooms are soundproofed
-    alien.hear(n, heardLoudness(layout, n, alien.pos, isDoorClosed));
+    const heard = heardLoudness(layout, n, alien.pos, isDoorClosed);
+    // A clank that carries is heard wherever it is on the station.
+    alien.hear(n, n.carry ? carryHeard(heard, Math.hypot(n.x - alien.pos.x, n.z - alien.pos.z)) : heard);
   });
-  const makeNoise = (pos, loudness, source = 'player') => noise.emit({ x: pos.x, z: pos.z, loudness, source });
+  const makeNoise = (pos, loudness, source = 'player', { carry = false } = {}) => noise.emit({ x: pos.x, z: pos.z, loudness, source, carry });
 
   // Input --------------------------------------------------------------------------
   addEventListener('keydown', (e) => {
@@ -224,6 +239,26 @@ export function startGame(createView) {
     const q = readQuality() === 'low' ? 'high' : 'low';
     try { localStorage.setItem(QUALITY_KEY, q); } catch { /* private window: just not remembered */ }
     applyQuality(q);
+  });
+  // Apparitions: On (the Hat Man and anything like him: scarier) or Off, remembered between visits.
+  // Every apparition checks this one setting (hatman.enabled, and tricks' apparitions()).
+  const APPARITIONS_KEY = 'station9.apparitions';
+  const readApparitions = () => { try { return localStorage.getItem(APPARITIONS_KEY) !== 'off'; } catch { return true; } };
+  const applyApparitions = () => {
+    hatman.enabled = apparitions;
+    phantoms.enabled = apparitions;
+    $('apparitions').setAttribute('aria-pressed', String(apparitions));
+    $('apparitions-label').textContent = apparitions ? 'Apparitions: On (scarier)' : 'Apparitions: Off';
+    $('apparitions-note').textContent = apparitions
+      ? "Things that shouldn't be there will show themselves."
+      : "Turn on for a scarier game: things that shouldn't be there.";
+  };
+  apparitions = readApparitions();
+  applyApparitions();
+  $('apparitions').addEventListener('click', () => {
+    apparitions = !apparitions;
+    try { localStorage.setItem(APPARITIONS_KEY, apparitions ? 'on' : 'off'); } catch { /* private window: just not remembered */ }
+    applyApparitions();
   });
   $('credits-back').addEventListener('click', () => { $('credits').hidden = true; $('title').hidden = false; });
 
@@ -347,7 +382,19 @@ export function startGame(createView) {
     return need === stage;
   }
 
-  function repair(target, dt) {
+  // A repair's clank. Each one has a chance to carry right across the station (js/noise.js REPAIR);
+  // Marigold mentions it the first time one does.
+  let carriedOnce = false;
+  function clank(target, mode) {
+    const r = REPAIR[mode];
+    audio.playAt('clank', target.pos, { volume: mode === 'tap' ? 0.95 : 0.7, rate: 0.8 + Math.random() * 0.4 });
+    const carry = Math.random() < r.carry;
+    makeNoise(target.pos, r.loudness, 'player', { carry });
+    if (carry && !carriedOnce) { carriedOnce = true; intercom.say(LINES.carried); }
+  }
+
+  // mode: 'hold' (careful) or 'tap' (forcing it: faster, louder; its clanks come with each tap).
+  function repair(target, dt, mode = 'hold') {
     const id = target.id;
     if (!canRepair(id)) {
       if (nagTimer <= 0 && ORDER.indexOf(id) > stage) {
@@ -356,13 +403,11 @@ export function startGame(createView) {
       }
       return false;
     }
-    progress[id] = Math.min(1, progress[id] + dt / target.duration);
+    progress[id] = Math.min(1, progress[id] + (dt * REPAIR[mode].speed) / target.duration);
     world.setRepairProgress?.(id, progress[id]);
-    pulseTimer -= dt;
-    if (pulseTimer <= 0) {
-      pulseTimer = 0.8;
-      audio.playAt('clank', target.pos, { volume: 0.7, rate: 0.8 + Math.random() * 0.4 });
-      makeNoise(target.pos, LOUDNESS.repair);
+    if (mode === 'hold') {
+      pulseTimer -= dt;
+      if (pulseTimer <= 0) { pulseTimer = REPAIR.hold.every; clank(target, 'hold'); }
     }
     if (progress[id] >= 1) finishRepair(id, target);
     return true;
@@ -376,11 +421,11 @@ export function startGame(createView) {
       world.setPower(true);
       audio.playAt('flicker', target.pos, { volume: 1.2 });
       audio.startEngine(world.anchors.generator);
-      makeNoise(target.pos, LOUDNESS.generator, 'machine');
+      makeNoise(target.pos, LOUDNESS.generator, 'machine', { carry: true }); // it always hears the generator start
       intercom.say(LINES.power, { priority: true });
     } else if (id === 'comms') {
       world.setCommsLit();
-      makeNoise(target.pos, LOUDNESS.comms, 'machine');
+      makeNoise(target.pos, LOUDNESS.comms, 'machine', { carry: true }); // ...and the call going out
       intercom.say(LINES.comms, { priority: true });
     } else if (id === 'pod') {
       win();
@@ -635,7 +680,14 @@ export function startGame(createView) {
     if (ePressed && !target && !ventGrate && !vent.inside) skipDialogue();
     if (target) {
       if (ePressed && target.kind !== 'repair') press(target);
-      if (eHeld && target.kind === 'repair' && progress[target.id] < 1) repairing = repair(target, dt);
+      // Rapid taps force the repair: faster, and a loud clank with every tap.
+      if (ePressed && target.kind === 'repair' && progress[target.id] < 1 && canRepair(target.id)) {
+        repairTaps.push(elapsed);
+        while (repairTaps.length && elapsed - repairTaps[0] > 1) repairTaps.shift();
+        if (forcing(repairTaps, elapsed)) { forceUntil = elapsed + REPAIR.tap.window; clank(target, 'tap'); }
+      }
+      const forced = elapsed < forceUntil;
+      if ((eHeld || forced) && target.kind === 'repair' && progress[target.id] < 1) repairing = repair(target, dt, forced ? 'tap' : 'hold');
     }
     ePressed = false;
     repairingNow = repairing;
@@ -684,7 +736,13 @@ export function startGame(createView) {
     hatman.update(dt, {
       stage, elapsed, player: player.pos,
       inSuite: suiteNow !== null || vent.inside,
-      blocked: alien.state === 'hunt' || !!tricks.active,
+      blocked: alien.state === 'hunt' || !!tricks.active || phantoms.busy,
+    });
+    phantoms.update(dt, {
+      elapsed, player: player.pos, eye: rig.position, forward: rig.forward(fwd), alien: alien.dormant > 0 ? null : alien.pos,
+      inSafe: suiteNow !== null || inSafeRoom() || vent.inside,
+      blocked: alien.state === 'hunt' || !!tricks.active || hatman.busy,
+      dark: hatman.dark,
     });
     if (hatman.dark) rig.flashlight = 0; // the flashlight dies with the power
     intercom.update(dt);
@@ -739,7 +797,7 @@ export function startGame(createView) {
       else if (target.kind === 'repair') {
         if (progress[target.id] >= 1) prompt = 'Done';
         else if (!canRepair(target.id)) prompt = target.id === 'pod' && stage < 2 ? 'Needs main power and a rescue call' : 'Needs main power';
-        else prompt = `[Hold E] ${target.label}`;
+        else prompt = elapsed < forceUntil ? `Forcing it… (loud)` : `[Hold E] ${target.label} · [Tap E fast] Force it (louder)`;
       } else if (target.kind === 'log') {
         prompt = tapes.id === target.id ? '[E] Stop tape' : `[E] Play tape${loreRead.has(target.id) ? ' (heard)' : ''}`;
       } else prompt = `[E] ${target.label}`;
@@ -784,7 +842,7 @@ export function startGame(createView) {
 
   // Handy for debugging in the browser console.
   window.station9 = {
-    alien, player, world, layout, hatman, tricks, progress, loreRead, explored, tapes, audio, intercom, vent, vents, decor: world.decor,
+    alien, player, world, layout, hatman, tricks, apparitions: phantoms, progress, loreRead, explored, tapes, audio, intercom, vent, vents, decor: world.decor,
     renderer: view.renderer, view, rig, engine: view.name, inventory, activeNoise, throwables,
     get lore() { return lore; }, get state() { return state; }, get stage() { return stage; },
   };

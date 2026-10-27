@@ -19,7 +19,7 @@ test('vents: three ducts and four dead ends, in the right rooms, none in the pod
   assert.equal(vents.filter((v) => v.kind === 'duct').length, 3);
   assert.equal(vents.filter((v) => v.kind === 'dead').length, 4);
   const rooms = (id) => byId(id).grates.map((g) => g.room).sort().join(',');
-  assert.equal(rooms('V1'), 'airlock,storage');
+  assert.equal(rooms('V1'), 'crew,storage');
   assert.equal(rooms('V2'), 'comms,teleporter');
   assert.equal(rooms('V3'), 'crew,generator');
   assert.deepEqual(['H1', 'H2', 'H3', 'H4'].map((id) => byId(id).grates[0].room), ['airlock', 'control', 'teleporter', 'comms']);

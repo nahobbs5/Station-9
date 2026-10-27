@@ -18,10 +18,10 @@ export const ROOMS = [
   { id: 'control',    name: 'Control Room',    x: 12, y: 1,  w: 5, h: 5, chamfer: 1 },
   { id: 'generator',  name: 'Generator Room',  x: 1,  y: 6,  w: 5, h: 5 },
   { id: 'teleporter', name: 'Teleporter Lab',  x: 23, y: 6,  w: 5, h: 5, chamfer: 1 },
-  { id: 'storage',    name: 'Storage',         x: 1,  y: 14, w: 5, h: 5 },
+  { id: 'storage',    name: 'Storage',         x: 17, y: 19, w: 5, h: 5 },
   { id: 'comms',      name: 'Comms Room',      x: 23, y: 14, w: 5, h: 5 },
   { id: 'airlock',    name: 'Arrival Airlock', x: 9,  y: 19, w: 5, h: 5 },
-  { id: 'pod',        name: 'Escape Pod Bay',  x: 17, y: 19, w: 5, h: 5 },
+  { id: 'pod',        name: 'Escape Pod Bay',  x: 1,  y: 14, w: 5, h: 5 }, // far west: a long run from Comms
   { id: 'crew',       name: 'Crew Quarters',   x: 12, y: 10, w: 5, h: 5, chamfer: 1 },
   { id: 'wellness',   name: 'Wellness Room',   x: 7,  y: 6,  w: 4, h: 4, safe: true }, // Suite A (js/suiteplan.js)
   { id: 'quiet',      name: 'Quiet Room',      x: 19, y: 11, w: 3, h: 3, safe: true }, // Suite B
@@ -31,7 +31,7 @@ export const ROOMS = [
 export const REPAIRS = ['generator', 'comms', 'pod'];
 
 // The alien's patrol loop, in walking order.
-export const ROUTE = ['teleporter', 'control', 'generator', 'storage', 'airlock', 'crew', 'pod', 'comms'];
+export const ROUTE = ['teleporter', 'control', 'generator', 'pod', 'airlock', 'crew', 'storage', 'comms'];
 
 // Corridors, in cell coordinates. Each is made of straight runs between cell centres (`line`) and
 // cubic curves (`curve`: start, two control points, end). An end inside a room gets a door on that
@@ -59,8 +59,8 @@ export const CORRIDORS = [
 export const PROPS = [
   { id: 'generator',      kind: 'repair',  room: 'generator',  cell: [3, 8],   label: 'Repair generator', duration: 4 },
   { id: 'comms',          kind: 'repair',  room: 'comms',      cell: [25, 16], label: 'Send rescue call', duration: 5 },
-  { id: 'pod',            kind: 'repair',  room: 'pod',        cell: [19, 20], label: 'Prep escape pod',  duration: 6 },
-  { id: 'crate',          kind: 'crate',   room: 'storage',    cell: [1, 16],  label: 'Take noise-makers' },
+  { id: 'pod',            kind: 'repair',  room: 'pod',        cell: [3, 16],  label: 'Prep escape pod',  duration: 6 },
+  { id: 'crate',          kind: 'crate',   room: 'storage',    cell: [19, 23], label: 'Take noise-makers' },
   { id: 'teleporter',     kind: 'scenery', room: 'teleporter', cell: [25, 8] },
   // Lore terminals: desk consoles that each play an audio log (text in text/lore.txt), a few steps
   // off the direct routes. screen: what the console shows (js/textures.js consoleScreen).
@@ -74,10 +74,10 @@ export const PROPS = [
     ['t04', 'crew',       [12, 11], 'personnel-lena', null, true],
     ['t06', 'crew',       [16, 11], 'personnel-jun'],
     ['t08', 'crew',       [16, 13], 'personnel-sam'],
-    ['t05', 'storage',    [1, 18],  'inventory',      'Walk.\nDon\'t run.\n– P.R.'],
+    ['t05', 'storage',    [21, 19], 'inventory',      'Walk.\nDon\'t run.\n– P.R.'],
     ['t10', 'generator',  [1, 10],  'power',          'Coolant ›\nPumps ›\nValves ›\nRestart'],
     ['t09', 'comms',      [27, 18], 'comms',          'Re-align\nantenna,\nthen retune\n– A.W.'],
-    ['t12', 'pod',        [21, 23], 'pod'],
+    ['t12', 'pod',        [5, 18],  'pod'],
   ].map(([id, room, cell, screen, note = null, mug = false]) => ({ id, kind: 'log', room, cell, label: 'Play tape', screen, note, mug })),
   // More consoles, just for show (solid, but you can't use them).
   ...[
@@ -86,7 +86,7 @@ export const PROPS = [
     ['control',   [16, 4],  'off'],      // dead: the Hat Man shows in its glass (js/hatman.js)
     ['teleporter', [23, 7], 'off'],
     ['crew',      [12, 13], 'roster',      'Skipper suit\nis by the\nfridge.\n– S.D.', true],
-    ['pod',       [17, 23], 'manifest'],
+    ['pod',       [1, 18],  'manifest'],
   ].map(([room, cell, screen, note = null, mug = false], i) => ({ id: 'console' + (i + 1), kind: 'console', room, cell, screen, note, mug })),
 ];
 
@@ -103,11 +103,11 @@ export const FURNITURE = [
   { kind: 'bench', room: 'airlock', cell: [11, 19], solid: true },
   { kind: 'lockers', room: 'airlock', cell: [9, 20], solid: true }, // the back wall's middle stays clear for the emblem
   { kind: 'plant', room: 'airlock', cell: [9, 19] },
-  // Storage: shelving, a big supply crate, the janitor's cart.
-  { kind: 'shelves', room: 'storage', cell: [5, 15], solid: true },
-  { kind: 'shelves', room: 'storage', cell: [5, 17], solid: true, medkit: true },
-  { kind: 'bigCrate', room: 'storage', cell: [1, 14], solid: true },
-  { kind: 'cart', room: 'storage', cell: [2, 18] },
+  // Storage: shelving, a big supply crate, the janitor's cart (doors on its west and east walls).
+  { kind: 'shelves', room: 'storage', cell: [18, 19], solid: true },
+  { kind: 'shelves', room: 'storage', cell: [20, 19], solid: true, medkit: true },
+  { kind: 'bigCrate', room: 'storage', cell: [21, 23], solid: true },
+  { kind: 'cart', room: 'storage', cell: [17, 23] },
   // Generator Room: a workbench and a tool shelf.
   { kind: 'workbench', room: 'generator', cell: [5, 9], solid: true },
   { kind: 'shelves', room: 'generator', cell: [1, 7], solid: true },
@@ -117,13 +117,13 @@ export const FURNITURE = [
   // Teleporter Lab.
   { kind: 'cabinet', room: 'teleporter', cell: [23, 9], solid: true },
   { kind: 'plant', room: 'teleporter', cell: [27, 8] },
-  // Escape Pod Bay.
-  { kind: 'bench', room: 'pod', cell: [18, 19], solid: true },
-  { kind: 'lockers', room: 'pod', cell: [21, 19], solid: true },
+  // Escape Pod Bay (doors on its north and south walls; the pod lies across the middle).
+  { kind: 'bench', room: 'pod', cell: [2, 14], solid: true },
+  { kind: 'lockers', room: 'pod', cell: [5, 14], solid: true },
   // The safe rooms (Wellness, Quiet) are furnished separately (js/suiteplan.js).
 ];
 // Windows onto the planet: [room, wall side].
-export const WINDOWS = [['pod', 'n']];
+export const WINDOWS = [['pod', 'w']]; // the station's outer wall, out to space
 // Wayfinding signs on the corridor wall just outside these doors (cells).
 export const SIGN_DOORS = [[8, 21], [13, 18], [14, 6], [3, 11], [22, 21]];
 

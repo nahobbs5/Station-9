@@ -3,6 +3,7 @@
 import { buildWorld } from './world.js';
 import { makeAlienView } from './alien.js';
 import { makeHatmanFigure, ballMaker } from './props.js';
+import { makeApparitionFigure } from './apparitions.js';
 import { linear, TUNING } from './util.js';
 import { loadModels } from './models.js';
 import { modelPlacements } from '../modelplan.js';
@@ -62,6 +63,7 @@ export function createBabylonView(container, layout) {
   const world = buildWorld(scene, layout);
   const alien = makeAlienView(scene);
   const hatman = makeHatmanFigure(scene);
+  const apparitions = makeApparitionFigure(scene);
 
   // Realism (Stage 1 of "Improving Visuals"): reflections, shadows, ambient occlusion,
   // post effects and dust. All of it can be switched off with setQuality('low').
@@ -190,6 +192,7 @@ export function createBabylonView(container, layout) {
     world,
     alien,
     hatman,
+    apparitions,
     makeBall: ballMaker(scene),
     render(rig) {
       const p = rig.position;

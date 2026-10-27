@@ -14,8 +14,8 @@ const RANGE = 25;
 const IDLE_FOR_SOUND = 4; // seconds standing still before the sound trick may play
 
 export class Tricks {
-  // w: { layout, world, audio, alien, player, isInView(pos), isDoorClosed, hatman, cameoSurfaces,
-  //      inSuite(), facing() (camera forward), stage(), busy(), say(text) }
+  // w: { layout, world, audio, alien, player, isInView(pos), isDoorClosed, hatman, phantoms, cameoSurfaces,
+  //      inSuite(), facing() (camera forward), stage(), busy(), say(text), apparitions() (menu setting) }
   constructor(w) {
     this.w = w;
     this.cooldown = FIRST_TRICK;
@@ -44,7 +44,7 @@ export class Tricks {
     }
     const { alien } = this.w;
     if (alien.dormant > 0 || (alien.state !== 'patrol' && alien.state !== 'investigate')) return;
-    if (this.w.hatman.busy) return; // one at a time: his blackout reveal counts
+    if (this.w.hatman.busy || this.w.phantoms?.busy) return; // one at a time: apparitions count
     this.cooldown -= dt;
     if (this.cooldown > 0) return;
     const options = [this.lightTrick, this.doorTrick, this.soundTrick, this.propTrick, this.cameoTrick]
@@ -166,6 +166,7 @@ export class Tricks {
   // facing it, and for a moment there's a faint figure behind you in it. Never in the suites.
   cameoTrick() {
     const { hatman, player, inSuite, cameoSurfaces, facing } = this.w;
+    if (this.w.apparitions && !this.w.apparitions()) return null;
     if (inSuite() || hatman.visible || hatman.cameoActive) return null;
     const fwd = facing();
     const surface = cameoSurfaces.find((s) => {

@@ -23,11 +23,11 @@ test('pod: its cells are solid, and none is a doorway', () => {
   }
 });
 
-test('pod: you can still get through the bay, west door to east door, and the alien still patrols it', () => {
-  const doors = layout.doors.filter((d) => [d.cx - 1, d.cx + 1].some((x) => layout.roomAt(x, d.cz)?.id === 'pod'));
+test('pod: you can still get through the bay, from one door to the other, and the alien still patrols it', () => {
+  const doors = layout.doors.filter((d) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => layout.roomAt(d.cx + dx, d.cz + dz)?.id === 'pod'));
   assert.ok(doors.length >= 2, 'two doors into the bay');
   const [a, b] = doors;
-  assert.ok(findPath(grid, a.cx, a.cz, b.cx, b.cz), 'west to east');
+  assert.ok(findPath(grid, a.cx, a.cz, b.cx, b.cz), 'door to door');
   const [sx, sz] = layout.room(ROUTE[0]).spot, [px, pz] = layout.room('pod').spot;
   assert.ok(findPath(grid, sx, sz, px, pz), 'patrol reaches the bay');
   assert.ok(!POD.solidCells.some(([x, z]) => x === px && z === pz), 'the bay spot is open floor');

@@ -95,11 +95,11 @@ export const propHeight = (p) => PROP_HEIGHT[p.kind] ?? 1;
 export const POSTERS = [
   ['airlock', 'n', ['YOUR LABOR', 'IS OUR', 'FREEDOM.'], '#b3332a'],
   ['crew', 'w', ['YOUR WELLNESS', 'IS OUR', 'WAYPOINT.'], '#2f6e6a'],
-  ['storage', 'w', ['SMALL STEPS.', 'BIG', 'POSSIBILITIES.'], '#b3332a'],
+  ['storage', 'n', ['SMALL STEPS.', 'BIG', 'POSSIBILITIES.'], '#b3332a'],
   ['generator', 'w', ['POWER', 'KEEPS US', 'TOGETHER.'], '#c8781e'],
   ['comms', 'e', ["WE'RE", 'ALWAYS', 'LISTENING.'], '#b3332a'],
   ['teleporter', 'w', ['STEP IN.', 'STEP OUT.', 'STEP UP.'], '#2f4f6e'],
-  ['pod', 's', ['LEAVING', 'SO SOON?', "WE'LL MISS YOU."], '#b3332a'],
+  ['pod', 'e', ['LEAVING', 'SO SOON?', "WE'LL MISS YOU."], '#b3332a'],
 ];
 // The station map on the control room wall, and the emblem sign in the airlock.
 export const WALL_MAP = { room: 'control', side: 'n', w: 2.4, h: 2.1, y: 1.85 };

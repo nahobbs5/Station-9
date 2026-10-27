@@ -599,8 +599,8 @@ test('wayfinding signs point along the real route', () => {
   assert.equal(signs.length, 5);
   const outside = signs.find((s) => s.door[0] === 8 && s.door[1] === 21); // the airlock's west door
   assert.ok(!outside.entries.some((e) => e.id === 'airlock'), "a sign outside the airlock doesn't list the airlock");
-  assert.equal(outside.entries.find((e) => e.id === 'storage').arrow, '←', 'storage is back round the curve, to the left');
-  assert.equal(outside.entries.find((e) => e.id === 'pod').arrow, '→', 'the pod bay is through the airlock, to the right');
+  assert.equal(outside.entries.find((e) => e.id === 'pod').arrow, '←', 'the pod bay is back round the curve, to the left');
+  assert.equal(outside.entries.find((e) => e.id === 'storage').arrow, '→', 'storage is through the airlock, to the right');
   for (const s of signs) assert.ok(layout.walkDistance(s.x, s.z) > -0.05 && layout.walkDistance(s.x, s.z) < 0.2, 'sign hangs on a wall');
 });
 
@@ -882,4 +882,46 @@ test('a terminal you face beats a nearby grate, and looking at a grate aims at n
     else rig.set(g.x, 1.6, g.z, 0, -1.35); // standing on it, looking down
     assert.equal(findTarget(rig, items), null, `looking at grate ${g.id}, aimed at ${findTarget(rig, items)?.kind}`);
   }
+});
+
+test('the escape pod is a long run from the comms console', () => {
+  const [cx, cz] = layout.props.find((p) => p.id === 'comms').cell, [px, pz] = layout.room('pod').spot;
+  const path = findPath(grid(), cx, cz + 1, px, pz); // from where you stand at the console
+  assert.ok(path && path.length * TILE > 40, `only ${(path?.length ?? 0) * TILE} m`);
+});
+
+test('repairs: forcing it (rapid taps) is faster and draws the alien more often than holding', async () => {
+  const { REPAIR, forcing } = await import('../js/noise.js');
+  assert.ok(forcing([0.2, 0.45, 0.7, 0.95], 1.0));
+  assert.ok(!forcing([0.9], 1.0));
+  assert.ok(!forcing([0.0, 0.1, 0.2], 1.5), "old taps don't count");
+  // Simulate a 4 s generator repair many times with seeded rolls.
+  const { seeded } = await import('../js/textures.js');
+  const rand = seeded(1234);
+  const trial = (mode) => {
+    const R = REPAIR[mode], secs = 4 / R.speed;
+    const clanks = mode === 'hold' ? Math.ceil(secs / R.every) : Math.round(secs * 4.5); // about 4-5 taps a second
+    for (let i = 0; i < clanks; i++) if (rand() < R.carry) return true;
+    return false;
+  };
+  const rate = (mode) => { let n = 0; for (let i = 0; i < 2000; i++) n += trial(mode); return n / 2000; };
+  const hold = rate('hold'), tap = rate('tap');
+  assert.ok(hold > 0.65 && hold < 0.85, `holding draws it ${hold}`);
+  assert.ok(tap > hold + 0.05, `tapping ${tap} vs holding ${hold}`);
+  assert.ok(REPAIR.tap.speed > REPAIR.hold.speed && REPAIR.tap.loudness > REPAIR.hold.loudness);
+});
+
+test('a repair clank that carries reaches the alien across the station; an ordinary one does not', async () => {
+  const { carryHeard, REPAIR } = await import('../js/noise.js');
+  const gen = at(layout.props.find((p) => p.id === 'generator').cell);
+  const send = (carry) => {
+    const a = makeAlien({ start: 'comms' });
+    a.dormant = 0;
+    const n = { x: gen.x, z: gen.z, loudness: REPAIR.hold.loudness, source: 'player', carry };
+    const heard = heardLoudness(layout, n, a.pos, allOpen);
+    a.hear(n, carry ? carryHeard(heard, Math.hypot(n.x - a.pos.x, n.z - a.pos.z)) : heard);
+    return a.state;
+  };
+  assert.equal(send(false), 'patrol');
+  assert.equal(send(true), 'investigate');
 });

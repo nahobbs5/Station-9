@@ -17,6 +17,7 @@ export const LINES = {
   nm_echo: 'Echo Seed. It rolls, and then it chatters. It sounds like someone you used to know.',
   nm_shard: 'Resonance Shard. One clear note that carries a very long way. Use it far from yourself.',
   nm_buzz: 'Buzz Pod. It hums for a while and covers your footsteps nearby. Like a good colleague.',
+  carried: 'That one carried. Something on this station has excellent hearing.',
   handsFull: 'Your hands are full. Three noise-makers is the safe limit. We checked.',
   hatman: 'Please disregard any colleagues you may see in the corridors. Everyone is fine.',
   // The wellness suites (reference files/wellness rooms.md). Inside, Marigold speaks only at the door.

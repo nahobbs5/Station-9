@@ -190,3 +190,19 @@ test('hat man: a lamp either side of every doorway, on the corridor side', () =>
     assert.ok(!layout.roomAt(cellOf(l.x), cellOf(l.z)) || layout.isDoor(cellOf(l.x), cellOf(l.z)), 'not in the room');
   }
 });
+
+test('hat man: the Apparitions setting off means no reveals and no cameo', () => {
+  const s = scene();
+  s.hm.enabled = false;
+  s.run(HATMAN.firstAfter + 30);
+  assert.equal(s.hm.state, 'idle');
+  assert.ok(!s.world.out && !s.calls.includes('place'), 'no blackout, never placed');
+  s.hm.force();
+  s.run(2);
+  assert.equal(s.hm.state, 'idle', 'not even when forced');
+  assert.equal(s.hm.showCameo(cameoSurfaces(layout)[0]), false);
+  s.hm.enabled = true;
+  s.hm.force();
+  s.run(0.1);
+  assert.equal(s.hm.state, 'blackout', 'back on: he comes');
+});

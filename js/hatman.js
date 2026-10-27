@@ -10,6 +10,8 @@ import { inSuite } from './suiteplan.js';
 import { propPlacement, windowPlacements } from './worldplan.js';
 import { makeCanvas } from './textures.js';
 
+// He's an apparition: the menu's Apparitions setting turns him off (HatMan.enabled). The other
+// field-guide apparitions (js/apparitions.js) honour the same setting.
 export const HATMAN = {
   distances: [25, 18, 12, 6], // metres from you, by repairs done
   vary: 1.5,                  // +/- metres, so he's never quite where you expect
@@ -133,6 +135,7 @@ export class HatMan {
     this.sightings = 0;
     this.cameoLeft = 0;
     this.dipLeft = 0;
+    this.enabled = true; // the menu's Apparitions setting
   }
 
   get position() { return this.figure.position; }
@@ -150,6 +153,8 @@ export class HatMan {
     if (this.dipLeft > 0 && (this.dipLeft -= dt) <= 0 && this.state === 'idle') this.figure.setLamps?.(1);
     if (this.cameoLeft > 0 && (this.cameoLeft -= dt) <= 0) this.figure.hideCameo();
     this.t += dt;
+    // Switched off: nothing new (a reveal already under way still finishes, so the lights come back).
+    if (this.state === 'idle' && !this.enabled) return;
     if (this.state === 'idle') this.idle(dt, ctx);
     else if (this.state === 'blackout') this.duringBlackout(ctx);
     else if (this.state === 'shown') this.whileShown(dt, ctx);
@@ -222,7 +227,7 @@ export class HatMan {
 
   // The reflection cameo: a faint figure behind you in dark glass for 1.5 s.
   showCameo(surface) {
-    if (this.busy || this.cameoActive) return false;
+    if (!this.enabled || this.busy || this.cameoActive) return false;
     this.figure.showCameo(surface);
     this.cameoLeft = HATMAN.cameo;
     this.world.dimBeat(HATMAN.dip);

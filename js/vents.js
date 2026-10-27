@@ -41,7 +41,7 @@ const DEAD_ENDS = [
   ['H4', 'comms', [23, 16], 'w'],
 ];
 const DUCTS = [
-  ['V1', ['storage', [4, 18]], ['airlock', [10, 21]], [[13, 39]]],
+  ['V1', ['storage', [18, 20]], ['crew', [15, 13]], []], // Storage (now beside the airlock) up to Crew Quarters
   ['V2', ['teleporter', [26, 9]], ['comms', [26, 15]], [[48, 22], [48, 28]]],
   ['V3', ['crew', [13, 13]], ['generator', [4, 7]], [[13, 22]]],
 ];

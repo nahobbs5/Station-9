@@ -364,6 +364,25 @@ export class GameAudio {
       if (t >= 0.6) { const u = t - 0.6; crash = (noise() * 0.6 + Math.sin(u * 2 * Math.PI * 610) * 0.5) * Math.exp(-u * 6); }
       return { v: v * rip + crash, s: v };
     });
+    // Apparitions (js/apparitions.js). The gas mask: slow, heavy breathing through a filter.
+    this.buffers.breath = make(3.2, (t, st) => {
+      const v = st + (noise() - st) * 0.12;
+      const ph = (t % 1.6) / 1.6; // in for 0.7 s, out for 0.9 s
+      const env = ph < 0.44 ? Math.sin((ph / 0.44) * Math.PI) * 0.7 : Math.sin(((ph - 0.44) / 0.56) * Math.PI);
+      return { v: v * env * 2.2 * (1 + 0.3 * Math.sin(t * 2 * Math.PI * 31)), s: v };
+    });
+    // The static figure: a bad transmission, bursts of hiss with a voice-like wobble in them.
+    this.buffers.radio = make(3, (t, st) => {
+      const v = st + (noise() - st) * 0.45;
+      const burst = Math.sin(t * 2 * Math.PI * 1.7) + Math.sin(t * 2 * Math.PI * 4.3) > 0.3 ? 1 : 0.15;
+      const voice = Math.sin(t * 2 * Math.PI * (180 + 60 * Math.sin(t * 2 * Math.PI * 5))) * 0.5;
+      return { v: (v * 0.6 + voice * v * 1.5) * burst, s: v };
+    });
+    // ...and a far-off two-tone alarm, a second long.
+    this.buffers.alarm = make(1, (t) => {
+      const f = Math.floor(t * 4) % 2 ? 660 : 880;
+      return Math.sign(Math.sin(t * 2 * Math.PI * f)) * 0.25 * Math.min(1, (1 - t) * 8);
+    });
     // Heartbeat: lub-dub.
     this.buffers.beat = make(0.5, (t) => {
       const lub = t < 0.15 ? Math.sin(t * 2 * Math.PI * 55) * Math.sin((t / 0.15) * Math.PI) : 0;

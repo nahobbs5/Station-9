@@ -8,13 +8,26 @@ export const STEP_LOUDNESS = { walk: 6, sprint: 14, crouch: 2 };
 export const LOUDNESS = {
   door: 8,
   doorSlam: 12,   // using a door while sprinting
-  repair: 10,
+  repair: 18,     // a careful repair's clank (REPAIR.hold); forcing it is louder
   decoy: 16,
   flashlight: 3,
   terminal: 4,
   comms: 22,
   generator: 30,
 };
+
+// Repairs, two ways. Hold E: steady progress, a clank every `every` seconds. Tap E rapidly (`rate`
+// presses within a second): faster, a louder clank on every tap, and each clank's chance (`carry`)
+// of being heard right across the station adds up much quicker.
+export const REPAIR = {
+  hold: { loudness: 18, carry: 0.25, every: 0.8, speed: 1 },
+  tap: { loudness: 24, carry: 0.2, speed: 1.8, window: 0.35, rate: 3 },
+};
+// Are these E presses (times in seconds) fast enough to be forcing the repair?
+export const forcing = (taps, now) => taps.filter((t) => now - t <= 1).length >= REPAIR.tap.rate;
+// A clank that carries reaches the alien wherever it is, just loud enough to send it over (a finite
+// value, so a louder noise or a decoy can still pull it away afterwards).
+export const carryHeard = (heard, distance) => Math.max(heard, distance + 4);
 
 const DOOR_DAMP = 0.5;  // each closed door halves it
 const WALL_DAMP = 0.33; // each solid wall cuts it by about two thirds

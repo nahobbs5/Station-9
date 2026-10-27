@@ -89,9 +89,13 @@ export function makeAlienView(scene) {
   const revealColor = linear(ALIEN.reveal.color);
 
   const u = {};
+  let visible = true;
   return {
     anchor: group.position, // looping alien sounds follow this
+    // Hidden by the dev switch (station9.alienOff): no mesh and no glow.
+    setVisible(v) { visible = v; group.setEnabled(v); if (!v) light.intensity = 0; },
     update(alien, time) {
+      if (!visible) return;
       const p = poseAlien(u, alien, time);
       group.position.set(p.x, 0, p.z);
       group.rotation.y = p.yaw;

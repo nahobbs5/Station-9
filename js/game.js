@@ -840,10 +840,38 @@ export function startGame(createView) {
 
   addEventListener('resize', () => view.resize());
 
+  // Dev switch for exploring: station9.alienOff = true keeps the alien asleep and out of sight
+  // (everything that hears, sees or catches already skips a dormant alien). Remembered across
+  // reloads; ?noalien in the URL turns it on too. The HUD shows a tag while it's on.
+  const ALIEN_OFF_KEY = 'station9.dev.alienOff';
+  let alienOff = false;
+  function setAlienOff(on, { save = true, quiet = false } = {}) {
+    alienOff = on;
+    if (on) {
+      alien.toPatrol(); // drop any chase it was in
+      alien.dormant = Infinity;
+      audio.stopAlienClicks();
+    } else if (alien.dormant === Infinity) {
+      alien.dormant = 0.001; // wakes next frame, with the usual 'wake' sound
+    }
+    view.alien.setVisible(!on);
+    $('dev-tag').hidden = !on;
+    if (save) { try { localStorage.setItem(ALIEN_OFF_KEY, on ? 'on' : 'off'); } catch { /* private window */ } }
+    if (!quiet) console.info(on ? 'Alien off (dev). station9.alienOff = false to bring it back.' : 'Alien back on.');
+  }
+  {
+    let saved = false;
+    try { saved = localStorage.getItem(ALIEN_OFF_KEY) === 'on'; } catch { /* private window */ }
+    const fromUrl = new URLSearchParams(location.search).has('noalien');
+    if (saved || fromUrl) setAlienOff(true, { save: false, quiet: true });
+    if (alienOff) console.info('Alien off (dev). station9.alienOff = false to bring it back.');
+  }
+
   // Handy for debugging in the browser console.
   window.station9 = {
     alien, player, world, layout, hatman, tricks, apparitions: phantoms, progress, loreRead, explored, tapes, audio, intercom, vent, vents, decor: world.decor,
     renderer: view.renderer, view, rig, engine: view.name, inventory, activeNoise, throwables,
     get lore() { return lore; }, get state() { return state; }, get stage() { return stage; },
+    get alienOff() { return alienOff; }, set alienOff(v) { setAlienOff(!!v); },
   };
 }

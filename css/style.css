@@ -149,6 +149,7 @@ button.link:hover { background: none; color: var(--ink); }
 }
 
 #map { position: absolute; right: 20px; bottom: 20px; }
+#dev-tag { position: absolute; right: 20px; top: 16px; font-size: 11px; letter-spacing: 0.2em; color: #e8912a; opacity: 0.8; }
 .map-label { font-size: 10px; letter-spacing: 0.2em; color: var(--dim); margin-bottom: 4px; text-align: right; }
 #minimap {
   display: block;

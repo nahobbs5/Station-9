@@ -44,10 +44,11 @@ export function makeScreenFeed(world) {
   function draw(L, t) {
     g.globalCompositeOperation = 'source-over';
     if (L.blackout) { g.fillStyle = '#000'; g.fillRect(0, 0, W, H); return; }
-    // The usual screen, rolled up the picture when the feed slips.
+    // Underneath: the camera feed, or the usual screen; rolled up the picture when the feed slips.
     const roll = ((L.roll % 1) + 1) % 1 * H;
-    g.drawImage(cur.base, 0, -roll);
-    if (roll) g.drawImage(cur.base, 0, H - roll);
+    const under = L.feed && art[L.feed]?.naturalWidth ? art[L.feed] : cur.base;
+    g.drawImage(under, 0, -roll, W, H);
+    if (roll) g.drawImage(under, 0, H - roll, W, H);
     // The figure: the feed cuts to a dark camera picture.
     if (L.art > 0) {
       const img = art[L.artId];
@@ -61,6 +62,14 @@ export function makeScreenFeed(world) {
         drawArt(img, 0.15 * L.art, L.slide, -L.shift);
         g.globalCompositeOperation = 'source-over';
       }
+    }
+    // Colour shift: a red cast, or drained to grey.
+    if (L.tint === 'red') {
+      g.globalCompositeOperation = 'multiply'; g.fillStyle = 'rgb(255,70,60)'; g.fillRect(0, 0, W, H);
+      g.globalCompositeOperation = 'source-over';
+    } else if (L.tint === 'mono') {
+      g.globalCompositeOperation = 'saturation'; g.fillStyle = '#808080'; g.fillRect(0, 0, W, H);
+      g.globalCompositeOperation = 'source-over';
     }
     if (L.text) {
       g.save();

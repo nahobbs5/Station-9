@@ -714,6 +714,46 @@ export function stickyNote(textLines) {
 }
 
 // A cream Skipper mug.
+// The strip along the bottom of a tape terminal's screen: amber "AUDIO LOG · PRESS E" with a play
+// triangle until it's been played, then teal "AUDIO LOG PLAYED" with a tick. The triangle and tick
+// are drawn, since the screen fonts don't have those symbols.
+export function tapeBanner(played) {
+  return makeCanvas(512, 72, (g, w, h) => {
+    const color = played ? '#5fb3a8' : '#f2a92e';
+    g.fillStyle = played ? 'rgba(6,22,20,0.92)' : 'rgba(30,18,4,0.92)'; g.fillRect(0, 0, w, h);
+    g.fillStyle = color; g.fillRect(0, 0, w, 3);
+    g.font = `600 34px ${HEAD}`;
+    const label = played ? 'AUDIO LOG PLAYED' : 'AUDIO LOG  \u00b7  PRESS E';
+    const tw = g.measureText(label).width, x0 = (w - tw - 44) / 2, cy = h / 2 + 1;
+    g.strokeStyle = color; g.fillStyle = color; g.lineWidth = 5; g.lineCap = 'round'; g.lineJoin = 'round';
+    g.beginPath();
+    if (played) { g.moveTo(x0 + 2, cy); g.lineTo(x0 + 11, cy + 10); g.lineTo(x0 + 30, cy - 11); g.stroke(); }
+    else { g.moveTo(x0 + 4, cy - 14); g.lineTo(x0 + 30, cy); g.lineTo(x0 + 4, cy + 14); g.closePath(); g.fill(); }
+    g.textBaseline = 'middle'; g.textAlign = 'left';
+    g.fillText(label, x0 + 44, cy + 1);
+  });
+}
+
+// The front of the desk tape deck: a cassette behind a smoked window, two reels, and its buttons.
+export function tapeDeckTexture() {
+  return makeCanvas(256, 96, (g, w, h) => {
+    g.fillStyle = '#26292b'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#121415'; g.fillRect(14, 10, 160, 70); // the window
+    g.fillStyle = '#d9cfb8'; g.fillRect(22, 18, 144, 54); // the cassette
+    g.fillStyle = '#c0392b'; g.fillRect(22, 18, 144, 12); // its label stripe
+    g.fillStyle = '#121415'; g.fillRect(52, 38, 84, 26); // the reel window
+    for (const cx of [70, 118]) {
+      g.fillStyle = '#efe6d2'; g.beginPath(); g.arc(cx, 51, 10, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#121415';
+      for (let k = 0; k < 6; k++) { const a = (k * Math.PI) / 3; g.fillRect(cx + Math.cos(a) * 6 - 1.5, 51 + Math.sin(a) * 6 - 1.5, 3, 3); }
+    }
+    g.fillStyle = 'rgba(255,255,255,0.06)'; g.fillRect(14, 10, 160, 22); // glare on the window
+    g.fillStyle = '#3a3e41'; // play / stop / rewind keys
+    for (let k = 0; k < 3; k++) g.fillRect(188 + k * 20, 56, 16, 22);
+    g.fillStyle = '#8a877e'; g.font = `10px ${MONO}`; g.textAlign = 'left'; g.fillText('TAPE', 190, 26);
+  });
+}
+
 export function mugTexture() {
   return makeCanvas(256, 128, (g, w, h) => {
     g.fillStyle = '#efe6d2'; g.fillRect(0, 0, w, h);

@@ -23,9 +23,12 @@ export const SCREEN_KINDS = {
   'screen-message':    { art: 'message',    life: 2.6, weight: 0.35 },
   'screen-empty':      { art: 'empty',      life: 3.0, weight: 0.3 },
   'screen-alien':      { art: 'alien',      life: 2.0, weight: 0.15 },
+  'screen-face':       { art: 'feed-peak',  life: 2.2, weight: 0.25 }, // the board's "Apparition Peak" face
 };
 export const SCREEN_IDS = Object.keys(SCREEN_KINDS);
-export const SCREEN_ARTS = SCREEN_IDS.map((id) => SCREEN_KINDS[id].art);
+// The camera feed the monitor cuts to first, one picture per stage (the board's Static & Flicker Rules row).
+export const FEEDS = ['feed-normal', 'feed-interference', 'feed-glitch', 'feed-fade'];
+export const SCREEN_ARTS = [...new Set([...SCREEN_IDS.map((id) => SCREEN_KINDS[id].art), ...FEEDS])];
 
 export const SCREEN = {
   near: 2,      // metres: closer than this and it's too obvious
@@ -88,11 +91,15 @@ export function phaseOf(k) {
 // { art (0-1: how much of the figure shows), artId (which picture), grain, lines (rolling bars),
 //   tear (0-1: torn horizontal strips), shift (px: red/green split), flicker (0-1 brightness dips),
 //   repeat (show the last frame again), slide (-1..1: the picture's sideways offset), roll (0-1 vertical
-//   roll), text (a phrase to scrawl on top, or null), blackout (the screen cuts out) }
+//   roll), text (a phrase to scrawl on top, or null), blackout (the screen cuts out),
+//   feed (the camera picture underneath, or null for the console's own screen), tint ('red', 'mono' or null) }
 export function screenLook(id, k, rand = Math.random) {
   const kind = SCREEN_KINDS[id];
   const phase = phaseOf(k);
-  const L = { art: 0, artId: kind.art, grain: 0.05, lines: 0.1, tear: 0, shift: 0, flicker: 0, repeat: false, slide: 0, roll: 0, text: null, blackout: false };
+  const L = { art: 0, artId: kind.art, grain: 0.05, lines: 0.1, tear: 0, shift: 0, flicker: 0, repeat: false, slide: 0, roll: 0, text: null, blackout: false, feed: null, tint: null };
+  // The monitor cuts to a corridor camera, which breaks down stage by stage; the console's own
+  // screen shows for a beat before and comes back just before the end.
+  if (k >= 0.05 && k < 0.92) L.feed = { normal: 'feed-normal', interference: 'feed-interference', glitch: 'feed-glitch', peak: 'feed-glitch', fade: 'feed-fade' }[phase];
   // Through the board's five stages.
   if (phase === 'interference') { L.grain = 0.18; L.lines = 0.35; L.flicker = 0.15; }
   if (phase === 'glitch') {
@@ -102,6 +109,7 @@ export function screenLook(id, k, rand = Math.random) {
   if (phase === 'peak') {
     L.grain = 0.45; L.lines = 0.5; L.tear = 0.45; L.flicker = 0.25; L.shift = 4 + rand() * 6;
     L.art = rand() < 0.1 ? 0.4 : 0.95;
+    if (rand() < 0.08) L.tint = rand() < 0.5 ? 'red' : 'mono'; // a flash of colour shift
   }
   if (phase === 'fade') {
     const f = (k - 0.85) / 0.15;
@@ -146,6 +154,13 @@ export function screenLook(id, k, rand = Math.random) {
       if (k >= 0.15 && k < 0.85) { L.art = 1; L.tear = Math.min(L.tear, 0.15); L.shift = 0; }
       if (k >= 0.5 && k < 0.62) { L.artId = 'crew'; L.art = 0.6; } // something in the room
       if (k >= 0.62 && k < 0.75) { L.roll = (k - 0.62) * 6; L.tear = 0.7; L.lines = 0.8; } // rewinding
+      break;
+    case 'feed-peak': // the face: red / green / monochrome colour shift all the way through
+      // Its picture is already glitched, so go light on the rest or the face is lost.
+      if (L.art) {
+        L.art = 1; L.tear = Math.min(L.tear, 0.12); L.grain = Math.min(L.grain, 0.2); L.shift = 8 + rand() * 4;
+        const c = rand(); L.tint = c < 0.25 ? 'red' : c < 0.45 ? 'mono' : null;
+      }
       break;
     case 'alien': // rare, quick, strong static and tearing
       L.tear = Math.max(L.tear, 0.7); L.grain = Math.max(L.grain, 0.5); L.shift = Math.max(L.shift, 8);

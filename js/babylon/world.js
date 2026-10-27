@@ -4,6 +4,7 @@ import { TILE, WALL_H, cellCenter, key } from '../layout.js';
 import {
   wallTexture, floorTextures, ceilingTexture, doorTexture, posterTexture, mapTexture, wallSpot,
   consoleScreen, LIVE_SCREENS, keyboardTexture, stickyNote, mugTexture, housingTexture, hazardTexture, crtTexture,
+  tapeBanner, tapeDeckTexture,
   commsCallScreen, reactorPlateTexture, switchPanelTexture, SWITCH_GROUPS,
 } from '../textures.js';
 import {
@@ -234,6 +235,11 @@ export function buildWorld(scene, layout) {
   // Scanlines and darkened edges over every screen, so they read as old curved CRT glass.
   const crtMat = basic(scene, 0x000000, { opacity: T(crtTexture()) });
   crtMat.disableDepthWrite = true;
+  // Tape terminals only: a strip on the screen (unplayed / played) and a tape deck on the desk.
+  const bannerMats = [false, true].map((played) => basic(scene, 0, { map: TWall(tapeBanner(played)) }));
+  const deckFaceMat = pbr(scene, { map: TWall(tapeDeckTexture()), roughness: 0.6 });
+  const BANNER_H = 0.39 * 72 / 320; // the strip's share of the screen's height
+  const tapeTerminals = []; // { id, statusMat, banner, played }, so unplayed ones can pulse
   function makeConsole(group, p) {
     const part = (mesh, parent, x, y, z, mat) => { mesh.parent = parent; mesh.position.set(x, y, z); mesh.material = mat; return mesh; };
     part(bevelBox('desk', { width: 1.3, height: 0.74, depth: 0.7, bevel: 0.025 }, scene), group, 0, 0.37, -0.1, deskMat);
@@ -255,6 +261,17 @@ export function buildWorld(scene, layout) {
     glow.rotation.y = Math.PI;
     glow.material.disableDepthWrite = true;
     if (p.screen === 'off') glow.setEnabled(false); // a dead monitor doesn't glow
+    let banner = null;
+    if (p.kind === 'log') {
+      // Across the top of the screen (clear of the use prompt and of chairs in front), on its own
+      // plane in front of the screen and under the scanlines, so screen redraws leave it be.
+      banner = part(MeshBuilder.CreatePlane('tape-banner', { width: 0.62, height: BANNER_H }, scene), mon, 0, 0.38 + 0.39 / 2 - BANNER_H / 2, screenZ + 0.0015, bannerMats[0]);
+      banner.rotation.y = Math.PI;
+      // The tape deck, left of the keyboard: a cassette behind a window, its light on top.
+      part(bevelBox('tape-deck', { width: 0.22, height: 0.07, depth: 0.16, bevel: 0.01 }, scene), group, -0.45, 0.775, 0.1, housingMat);
+      const face = part(MeshBuilder.CreatePlane('tape-deck-face', { width: 0.21, height: 0.065 }, scene), group, -0.45, 0.775, 0.1 + 0.081, deckFaceMat);
+      face.rotation.y = Math.PI;
+    }
     const badge = part(MeshBuilder.CreateCylinder('badge', { diameter: 0.05, height: 0.01, tessellation: 10 }, scene), mon, -0.34, 0.62, screenZ, badgeMat);
     badge.rotation.x = Math.PI / 2;
     part(MeshBuilder.CreateBox('keyboard', { width: 0.56, height: 0.035, depth: 0.2 }, scene), group, 0, 0.758, 0.12, darkMat);
@@ -272,8 +289,8 @@ export function buildWorld(scene, layout) {
       handle.rotation.x = Math.PI / 2;
     }
     consoles.push({ p, tex, screen, glow, live: LIVE_SCREENS.has(p.screen), flicker: 0 });
-    // The status light: bottom right of the bezel, in the group's frame (the monitor tilts slightly).
-    return { lightPos: [0.33, 0.74 + 0.07, -0.2 + screenZ + 0.01] };
+    // A tape terminal's status light sits on top of its tape deck.
+    return { banner, lightPos: [-0.38, 0.815, 0.12] };
   }
 
   // Props -------------------------------------------------------------------
@@ -374,8 +391,9 @@ export function buildWorld(scene, layout) {
       // A desk console like the reference sheet; its status light is the one built above.
       const c = makeConsole(group, p);
       statusPos = c.lightPos;
-      status.scaling.setAll(0.3); // a small light on the bezel, about 4 cm across
-      statusMat.emissiveColor = srgb(p.kind === 'log' ? UNREAD : READ);
+      status.scaling.setAll(0.3); // a small light on the tape deck, about 4 cm across
+      statusMat.emissiveColor = srgb(UNREAD);
+      if (p.kind === 'log') tapeTerminals.push({ id: p.id, statusMat, banner: c.banner, played: false });
     } else if (p.id === 'teleporter') {
       add(MeshBuilder.CreateCylinder('pad', { diameterTop: 2.0, diameterBottom: 2.2, height: 0.2, tessellation: 24 }, scene), 0, 0.1, 0).material = pbr(scene, { color: 0x3a4248, metalness: 0.8, roughness: 0.3 });
       // The ring stands upright like a gate and slowly turns.
@@ -394,7 +412,9 @@ export function buildWorld(scene, layout) {
       props.teleporter = group;
     }
     if (p.kind === 'console') {
-      add(status, ...statusPos); // set dressing: a light, but nothing to use
+      // Set dressing: no light, and aiming at it just says it's locked (js/game.js).
+      status.dispose();
+      interactables.push({ id: p.id, kind: 'console', label: p.screen === 'off' ? 'Dead terminal' : 'Terminal locked', pos: { x, y: propHeight(p), z }, range: 2.7 });
     } else if (p.kind !== 'scenery') {
       if (p.kind === 'crate') status.dispose(); // no marker light: its noise-makers sit on the lid
       else add(status, ...statusPos);
@@ -525,6 +545,11 @@ export function buildWorld(scene, layout) {
     vents.update(dt);
     for (const m of pickups.values()) { m.bob(time); m.glow(0.28 + 0.08 * Math.sin(time * 2.3)); }
     podView?.update(dt);
+    // Unplayed tape terminals pulse together: the deck light and the AUDIO LOG strip.
+    const pulse = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(time * 5.2));
+    bannerMats[0].emissiveTexture.level = 0.55 + 0.45 * pulse;
+    const unread = srgb(UNREAD).scale(pulse);
+    for (const t of tapeTerminals) if (!t.played) t.statusMat.emissiveColor = unread;
     // The CRT overlay breathes very slightly, like an old tube's refresh.
     crtMat.alpha = 0.88 + Math.random() * 0.12;
     // A screen that just changed flickers for a moment.
@@ -557,7 +582,11 @@ export function buildWorld(scene, layout) {
     // The pod launches: door shut, thrusters flaring (js/babylon/pod.js).
     launchPod() { podView?.launch(); },
     set onDecorEvent(fn) { onDecorEvent = fn; },
-    markRead(id) { if (props[id]) props[id].status.emissiveColor = srgb(READ); },
+    markRead(id) {
+      if (props[id]) props[id].status.emissiveColor = srgb(READ);
+      const t = tapeTerminals.find((q) => q.id === id);
+      if (t) { t.played = true; t.banner.material = bannerMats[1]; }
+    },
     // Repairs change what some screens say (power online, signal sent, launch window open).
     setProgress(stage) {
       screenStage = stage;

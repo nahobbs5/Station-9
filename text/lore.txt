@@ -50,7 +50,7 @@ room: storage
 author: Priya Raman, systems engineer
 date: 2091-06-14
 
-I dropped a wrench in B corridor yesterday. Every light went out. When they came back, the wrench was standing upright on its handle. I don't know how else to describe it. I've lined the corridor with foam and carpet, along wth every scrap of packing cloth I could find. It seems to help. Whatever it is we're dealing with, noise attracts it.
+I dropped a wrench in B corridor yesterday. Every light went out. When they came back, the wrench was standing upright on its handle. I don't know how else to describe it. I've lined the corridor with foam and carpet, along with every scrap of packing cloth I could find. It seems to help. Whatever it is we're dealing with, noise attracts it.
 When something clangs in the lab, the lights in the next room dip a second later, like something turned to look. I need not explain this to Tomas - he'll just think I'm a worrywart. But if you must cross B corridor: walk. Whatever you do, do not run.
 
 === t06: Consent forms

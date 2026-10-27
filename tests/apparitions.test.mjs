@@ -180,7 +180,7 @@ test('apparitions: sounds stop when one goes early', () => {
 
 // Debug summons (js/game.js ?debug keys) and the computer screen apparitions (js/screenapparitions.js).
 import { lineClear } from '../js/layout.js';
-import { SCREEN, SCREEN_KINDS, SCREEN_IDS, consoleScreens, pickScreen, screenLook, phaseOf } from '../js/screenapparitions.js';
+import { SCREEN, SCREEN_KINDS, SCREEN_IDS, FEEDS, consoleScreens, pickScreen, screenLook, phaseOf } from '../js/screenapparitions.js';
 
 const clear = (a, b) => lineClear(layout, a, b, () => false);
 const consoles = consoleScreens(layout);
@@ -220,9 +220,10 @@ test('debug summon: ignores the safe room and replaces whatever is showing; the 
   assert.equal(a.shown.child, 0, 'a debug show does not count');
 });
 
-test('screen apparitions: twelve kinds, each with art, 0.5-3 s each', async () => {
+test('screen apparitions: thirteen kinds and four camera feeds, each with art, 0.5-3 s each', async () => {
   const fs = await import('node:fs');
-  assert.equal(SCREEN_IDS.length, 12);
+  assert.equal(SCREEN_IDS.length, 13);
+  for (const f of FEEDS) assert.ok(fs.existsSync(new URL(`../assets/screens/${f}.png`, import.meta.url)), f);
   for (const id of SCREEN_IDS) {
     const k = SCREEN_KINDS[id];
     assert.ok(fs.existsSync(new URL(`../assets/screens/${k.art}.png`, import.meta.url)), id);
@@ -325,4 +326,12 @@ test('apparitions: the child never mirrors or slides, start to finish', () => {
   assert.ok(poses.length > 20 && !a.busy);
   for (const P of poses) { assert.equal(P.flipX, false); assert.equal(P.jitter, 0); }
   assert.equal(KINDS.child.h, 2.3);
+});
+
+test('screen apparitions: the monitor cuts to a corridor camera that breaks down, then comes back', () => {
+  const seq = [];
+  for (let k = 0; k < 1; k += 0.01) { const f = screenLook('screen-crew', k, seeded(2)).feed; if (seq.at(-1) !== f) seq.push(f); }
+  assert.deepEqual(seq, [null, 'feed-normal', 'feed-interference', 'feed-glitch', 'feed-fade', null]);
+  const face = [0.6, 0.7, 0.8].map((k) => screenLook('screen-face', k, () => 0.3));
+  assert.ok(face.every((L) => L.art === 1 && L.shift >= 8 && L.tint === 'mono'), 'the face peaks with a colour shift');
 });

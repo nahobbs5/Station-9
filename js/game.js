@@ -167,9 +167,9 @@ export function startGame(createView) {
   };
 
   // Input --------------------------------------------------------------------------
-  // Debug keys (?debug only): 1-9 the field-guide nine, 0 the Hat Man, Alt+1...0, Alt+- and Alt+=
-  // the twelve screen ones, ` the alien off and on. Noise-makers move to the mouse wheel.
-  const DEBUG_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal'];
+  // Debug keys (?debug only): 1-9 the field-guide nine, 0 the Hat Man, Alt+1...0, Alt+-, Alt+= and
+  // Alt+Backspace the thirteen screen ones, ` the alien off and on. Noise-makers move to the mouse wheel.
+  const DEBUG_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal', 'Backspace'];
   function debugKey(e) {
     if (e.code === 'Backquote') { if (!e.repeat) setAlienOff(!alienOff); return true; }
     if (e.code === 'AltLeft' || e.code === 'AltRight') return true; // keep the browser's menu out of it
@@ -185,7 +185,7 @@ export function startGame(createView) {
   if (DEBUG) {
     addEventListener('keyup', (e) => { if (e.code === 'AltLeft' || e.code === 'AltRight') e.preventDefault(); });
     addEventListener('wheel', (e) => { if (state === 'playing' && e.deltaY) inventory.cycle(Math.sign(e.deltaY)); }, { passive: true });
-    console.info('Debug keys: 1-9 ' + KIND_IDS.join(', ') + ' · 0 Hat Man · Alt+1-0, Alt+-, Alt+= ' +
+    console.info('Debug keys: 1-9 ' + KIND_IDS.join(', ') + ' · 0 Hat Man · Alt+1-0, Alt+-, Alt+=, Alt+Backspace ' +
       SCREEN_IDS.map((id) => id.slice(7)).join(', ') + ' (on a monitor) · ` alien off/on · wheel picks a noise-maker');
   }
   addEventListener('keydown', (e) => {
@@ -709,9 +709,9 @@ export function startGame(createView) {
     const target = vent.inside || ventGrate ? null : aimed;
     let repairing = false;
     // E with nothing to use (and no grate) skips to the next line of dialogue.
-    if (ePressed && !target && !ventGrate && !vent.inside) skipDialogue();
+    if (ePressed && (!target || target.kind === 'console') && !ventGrate && !vent.inside) skipDialogue();
     if (target) {
-      if (ePressed && target.kind !== 'repair') press(target);
+      if (ePressed && target.kind !== 'repair' && target.kind !== 'console') press(target);
       // Rapid taps force the repair: faster, and a loud clank with every tap.
       if (ePressed && target.kind === 'repair' && progress[target.id] < 1 && canRepair(target.id)) {
         repairTaps.push(elapsed);
@@ -837,7 +837,8 @@ export function startGame(createView) {
         else prompt = elapsed < forceUntil ? `Forcing it… (loud)` : `[Hold E] ${target.label} · [Tap E fast] Force it (louder)`;
       } else if (target.kind === 'log') {
         prompt = tapes.id === target.id ? '[E] Stop tape' : `[E] Play tape${loreRead.has(target.id) ? ' (heard)' : ''}`;
-      } else prompt = `[E] ${target.label}`;
+      } else if (target.kind === 'console') prompt = target.label; // set dressing: nothing to do
+      else prompt = `[E] ${target.label}`;
     }
     // Vents: what E does at a grate, and the hold bar for slipping through quietly.
     if (ventRefused > 0) prompt = 'Too close to it';

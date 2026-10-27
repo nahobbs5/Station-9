@@ -6,7 +6,7 @@ import { wallPanels } from '../worldplan.js';
 import { SUITES, planSuite, paddedSuite } from '../suiteplan.js';
 import {
   paddedWallTexture, paddedFloorTexture, suiteCeilingTexture, ceilingPanelTexture, heartMonitorScreen,
-  kioskTexture, wellnessFormTexture, graffitiTexture, markerTexture, VANTORA_CREAM, SOFT_TEAL,
+  kioskTexture, wellnessFormTexture, graffitiTexture, notebookTexture, bloodyPillowTexture, markerTexture, VANTORA_CREAM, SOFT_TEAL,
 } from '../suitetextures.js';
 import { stickyNote } from '../textures.js';
 import { pbr, basic, toTexture, redraw, linear } from './util.js';
@@ -29,6 +29,7 @@ export function buildSuites(scene, layout) {
   const steel = pbr(scene, { color: 0xc4c9cc, roughness: 0.35, metalness: 0.85 });
   const sheet = pbr(scene, { color: 0xfafcfb, roughness: 0.8 });
   const strap = pbr(scene, { color: 0x2f6e6a, roughness: 0.6 });
+  const bloodyPillow = pbr(scene, { map: T(bloodyPillowTexture()), roughness: 0.8 });
   const tubing = pbr(scene, { color: 0xe8f2f0, roughness: 0.3 });
   const ringGlow = basic(scene, 0x8fe0cf);
   // Every monitor shows this one texture, so they all beat together.
@@ -88,7 +89,7 @@ export function buildSuites(scene, layout) {
 
     // The equipment.
     let formIndex = 0;
-    let graffiti = null;
+    let graffiti = null, notebook = null;
     for (const piece of planSuite(layout, id)) {
       const g = new TransformNode(piece.kind, scene);
       g.parent = root;
@@ -107,7 +108,7 @@ export function buildSuites(scene, layout) {
             part(MeshBuilder.CreateCylinder('leg', { diameter: 0.04, height: ph - 0.1, tessellation: 8 }, scene), sx * (pw / 2 - 0.06), (ph - 0.1) / 2, sz * (pd / 2 - 0.08), steel);
           }
           part(MeshBuilder.CreateBox('mattress', { width: pw - 0.06, height: 0.1, depth: pd - 0.06 }, scene), 0, ph - 0.02, 0, sheet);
-          part(MeshBuilder.CreateBox('pillow', { width: pw - 0.2, height: 0.08, depth: 0.32 }, scene), 0, ph + 0.07, -pd / 2 + 0.24, sheet);
+          part(MeshBuilder.CreateBox('pillow', { width: pw - 0.2, height: 0.08, depth: 0.32 }, scene), 0, ph + 0.07, -pd / 2 + 0.24, piece.bloody ? bloodyPillow : sheet);
           for (const sz of [-0.35, 0.15, 0.6]) {
             part(MeshBuilder.CreateBox('strap', { width: pw + 0.02, height: 0.025, depth: 0.08 }, scene), 0, ph + 0.04, sz, strap);
             part(MeshBuilder.CreateBox('buckle', { width: 0.07, height: 0.03, depth: 0.09 }, scene), pw / 2 - 0.12, ph + 0.05, sz, steel);
@@ -172,6 +173,15 @@ export function buildSuites(scene, layout) {
           graffiti = tex;
           break;
         }
+        case 'notebook': {
+          // Lying open on the floor: a thin cover with the written page on top.
+          part(MeshBuilder.CreateBox('notebook', { width: pw, height: ph, depth: pd }, scene), 0, 0, 0, cream);
+          notebook = TWall(notebookTexture());
+          const page = part(MeshBuilder.CreatePlane('notebook-page', { width: pw - 0.01, height: pd - 0.01 }, scene), 0, ph / 2 + 0.001, 0,
+            pbr(scene, { map: notebook, roughness: 0.9, zOffset: -2 }));
+          page.rotation.x = Math.PI / 2; // face up
+          break;
+        }
         case 'marker': {
           const m = part(MeshBuilder.CreateCylinder('marker', { diameter: 0.022, height: pw, tessellation: 10 }, scene), 0, 0.011, 0,
             pbr(scene, { map: T(markerTexture()), roughness: 0.5 }));
@@ -195,14 +205,16 @@ export function buildSuites(scene, layout) {
     light.intensity = 1.1;
     light.includedOnlyMeshes = meshes;
 
-    suites[id] = { root, light, meshes, graffiti };
+    suites[id] = { root, light, meshes, graffiti, notebook };
   }
 
-  // Redraw the graffiti once Caveat has loaded, or it stays in the fallback hand.
-  const g = suites.quiet?.graffiti;
+  // Redraw the wall writing and notebook once the marker font has loaded, or they stay in the fallback.
+  const { graffiti: g, notebook: nb } = suites.quiet ?? {};
   if (g && document.fonts?.load) {
-    document.fonts.load('64px Caveat').then(() => redraw(g, graffitiTexture(), { mirror: true }))
-      .catch((e) => console.warn('Graffiti font did not load', e));
+    document.fonts.load('64px "Permanent Marker"').then(() => {
+      redraw(g, graffitiTexture(), { mirror: true });
+      if (nb) redraw(nb, notebookTexture(), { mirror: true });
+    }).catch((e) => console.warn('Graffiti font did not load', e));
   }
 
   let ecgTimer = 0;

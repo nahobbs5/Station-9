@@ -24,6 +24,7 @@ export const SIZES = {
   chair: [0.5, 0.5, 0.85],
   marker: [0.14, 0.02, 0.02],
   note: [0.12, 0.01, 0.12],
+  notebook: [0.21, 0.28, 0.012],
 };
 
 const FACE = { n: 0, s: Math.PI, w: Math.PI / 2, e: -Math.PI / 2 }; // facing +z, -z, +x, -x
@@ -46,8 +47,9 @@ export function inSuite(layout, pos) {
 // A gurney with its IV stand, heart monitor and clipboard rack. The gurney lies with its long
 // side against a wall. (x, z): its centre; along: 'x' or 'z' for its length; wall: which wall it's
 // against ('n', 's', 'e', 'w'). The kit goes at the head end (toward `head`, -1 or +1 along its length).
-function bed(out, { x, z, along, wall, head = -1, cell }) {
-  out.push({ kind: 'gurney', x, y: 0, z, rotY: along === 'z' ? 0 : Math.PI / 2, size: SIZES.gurney, solid: true, cell });
+// bloody: smears on the pillow (Suite B only).
+function bed(out, { x, z, along, wall, head = -1, cell, bloody = false }) {
+  out.push({ kind: 'gurney', x, y: 0, z, rotY: along === 'z' ? 0 : Math.PI / 2, size: SIZES.gurney, solid: true, cell, bloody });
   const inward = { n: [0, 1], s: [0, -1], w: [1, 0], e: [-1, 0] }[wall];
   const t = along === 'z' ? [0, 1] : [1, 0];
   const headX = x + t[0] * head * 1.0, headZ = z + t[1] * head * 1.0;
@@ -95,10 +97,12 @@ export function planSuite(layout, id) {
     // On the padding, which stands 2 cm off the wall itself.
     out.push({ kind: 'graffiti', x: b.x0 + 0.03, y: 1.35, z: gz, rotY: FACE.w, size: [4.2, 0.01, 2.1] });
     out.push({ kind: 'chair', x: b.x0 + 1.5, y: 0, z: gz, rotY: -FACE.w, size: SIZES.chair }); // faces west
-    bed(out, { x: 41, z: b.z0 + 0.6, along: 'x', wall: 'n', head: 1, cell: [20, 11] });
+    bed(out, { x: 41, z: b.z0 + 0.6, along: 'x', wall: 'n', head: 1, cell: [20, 11], bloody: true });
     out.push({ kind: 'kiosk', x: b.x1 - 0.2, y: 0, z: 23.2, rotY: FACE.e, size: SIZES.kiosk });
     // Three weak clues to who wrote it (the smear is drawn into the graffiti itself).
     out.push({ kind: 'marker', x: b.x0 + 0.35, y: 0.01, z: gz + 1.6, rotY: 0.7, size: SIZES.marker });
+    // The notebook with the same writing, dropped on the floor near the marker.
+    out.push({ kind: 'notebook', x: b.x0 + 0.7, y: 0.02, z: gz + 1.25, rotY: 0.4, size: SIZES.notebook });
     out.push({ kind: 'note', x: b.x0 + 0.035, y: 1.05, z: gz + 2.35, rotY: FACE.w, size: SIZES.note, text: 'Sorry.\n– J.' });
     ceiling(out, b, 2, 3);
   }

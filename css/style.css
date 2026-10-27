@@ -1,5 +1,7 @@
 /* Caveat (SIL Open Font License, fonts/OFL.txt): the handwriting on the Suite B graffiti. */
 @font-face { font-family: 'Caveat'; src: url('../fonts/Caveat.woff2') format('woff2'); font-weight: 400 700; font-display: block; }
+/* Permanent Marker (Apache 2.0, fonts/PermanentMarker-LICENSE.txt): the Suite B wall writing and notebook. */
+@font-face { font-family: 'Permanent Marker'; src: url('../fonts/PermanentMarker.woff2') format('woff2'); font-weight: 400; font-display: block; }
 
 :root {
   --ink: #d9d4c7;

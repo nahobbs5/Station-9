@@ -112,3 +112,21 @@ test('suites: the padding covers both suites and nowhere else', () => {
 test('suites: no other furniture in the suites', () => {
   assert.equal(FURNITURE.filter((f) => f.room in SUITES).length, 0);
 });
+
+test('suites: Suite B has a notebook on the floor, clear of the beds and chair', () => {
+  const b = bounds('quiet');
+  const pieces = planSuite(layout, 'quiet');
+  const books = pieces.filter((p) => p.kind === 'notebook');
+  assert.equal(books.length, 1);
+  const [n] = books;
+  assert.ok(inside(b, n.x, n.z, 0.2), 'inside the room');
+  assert.ok(n.y > 0.012 && n.y < 0.05, 'on the floor, above the padded mats');
+  assert.ok(!layout.isSolid(Math.floor(n.x / TILE), Math.floor(n.z / TILE)), 'not on a solid cell');
+  const chair = pieces.find((p) => p.kind === 'chair');
+  assert.ok(Math.hypot(n.x - chair.x, n.z - chair.z) > 0.6, 'clear of the chair');
+});
+
+test('suites: only the Quiet Room bed has the bloody pillow', () => {
+  const bloody = Object.keys(SUITES).flatMap((id) => planSuite(layout, id).filter((p) => p.kind === 'gurney' && p.bloody).map(() => id));
+  assert.deepEqual(bloody, ['quiet']);
+});

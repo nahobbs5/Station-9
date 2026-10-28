@@ -45,6 +45,12 @@ h2 { font-family: var(--display); font-size: clamp(36px, 6vw, 64px); letter-spac
   color: var(--dim); font-size: 14px;
 }
 .controls b { color: var(--ink); font-weight: normal; border: 1px solid #555; border-radius: 3px; padding: 1px 6px; margin-right: 6px; }
+.name { display: flex; align-items: center; gap: 10px; margin: 8px 0 4px; color: var(--dim); font-size: 14px; }
+.name input {
+  font-family: var(--mono); font-size: 15px; color: var(--ink); background: rgba(0,0,0,0.35);
+  border: 1px solid var(--dim); padding: 6px 10px; width: 200px; outline: none;
+}
+.name input:focus { border-color: var(--red); }
 .voice { margin: 8px 0 20px; color: var(--dim); font-size: 14px; cursor: pointer; }
 button {
   font-family: var(--display); font-size: 22px; letter-spacing: 0.2em; text-transform: uppercase;

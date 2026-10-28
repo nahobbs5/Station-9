@@ -63,12 +63,19 @@ export function applyLines(map) {
   }
 }
 
+// Swap "Technician" for the player's name (from the title screen). No name: the line is unchanged.
+export function personalize(text, name) {
+  const n = name?.trim();
+  return n ? text.replace(/\bTechnician\b/g, n) : text;
+}
+
 export class Intercom {
   constructor(el) {
     this.el = el;
     this.queue = [];
     this.timer = 0;
     this.voice = true;
+    this.name = '';       // the player's name, used in place of "Technician"
     this.talking = false; // speech for the current line hasn't finished yet
     this.tape = null;     // the tape player, so we take turns speaking
     this.muted = () => false; // true while you're in a wellness suite: only { suite: true } lines get through
@@ -104,6 +111,7 @@ export class Intercom {
   }
 
   show(text) {
+    text = personalize(text, this.name);
     this.el.textContent = text;
     this.el.hidden = false;
     this.timer = Math.max(3.5, text.length * 0.07) + 0.5;

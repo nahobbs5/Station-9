@@ -297,6 +297,18 @@ export function startGame(createView) {
     try { localStorage.setItem(APPARITIONS_KEY, apparitions ? 'on' : 'off'); } catch { /* private window: just not remembered */ }
     applyApparitions();
   });
+  // Your name: Marigold uses it in place of "Technician". Remembered between visits.
+  const NAME_KEY = 'station9.name';
+  try { $('player-name').value = localStorage.getItem(NAME_KEY) || ''; } catch { /* private window */ }
+  intercom.name = $('player-name').value;
+  $('player-name').addEventListener('input', () => {
+    intercom.name = $('player-name').value;
+    try { localStorage.setItem(NAME_KEY, intercom.name.trim()); } catch { /* private window: just not remembered */ }
+  });
+  $('player-name').addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') e.target.blur();
+  });
   $('credits-back').addEventListener('click', () => { $('credits').hidden = true; $('title').hidden = false; });
 
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -311,6 +323,7 @@ export function startGame(createView) {
     state = 'loading';
     music.fadeOut(1500);
     intercom.voice = $('voice').checked;
+    intercom.name = $('player-name').value;
     tapes.voice = intercom.voice;
     $('start').textContent = 'Loading…';
     lock();

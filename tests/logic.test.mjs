@@ -1075,3 +1075,11 @@ test('achievements: earned once a game, NEW only the first time ever, unknown id
   assert.throws(() => a.earn('nope'));
   assert.ok(new Achievements(undefined).earn('rudeAwakening'), 'works with no storage');
 });
+
+test('personalize swaps "Technician" for the player name', async () => {
+  const { personalize } = await import('../js/intercom.js');
+  assert.equal(personalize('Safe travels, Technician. Technician status: ok.', 'Nathan'), 'Safe travels, Nathan. Nathan status: ok.');
+  assert.equal(personalize('Good news, Technician:', '  '), 'Good news, Technician:');
+  assert.equal(personalize('Good news, Technician:', ''), 'Good news, Technician:');
+  assert.equal(personalize('a maintenance technician', 'Nathan'), 'a maintenance technician');
+});

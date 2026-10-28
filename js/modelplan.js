@@ -79,9 +79,12 @@ export function modelPlacements(layout, plan) {
     const at = furniturePlacement(layout, f);
     out.push({ model: f.model, variant: f.variant, x: at.x, y: POT_SOIL, z: at.z, yaw: at.rotY + 0.6, scale: f.scale ?? 1, wilt: f.wilt ?? 0, replaces: 'plant-' + f.model });
   }
-  for (const pl of planGarden(layout, plan).planters) {
+  const garden = planGarden(layout, plan);
+  for (const pl of garden.planters) {
     for (const p of pl.plants) out.push({ model: p.model, variant: p.variant, x: p.x, y: p.y, z: p.z, yaw: p.yaw, scale: p.scale, wilt: p.wilt });
   }
+  // Leafy clumps on the floor of the reclaimed corridors.
+  for (const c of garden.clumps) out.push({ model: c.model, variant: c.variant, x: c.x, y: c.y, z: c.z, yaw: c.yaw, scale: c.scale, wilt: c.wilt });
   // Small pot plants on the comms desk, the mess table and the seedling bench; sprouts in its trays.
   const on = (kind, lx, y, lz, extra = {}) => {
     const f = layout.furniture.find((q) => q.kind === kind);

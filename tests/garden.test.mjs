@@ -47,13 +47,55 @@ test('garden: the new furniture has a depth, stands in its room and keeps clear 
   assert.equal(layout.furniture.filter((f) => f.kind === 'pottingBench').length, 1);
 });
 
-test('garden: hanging vines stay above head height; wall vines lie on a wall', () => {
+test('garden: vines only trail from pipes, and stay above head height', () => {
   assert.ok(garden.vines.length > 40, 'plenty of vines');
   assert.ok(garden.vines.some((v) => v.dry) && garden.vines.some((v) => !v.dry), 'some green, some dying');
   for (const v of garden.vines) {
+    assert.equal(v.mode, 'hang', 'no flat ivy on the walls');
     assert.ok(v.top > v.bottom, 'hangs down');
-    if (v.mode === 'hang') assert.ok(v.bottom >= GARDEN.vineMinY - 1e-9, `hanging vine ends at ${v.bottom.toFixed(2)} m`);
-    else assert.ok(layout.walkDistance(v.x, v.z) < 0.1, 'wall vine is against the wall');
+    assert.ok(v.bottom >= GARDEN.vineMinY - 1e-9, `hanging vine ends at ${v.bottom.toFixed(2)} m`);
+  }
+});
+
+test('garden: roots take over the reclaimed corridors and spill out of the planters', () => {
+  const near = (p, list, d) => list.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < d);
+  const reclaimed = layout.corridors.filter((c) => GARDEN.reclaimed.includes(c.id));
+  assert.equal(reclaimed.length, 2);
+  for (const c of reclaimed) {
+    const inIt = (p) => c.pts.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < q.r + 0.4);
+    for (const kind of ['base', 'climb']) assert.ok(garden.roots.some((r) => r.kind === kind && r.pts.some(inIt)), `${c.id} has ${kind} roots`);
+    assert.ok(garden.clumps.some((cl) => cl.corridor === c.id), `${c.id} has leafy clumps`);
+  }
+  assert.ok(garden.roots.some((r) => r.kind === 'door'), 'roots frame the doors');
+  for (const pl of garden.planters) assert.ok(garden.roots.some((r) => r.kind === 'planter' && near(r.pts[0], [pl], 1)), `${pl.id} has roots`);
+  assert.ok(garden.leaves.length > 200, 'leaves along the roots');
+  const grates = grateSpots(layout);
+  const safeCorridors = layout.corridors.filter((c) => ['wellness', 'quiet', 'cryo'].includes(c.id));
+  for (const r of garden.roots) {
+    assert.ok(r.r0 > 0 && r.r1 > 0 && r.pts.length > 3);
+    for (const p of r.pts) {
+      assert.ok(layout.walkDistance(p.x, p.z) >= -0.06, `root inside the station (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`);
+      assert.ok(p.y >= 0 && p.y < 3, 'between floor and ceiling');
+      assert.ok(!layout.isDoor(cellOf(p.x), cellOf(p.z)) || r.kind === 'door', 'not in a doorway');
+      assert.ok(!roomAtPoint(p.x, p.z)?.safe, 'not in a safe room');
+      assert.ok(!safeCorridors.some((c) => c.pts.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < q.r - 0.1)), 'not in a safe corridor');
+      if (r.kind !== 'door') assert.ok(!near(p, grates, GRATE_CLEAR.floor), 'clear of grates');
+    }
+    // Out in the walkway (more than half a metre from a wall), a root lies low enough to step over.
+    for (const p of r.pts) if (layout.walkDistance(p.x, p.z) > 0.5 && p.y < 2) assert.ok(p.y <= GARDEN.floorRootMaxY, `root at ${p.y.toFixed(2)} m in the walkway`);
+  }
+});
+
+test('garden: door roots stay on the frame, outside the opening the door slides through', async () => {
+  const { doorFrames, FRAME } = await import('../js/worldplan.js');
+  for (const r of garden.roots.filter((q) => q.kind === 'door')) {
+    for (const p of r.pts) {
+      const f = doorFrames(layout).reduce((a, b) => (Math.hypot(b.x - p.x, b.z - p.z) < Math.hypot(a.x - p.x, a.z - p.z) ? b : a));
+      const across = (p.x - f.x) * f.across[0] + (p.z - f.z) * f.across[1];
+      const through = Math.abs((p.x - f.x) * f.across[1] + (p.z - f.z) * f.across[0]);
+      assert.ok(through >= FRAME.depth / 2, 'in front of the frame, not inside it');
+      if (p.y < 2.5) assert.ok(across >= f.hi - FRAME.jamb - 0.01 || across <= -(f.lo - FRAME.jamb) + 0.01, 'up a jamb, not across the opening');
+    }
   }
 });
 

@@ -1,9 +1,10 @@
-// Babylon.js plant life from js/gardenplan.js: the corridor planters and the vines. Vines are stacks
-// of leaf cards drawn as thin instances, one draw for the green ones and one for the dying ones.
-// The plants in the planters are downloaded models (js/modelplan.js, js/babylon/models.js).
+// Babylon.js plant life from js/gardenplan.js: the corridor planters, vines trailing from pipes
+// (stacks of leaf cards), and the roots of the reclaimed corridors (tubes, all merged into one mesh)
+// with big leaves sprouting along them (thin instances). The plants in the planters and the
+// reclaimed corridors' clumps are downloaded models (js/modelplan.js, js/babylon/models.js).
 import { GARDEN } from '../gardenplan.js';
 import { housingTexture } from '../textures.js';
-import { vineTexture } from '../gardentextures.js';
+import { vineTexture, barkTexture, bigLeafTexture } from '../gardentextures.js';
 import { pbr, toTexture, bevelBox } from './util.js';
 
 export function buildGarden(scene, garden) {
@@ -27,8 +28,8 @@ export function buildGarden(scene, garden) {
     dirt.parent = g; dirt.position.y = pl.h - 0.03; dirt.material = soil;
   }
 
-  // Vine strands: a card per GARDEN.seg of length, hung from its top edge. On a wall it lies flat;
-  // from a pipe it's two crossed cards. Each card swings a little, so a strand isn't a ruler line.
+  // Vine strands: a card per GARDEN.seg of length, hung from its top edge: two crossed cards.
+  // Each card swings a little, so a strand isn't a ruler line.
   const seg = GARDEN.seg, w = 0.3;
   const mats = [false, true].map((dry) => pbr(scene, { map: toTexture(scene, vineTexture(dry), { anisotropy: 4 }), roughness: 0.75, cutout: true, twoSided: true }));
   const lists = [[], []];
@@ -41,14 +42,12 @@ export function buildGarden(scene, garden) {
       n++;
       const y = v.top - i * seg;
       const sy = Math.min(1, (length - i * seg) / seg);
-      const sway = Math.sin(n * 1.7) * (v.mode === 'wall' ? 0.07 : 0.03);
-      const sx = v.mode === 'wall' ? 0.85 + 0.5 * (0.5 + 0.5 * Math.sin(n * 3.1)) : 1; // wall ivy spreads unevenly
-      const turns = v.mode === 'wall' ? [0] : [0, Math.PI / 2];
-      for (const t of turns) {
+      const sway = Math.sin(n * 1.7) * 0.03;
+      for (const t of [0, Math.PI / 2]) {
         const yaw = v.yaw + t;
         // Side to side along the wall (or round the strand), a touch of roll.
         const ox = Math.cos(yaw) * sway, oz = -Math.sin(yaw) * sway;
-        list.push(Matrix.Compose(new Vector3(sx, sy, 1), Quaternion.RotationYawPitchRoll(yaw, 0, Math.sin(n * 2.3) * 0.1), new Vector3(v.x + ox, y, v.z + oz)));
+        list.push(Matrix.Compose(new Vector3(1, sy, 1), Quaternion.RotationYawPitchRoll(yaw, 0, Math.sin(n * 2.3) * 0.1), new Vector3(v.x + ox, y, v.z + oz)));
       }
     }
   }
@@ -63,4 +62,35 @@ export function buildGarden(scene, garden) {
     card.thinInstanceRefreshBoundingInfo(false);
     card.metadata = { decal: true }; // no shadows from a whole station's worth of cards
   });
+
+  // Roots: a tapering tube along each path, all merged into one mesh. They cast shadows.
+  if (garden.roots?.length) {
+    const barkTex = toTexture(scene, barkTexture(), { anisotropy: 4 });
+    barkTex.uScale = 6; // fibres repeat along each root
+    const bark = pbr(scene, { map: barkTex, color: 0x9a8676, roughness: 0.9 }); // darkened: old roots, not fresh wood
+    const tubes = garden.roots.map((r) => {
+      const path = r.pts.map((p) => new Vector3(p.x, p.y, p.z));
+      const last = path.length - 1;
+      return MeshBuilder.CreateTube('root', { path, tessellation: 8, cap: BABYLON.Mesh.CAP_ALL,
+        radiusFunction: (i) => r.r0 + (r.r1 - r.r0) * (i / last) }, scene);
+    });
+    const roots = BABYLON.Mesh.MergeMeshes(tubes, true, true);
+    if (roots) { roots.name = 'roots'; roots.material = bark; roots.freezeWorldMatrix(); }
+  }
+  // Big leaves along the roots, each on its own stalk at its own angle.
+  if (garden.leaves?.length) {
+    const leafMats = [false, true].map((dry) => pbr(scene, { map: toTexture(scene, bigLeafTexture(dry), { anisotropy: 4 }), roughness: 0.7, cutout: true, twoSided: true }));
+    [false, true].forEach((dry, i) => {
+      const list = garden.leaves.filter((l) => l.dry === dry);
+      if (!list.length) return;
+      const card = MeshBuilder.CreatePlane('root-leaf', { width: 0.26, height: 0.32 }, scene);
+      card.bakeTransformIntoVertices(Matrix.Translation(0, 0.16, 0)); // grows from its stalk
+      card.material = leafMats[i];
+      const buf = new Float32Array(list.length * 16);
+      list.forEach((l, k) => Matrix.Compose(new Vector3(l.s, l.s, l.s), Quaternion.RotationYawPitchRoll(l.yaw, l.pitch, 0), new Vector3(l.x, l.y, l.z)).copyToArray(buf, k * 16));
+      card.thinInstanceSetBuffer('matrix', buf, 16, true);
+      card.thinInstanceRefreshBoundingInfo(false);
+      card.metadata = { decal: true };
+    });
+  }
 }

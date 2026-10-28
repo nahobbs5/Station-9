@@ -171,3 +171,53 @@ export function pegboardTexture() {
     drawEmblem(g, 232, 104, 12, { light: '#3b3a37', accent: '#e8912a' });
   });
 }
+
+// Root bark: dark brown with long fibres running the length of the root (along u), a little
+// moss green in the cracks. Tiles both ways.
+export function barkTexture() {
+  const rand = seeded(83);
+  return makeCanvas(256, 64, (g, w, h) => {
+    g.fillStyle = '#3a2618'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 70; i++) {
+      const y = rand() * h, x = rand() * w, len = 40 + rand() * 160;
+      g.strokeStyle = rand() < 0.5 ? `rgba(110,78,48,${0.3 + rand() * 0.4})` : `rgba(15,9,5,${0.4 + rand() * 0.4})`;
+      g.lineWidth = 1 + rand() * 2.5;
+      g.beginPath(); g.moveTo(x, y);
+      g.bezierCurveTo(x + len * 0.3, y + (rand() - 0.5) * 6, x + len * 0.7, y + (rand() - 0.5) * 6, x + len, y + (rand() - 0.5) * 4);
+      g.stroke();
+      // Wrap round so it tiles along the root.
+      if (x + len > w) { g.save(); g.translate(-w, 0); g.stroke(); g.restore(); }
+    }
+    for (let i = 0; i < 14; i++) { g.fillStyle = `rgba(70,90,40,${0.15 + rand() * 0.2})`; g.beginPath(); g.ellipse(rand() * w, rand() * h, 6 + rand() * 14, 2 + rand() * 3, 0, 0, Math.PI * 2); g.fill(); }
+  }, { wrap: true });
+}
+
+// One broad leaf on its stalk (anthurium / philodendron), base at the bottom middle. dry: brown, curled edges.
+export function bigLeafTexture(dry = false) {
+  const rand = seeded(dry ? 89 : 97);
+  return makeCanvas(128, 160, (g, w, h) => {
+    const colors = dry ? ['#5e4a1e', '#9a7a36', 'rgba(50,30,8,0.5)'] : ['#18321a', '#3a6a2a', 'rgba(170,205,130,0.4)'];
+    g.strokeStyle = dry ? '#5a4420' : '#3c5a22'; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(w / 2, h); g.lineTo(w / 2, h * 0.72); g.stroke(); // the stalk
+    g.save(); g.translate(w / 2, h * 0.74);
+    const grad = g.createLinearGradient(0, 0, 0, -h * 0.72);
+    grad.addColorStop(0, colors[0]); grad.addColorStop(1, colors[1]);
+    g.fillStyle = grad;
+    const L = h * 0.7, W = w * 0.42 * (dry ? 0.8 : 1);
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.bezierCurveTo(-W * 1.15, -L * 0.05, -W * 1.0, -L * 0.75, 0, -L);
+    g.bezierCurveTo(W * 1.0, -L * 0.75, W * 1.15, -L * 0.05, 0, 0);
+    g.fill();
+    // Veins: a midrib and curving side veins.
+    g.strokeStyle = colors[2]; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -L * 0.95); g.stroke();
+    g.lineWidth = 1.2;
+    for (let i = 1; i < 7; i++) {
+      const y = -L * i / 7.5;
+      for (const s of [-1, 1]) { g.beginPath(); g.moveTo(0, y); g.quadraticCurveTo(s * W * 0.5, y - L * 0.04, s * W * 0.85 * Math.sin((i / 7) * Math.PI), y - L * 0.12); g.stroke(); }
+    }
+    if (dry) for (let i = 0; i < 8; i++) { g.fillStyle = 'rgba(40,25,8,0.5)'; g.beginPath(); g.arc((rand() - 0.5) * W * 1.4, -rand() * L, 3 + rand() * 6, 0, Math.PI * 2); g.fill(); }
+    g.restore();
+  });
+}

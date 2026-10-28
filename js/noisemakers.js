@@ -32,7 +32,7 @@ export const PICKUPS = [
   { id: 'nm-crew', type: 'echo', room: 'crew', on: 'messTable', top: 0.775, local: [0.5, -0.2] },
   { id: 'nm-airlock', type: 'echo', room: 'airlock', on: 'bench', top: 0.53, local: [0.56, 0.05] },
   { id: 'nm-comms', type: 'shard', room: 'comms', on: 'cabinet', top: 1.1, local: [0.25, 0] },
-  { id: 'nm-teleporter', type: 'buzz', room: 'teleporter', on: 'cabinet', top: 1.1, local: [0.25, 0] },
+  { id: 'nm-teleporter', type: 'buzz', room: 'teleporter', on: 'teleControl', top: 1.01, local: [0.17, -0.12] }, // on the stand's ledge, beside the buttons
   { id: 'nm-generator', type: 'echo', room: 'generator', on: 'workbench', top: 0.93, local: [-0.55, 0.2] },
 ];
 export const CRATE_CONTENTS = ['shard', 'buzz'];

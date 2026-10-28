@@ -995,8 +995,23 @@ test('teleporter lab: wall pieces clear of the doors, and the room still walkabl
     assert.ok(Math.abs(p.x - (room.x + room.w / 2) * TILE) - p.w / 2 >= 1.1, 'clear of the door');
     assert.ok(layout.isFloor(Math.floor(p.x / TILE), room.y), 'on the straight part of the wall');
   }
-  // The control stand blocks its cell; every open cell is still reachable from the north door.
-  assert.ok(layout.isSolid(24, 9));
+  // The control stand blocks its own cell by the west wall; every open cell is still reachable
+  // from the north door, and you can get round the chamber on either side.
+  assert.ok(layout.isSolid(23, 9));
+  const route = (avoidX) => {
+    const ok = (x, z) => layout.isFloor(x, z) && !layout.isSolid(x, z) && x !== avoidX && layout.roomAt(x, z)?.id === 'teleporter';
+    const seenR = new Set(['25,6']), q = [[25, 6]];
+    while (q.length) {
+      const [x, z] = q.shift();
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const k = (x + dx) + ',' + (z + dz);
+        if (!seenR.has(k) && ok(x + dx, z + dz)) { seenR.add(k); q.push([x + dx, z + dz]); }
+      }
+    }
+    return seenR.has('25,10');
+  };
+  assert.ok(route(26), 'a way round the west side of the chamber');
+  assert.ok(route(24), 'a way round the east side of the chamber');
   assert.ok(!layout.isSolid(...room.spot), "the alien's spot stays open");
   const open = (x, z) => layout.isFloor(x, z) && !layout.isSolid(x, z);
   const seen = new Set(['25,6']), queue = [[25, 6]];

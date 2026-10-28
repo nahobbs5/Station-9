@@ -326,6 +326,7 @@ export function startGame(createView) {
     music.fadeOut(1500);
     intercom.voice = $('voice').checked;
     intercom.name = $('player-name').value;
+    world.setPlayerName(intercom.name);
     tapes.voice = intercom.voice;
     $('start').textContent = 'Loading…';
     lock();

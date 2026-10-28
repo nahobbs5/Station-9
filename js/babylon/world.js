@@ -252,6 +252,7 @@ export function buildWorld(scene, layout) {
   const mugMat = pbr(scene, { map: TWall(mugTexture()), roughness: 0.5 });
   const consoles = [];
   let screenStage = 0; // repairs done, for redrawing the live screens
+  let playerName = ''; // from the title screen; the pod manifest shows it
   // Scanlines and darkened edges over every screen, so they read as old curved CRT glass.
   const crtMat = basic(scene, 0x000000, { opacity: T(crtTexture()) });
   crtMat.disableDepthWrite = true;
@@ -269,7 +270,7 @@ export function buildWorld(scene, layout) {
     part(MeshBuilder.CreateBox('stand', { width: 0.26, height: 0.06, depth: 0.24 }, scene), mon, 0, 0.03, 0, darkMat);
     part(bevelBox('housing', { width: 0.8, height: 0.6, depth: 0.44, bevel: 0.045 }, scene), mon, 0, 0.36, 0, housingMat);
     const screenZ = 0.222;
-    const canvas = consoleScreen(p.screen, { stage: 0, layout });
+    const canvas = consoleScreen(p.screen, { stage: 0, layout, name: playerName });
     const tex = TWall(canvas);
     const screen = part(MeshBuilder.CreatePlane('screen', { width: 0.62, height: 0.39 }, scene), mon, 0, 0.38, screenZ, basic(scene, 0, { map: tex }));
     screen.rotation.y = Math.PI; // Babylon planes face -Z; turn it to face out of the monitor
@@ -722,8 +723,15 @@ export function buildWorld(scene, layout) {
       screenStage = stage;
       for (const c of consoles) {
         if (!c.live) continue;
-        redraw(c.tex, consoleScreen(c.p.screen, { stage, layout }), { mirror: true });
+        redraw(c.tex, consoleScreen(c.p.screen, { stage, layout, name: playerName }), { mirror: true });
         c.flicker = 0.6;
+      }
+    },
+    // Your name from the title screen: redraw the pod manifest, which lists you as not on it.
+    setPlayerName(name) {
+      playerName = name;
+      for (const c of consoles) {
+        if (c.p.screen === 'manifest') redraw(c.tex, consoleScreen(c.p.screen, { stage: c.live ? screenStage : 0, layout, name }), { mirror: true });
       }
     },
     // A console's screen, for the screen apparitions (js/babylon/screens.js), by prop id.
@@ -733,7 +741,7 @@ export function buildWorld(scene, layout) {
       const c = consoles.find((q) => q.p.id === id);
       return c && {
         texture: c.tex,
-        normal: () => consoleScreen(c.p.screen, { stage: c.live ? screenStage : 0, layout }),
+        normal: () => consoleScreen(c.p.screen, { stage: c.live ? screenStage : 0, layout, name: playerName }),
         lit: (on) => c.glow.setEnabled(on || c.p.screen !== 'off'),
       };
     },

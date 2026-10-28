@@ -637,7 +637,7 @@ export function consoleScreen(kind, state = {}) {
       text('Seats ................ 4', 30, 104, { size: 15 });
       text('Passengers ........... 0 / 4', 30, 130, { size: 15 });
       text('— none listed —', 30, 170, { size: 15, color: C.dim });
-      text('Technician: NOT ON LIST', 30, 210, { size: 15, color: C.red });
+      text(`${state.name?.trim() || 'Technician'}: NOT ON LIST`, 30, 210, { size: 15, color: C.red });
       text('Your labor is our freedom.', 30, 292, { size: 13, color: C.marigold });
     }
     // Scan lines.

@@ -133,11 +133,11 @@ export const FURNITURE = [
   // Control Room: a plant beside the west door.
   { kind: 'plant', room: 'control', cell: [12, 2], model: 'anthurium', variant: 'b', scale: 1.1 },
   // Teleporter Lab.
-  { kind: 'cabinet', room: 'teleporter', cell: [23, 9], solid: true },
   { kind: 'plant', room: 'teleporter', cell: [27, 8], model: 'calathea', variant: 'a', scale: 1.25, wilt: 0.7 },
-  // The teleporter control stand (Teleporter Chamber sheet). It faces east, onto open floor beside
-  // the chamber (the chamber's own cell is solid, so no one could stand in front of it there).
-  { kind: 'teleControl', room: 'teleporter', cell: [24, 9], solid: true, rot: Math.PI / 2 },
+  // The teleporter control stand (Teleporter Chamber sheet), against the west wall facing east onto
+  // the chamber. It stands in the wall cell, so the floor round both sides of the chamber stays open:
+  // there are two ways past it, west and east (something to run round when the alien's coming).
+  { kind: 'teleControl', room: 'teleporter', cell: [23, 9], solid: true, rot: Math.PI / 2 },
   // Escape Pod Bay (doors on its north and south walls; the pod lies across the middle).
   { kind: 'bench', room: 'pod', cell: [2, 14], solid: true },
   { kind: 'lockers', room: 'pod', cell: [5, 14], solid: true },

@@ -4,12 +4,13 @@ import { TILE, WALL_H, cellCenter, key } from '../layout.js';
 import {
   wallTexture, floorTextures, ceilingTexture, doorTexture, mapTexture, wallSpot,
   consoleScreen, LIVE_SCREENS, keyboardTexture, stickyNote, mugTexture, housingTexture, hazardTexture, crtTexture,
-  tapeBanner, tapeDeckTexture,
+  tapeBanner, tapeDeckTexture, teleporterFloorTexture, teleporterRingDecal, teleporterSignTexture,
+  safetyProtocolTexture, restrictedTexture,
   commsCallScreen, reactorPlateTexture, switchPanelTexture, SWITCH_GROUPS,
 } from '../textures.js';
 import {
   wallPanels, guideStrips, propPlacement, propHeight, posterPlacements, WALL_MAP, EMBLEM, looseItems,
-  stepDoor, roomLightLevel, teleporterLevel, roomState, roomBase, doorFrames, FRAME, kickPlateSpans, generatorFixtures,
+  stepDoor, roomLightLevel, teleporterLevel, roomState, roomBase, doorFrames, FRAME, kickPlateSpans, generatorFixtures, teleporterFixtures,
 } from '../worldplan.js';
 import { buildDecor } from './decor.js';
 import { furnitureKit, buildFurniture } from './furniture.js';
@@ -395,20 +396,72 @@ export function buildWorld(scene, layout) {
       statusMat.emissiveColor = srgb(UNREAD);
       if (p.kind === 'log') tapeTerminals.push({ id: p.id, statusMat, banner: c.banner, played: false });
     } else if (p.id === 'teleporter') {
-      add(MeshBuilder.CreateCylinder('pad', { diameterTop: 2.0, diameterBottom: 2.2, height: 0.2, tessellation: 24 }, scene), 0, 0.1, 0).material = pbr(scene, { color: 0x3a4248, metalness: 0.8, roughness: 0.3 });
-      // The ring stands upright like a gate and slowly turns.
+      // The chamber (Teleporter Chamber sheet): a grated platform with glowing rings, four pillars
+      // with orange bands and light strips, an overhead housing with a slowly turning inner ring,
+      // and cables up into the ceiling. North and south stay open, toward the doors.
+      const steel = pbr(scene, { color: 0x7d8286, roughness: 0.35, metalness: 0.85, surface: 'painted', bump: 0.4 });
+      const darkSteel = pbr(scene, { color: 0x2a2e31, roughness: 0.45, metalness: 0.8 });
+      const orange = pbr(scene, { color: 0xc8641e, roughness: 0.55, metalness: 0.2 });
+      const glowWhite = basic(scene, 0xeef6ff);
+      const warmStrip = basic(scene, 0xffe2b8);
+      const rubber = pbr(scene, { color: 0x151617, roughness: 0.8 });
+      add(MeshBuilder.CreateCylinder('tp-base', { diameter: 2.7, height: 0.16, tessellation: 48 }, scene), 0, 0.08, 0).material = darkSteel;
+      add(MeshBuilder.CreateTorus('tp-step', { diameter: 2.72, thickness: 0.06, tessellation: 48 }, scene), 0, 0.16, 0).material = steel;
+      const deck = add(MeshBuilder.CreateDisc('tp-deck', { radius: 1.3, tessellation: 48 }, scene), 0, 0.162, 0);
+      deck.rotation.x = Math.PI / 2;
+      deck.material = pbr(scene, { map: T(teleporterFloorTexture()), roughness: 0.4, metalness: 0.7 });
+      for (const d of [2.45, 1.5]) add(MeshBuilder.CreateTorus('tp-ring-light', { diameter: d, thickness: 0.035, tessellation: 64 }, scene), 0, 0.17, 0).material = glowWhite;
+      // Pillars at +-30 degrees off east-west, each with orange bands and a light strip facing in.
+      for (const deg of [30, 150, 210, 330]) {
+        const a = (deg * Math.PI) / 180, r = 1.15;
+        const pillar = node('tp-pillar', group);
+        pillar.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+        pillar.rotation.y = Math.atan2(-Math.cos(a), -Math.sin(a)); // its +z faces the middle
+        const col = bevelBox('tp-column', { width: 0.22, height: 2.5, depth: 0.22, bevel: 0.03 }, scene);
+        col.parent = pillar; col.position.y = 0.16 + 1.25; col.material = steel;
+        for (const y of [0.9, 2.2]) { const b = MeshBuilder.CreateBox('tp-band', { width: 0.235, height: 0.12, depth: 0.235 }, scene); b.parent = pillar; b.position.y = y; b.material = orange; }
+        const strip = MeshBuilder.CreateBox('tp-strip', { width: 0.05, height: 1.6, depth: 0.02 }, scene);
+        strip.parent = pillar; strip.position.set(0, 1.45, 0.115); strip.material = warmStrip;
+      }
+      // Overhead: the housing, a glowing ring under it, and the inner ring that turns.
+      add(MeshBuilder.CreateCylinder('tp-housing', { diameter: 2.9, height: 0.24, tessellation: 48 }, scene), 0, 2.78, 0).material = darkSteel;
+      add(MeshBuilder.CreateTorus('tp-collar', { diameter: 2.6, thickness: 0.16, tessellation: 48 }, scene), 0, 2.66, 0).material = steel;
+      add(MeshBuilder.CreateTorus('tp-top-light', { diameter: 2.25, thickness: 0.04, tessellation: 64 }, scene), 0, 2.6, 0).material = glowWhite;
       const spin = node('ring-spin', group);
-      spin.position.y = 1.3;
-      const ring = MeshBuilder.CreateTorus('ring', { diameter: 1.9, thickness: 0.18, tessellation: 32 }, scene);
-      ring.parent = spin;
-      ring.rotation.x = Math.PI / 2;
-      ring.material = pbr(scene, { color: 0x8aa4b8, metalness: 0.9, roughness: 0.25 });
-      add(MeshBuilder.CreateSphere('core', { diameter: 0.24, segments: 8 }, scene), 0, 1.3, 0).material = basic(scene, 0x9fd0ff);
-      const light = pointLight(0x5aa0ff, 6, 11, [0, 0, 0]);
+      spin.position.y = 2.5;
+      const inner = MeshBuilder.CreateTorus('tp-inner', { diameter: 1.7, thickness: 0.07, tessellation: 48 }, scene);
+      inner.parent = spin; inner.material = steel;
+      for (let k = 0; k < 6; k++) { // little clamps, so you can see it turning
+        const c = MeshBuilder.CreateBox('tp-clamp', { width: 0.12, height: 0.1, depth: 0.08 }, scene);
+        c.parent = spin; const a = (k / 6) * Math.PI * 2; c.position.set(Math.cos(a) * 0.85, 0, Math.sin(a) * 0.85); c.rotation.y = -a; c.material = orange;
+      }
+      // Cables sagging from the housing's edge up into the ceiling.
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * Math.PI * 2 + 0.3, r0 = 1.25, r1 = 1.75 + (k % 2) * 0.3;
+        const path = [];
+        for (let i = 0; i <= 10; i++) {
+          const t = i / 10, r = r0 + (r1 - r0) * t;
+          path.push(new Vector3(Math.cos(a + t * 0.25) * r, 2.86 + (WALL_H - 2.86) * t - Math.sin(t * Math.PI) * 0.3, Math.sin(a + t * 0.25) * r));
+        }
+        add(MeshBuilder.CreateTube('tp-cable', { path, radius: 0.035, tessellation: 8 }, scene), 0, 0, 0).material = rubber;
+      }
+      // A faint column of light inside the pillars; it wavers with the glow.
+      const column = add(MeshBuilder.CreateCylinder('tp-column-glow', { diameter: 1.9, height: 2.3, tessellation: 32, cap: BABYLON.Mesh.NO_CAP }, scene), 0, 1.35, 0);
+      column.material = basic(scene, 0xcfe6ff, { additive: true, alpha: 0.05 });
+      column.material.backFaceCulling = false;
+      column.material.disableDepthWrite = true;
+      // STAND WITHIN RINGS, painted on the floor round it.
+      const band = add(MeshBuilder.CreateGround('tp-floor-band', { width: 5, height: 5 }, scene), 0, 0.014, 0);
+      // Mirrored: a ground plane seen from above shows its canvas flipped, which would reverse the words.
+      const bandTex = toTexture(scene, teleporterRingDecal(), { anisotropy: 4, mirror: true }); bandTex.hasAlpha = true;
+      band.material = pbr(scene, { map: bandTex, roughness: 0.7, transparent: true, zOffset: -2 });
+      band.metadata = { decal: true };
+      const light = pointLight(0xd8ecff, 6, 11, [0, 0, 0]);
       light.parent = group;
       light.position.set(0, 1.4, 0);
       props.teleporterLight = light;
       props.teleporterRing = spin;
+      props.teleporterGlow = column.material;
       props.teleporter = group;
     }
     if (p.kind === 'console') {
@@ -554,6 +607,27 @@ export function buildWorld(scene, layout) {
     sign.material = pbr(scene, { map: tex, roughness: 0.6, metalness: 0.2 });
   }
 
+  // The Teleporter Lab's wall pieces (worldplan.js teleporterFixtures): the painted TELEPORTER sign,
+  // the safety protocol panel, and RESTRICTED ACCESS on both door headers.
+  {
+    const tf = teleporterFixtures(layout);
+    const wallPiece = (f, mat, name) => {
+      const n = node(name);
+      n.position.set(f.x, f.y, f.z);
+      n.rotation.y = f.rot;
+      const m = MeshBuilder.CreatePlane(name, { width: f.w, height: f.h }, scene);
+      m.parent = n; m.position.z = 0.006; m.rotation.y = Math.PI; m.material = mat;
+      m.metadata = { decal: true };
+      return m;
+    };
+    const signTex = TWall(teleporterSignTexture()); signTex.hasAlpha = true;
+    wallPiece(tf.sign, pbr(scene, { map: signTex, roughness: 0.8, transparent: true, zOffset: -2 }), 'tp-sign');
+    wallPiece(tf.protocol, pbr(scene, { map: TWall(safetyProtocolTexture()), roughness: 0.7 }), 'tp-protocol');
+    const restricted = pbr(scene, { map: TWall(restrictedTexture()), roughness: 0.6, metalness: 0.3 });
+    wallPiece(tf.restrictedN, restricted, 'tp-restricted');
+    wallPiece(tf.restrictedS, restricted, 'tp-restricted');
+  }
+
   // Per-frame animation -----------------------------------------------------
   function update(dt, time, alien = null, player = null) {
     decor.update(dt, time, player);
@@ -588,8 +662,10 @@ export function buildWorld(scene, layout) {
       props.genGlow.mat.emissiveColor = srgb(0xff7a1c).scale(0.35 + 0.65 * k);
     }
     if (props.teleporterLight) {
-      props.teleporterLight.intensity = teleporterLevel(time) * TUNING.light;
+      const tl = teleporterLevel(time);
+      props.teleporterLight.intensity = tl * TUNING.light;
       props.teleporterRing.rotation.y += dt * 0.4;
+      props.teleporterGlow.alpha = 0.005 * tl; // the light column wavers with it
     }
   }
 

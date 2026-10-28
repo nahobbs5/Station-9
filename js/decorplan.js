@@ -4,7 +4,7 @@
 // traced wall outline (js/walls.js), so it hangs flat on angled and curved walls too.
 import { TILE, WALL_H, cellCenter, cellOf } from './layout.js';
 import { wallSegments } from './walls.js';
-import { furniturePlacement, signPlacements, windowPlacements, wallAlong, doorFrames, FRAME, EMBLEM, generatorFixtures, posterPlacements, nearPod, podCell } from './worldplan.js';
+import { furniturePlacement, signPlacements, windowPlacements, wallAlong, doorFrames, FRAME, EMBLEM, generatorFixtures, posterPlacements, teleporterFixtures, nearPod, podCell } from './worldplan.js';
 import { grateSpots } from './vents.js';
 
 // Densities and counts, all in one place for tuning.
@@ -157,6 +157,7 @@ export function planDecor(layout, seed = 1234) {
     ...signPlacements(L), ...windowPlacements(L),
     ...Object.values(generatorFixtures(L)),
     ...posterPlacements(L),
+    ...Object.values(teleporterFixtures(L)),
   ];
 
   // Structural ribs across the corridors every few metres, the station's frame showing through:

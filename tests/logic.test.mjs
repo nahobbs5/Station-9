@@ -961,7 +961,7 @@ test('posters: every one has its art, hangs in a normal room, clear of doors and
   const { posterPlacements, POSTER_ART } = await import('../js/worldplan.js');
   const layout = buildLayout();
   const all = posterPlacements(layout);
-  assert.equal(all.length, 17);
+  assert.equal(all.length, 18);
   for (const p of all) {
     assert.ok(POSTER_ART[p.id], `${p.id} has an aspect`);
     assert.ok(existsSync(new URL(`../assets/posters/${p.id}.jpg`, import.meta.url)), `${p.id}.jpg exists`);
@@ -979,5 +979,33 @@ test('posters: every one has its art, hangs in a normal room, clear of doors and
   for (const a of all) for (const b of all) {
     if (a === b || a.rot !== b.rot) continue;
     assert.ok(Math.hypot(a.x - b.x, a.z - b.z) >= (a.w + b.w) / 2, `${a.id} and ${b.id} don't overlap`);
+  }
+});
+
+test('teleporter lab: wall pieces clear of the doors, and the room still walkable round the control stand', async () => {
+  const { teleporterFixtures } = await import('../js/worldplan.js');
+  const layout = buildLayout();
+  const room = layout.room('teleporter');
+  const f = teleporterFixtures(layout);
+  // The sign and protocol hang on the north wall, either side of the door, clear of its frame.
+  for (const p of [f.sign, f.protocol]) {
+    assert.ok(Math.abs(p.z - room.y * TILE) < 0.05, 'on the north wall');
+    assert.ok(Math.abs(p.x - (room.x + room.w / 2) * TILE) - p.w / 2 >= 1.1, 'clear of the door');
+    assert.ok(layout.isFloor(Math.floor(p.x / TILE), room.y), 'on the straight part of the wall');
+  }
+  // The control stand blocks its cell; every open cell is still reachable from the north door.
+  assert.ok(layout.isSolid(24, 9));
+  assert.ok(!layout.isSolid(...room.spot), "the alien's spot stays open");
+  const open = (x, z) => layout.isFloor(x, z) && !layout.isSolid(x, z);
+  const seen = new Set(['25,6']), queue = [[25, 6]];
+  while (queue.length) {
+    const [x, z] = queue.shift();
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, nz = z + dz, k = nx + ',' + nz;
+      if (!seen.has(k) && open(nx, nz) && layout.roomAt(nx, nz)?.id === 'teleporter') { seen.add(k); queue.push([nx, nz]); }
+    }
+  }
+  for (let x = room.x; x < room.x + room.w; x++) for (let z = room.y; z < room.y + room.h; z++) {
+    if (open(x, z)) assert.ok(seen.has(x + ',' + z), `${x},${z} reachable`);
   }
 });

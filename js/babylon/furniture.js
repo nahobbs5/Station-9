@@ -4,7 +4,7 @@
 import { furniturePlacement, extraSeats, windowPlacements, signPlacements } from '../worldplan.js';
 import {
   housingTexture, leatherTexture, lockerTexture, drawerTexture, crateTexture, medkitTexture,
-  signTexture, windowTexture, blanketTexture, leafTexture, mugTexture,
+  signTexture, windowTexture, blanketTexture, leafTexture, mugTexture, teleControlScreen,
 } from '../textures.js';
 import { pbr, basic, toTexture, bevelBox } from './util.js';
 
@@ -33,6 +33,7 @@ export function furnitureKit(scene) {
   M.locker = front(lockerTexture());
   M.drawers3 = front(drawerTexture(3));
   M.drawers2 = front(drawerTexture(2));
+  const teleScreenMat = basic(scene, 0, { map: T(teleControlScreen(), { mirror: true }) });
   const leafMat = pbr(scene, { map: T(leafTexture()), roughness: 0.8, transparent: true, twoSided: true });
 
   const node = (parent) => { const n = new TransformNode('furniture', scene); if (parent) n.parent = parent; return n; };
@@ -122,6 +123,18 @@ export function furnitureKit(scene) {
       for (const x of [-0.2, -0.12, -0.04]) box(g, 0.07, 0.3, 0.24, x, 0.92, -0.25, x < -0.1 ? M.dark : M.yellow); // binders
       box(g, 0.3, 0.01, 0.22, 0.2, 0.77, 0.05, M.paper);
       mugOn(g, 0.55, 0.765, 0.1);
+    },
+    // The teleporter control stand (Teleporter Chamber sheet): a pedestal with an angled screen head.
+    teleControl(g) {
+      box(g, 0.5, 0.95, 0.42, 0, 0.475, -0.02, M.cream);
+      box(g, 0.56, 0.06, 0.48, 0, 0.98, -0.02, M.dark);
+      box(g, 0.3, 0.04, 0.08, -0.08, 1.02, 0.14, M.dark); // the button strip
+      box(g, 0.06, 0.03, 0.05, 0.14, 1.02, 0.14, M.yellow);
+      const head = node(g);
+      head.position.set(0, 1.28, -0.06);
+      head.rotation.x = -0.42; // leans back toward whoever stands at it
+      box(head, 0.74, 0.5, 0.1, 0, 0, 0, M.cream);
+      plane(head, 0.64, 0.4, 0, 0, 0.052, teleScreenMat);
     },
     cabinet(g) {
       box(g, 0.9, 1.1, 0.55, 0, 0.55, 0, M.cream);

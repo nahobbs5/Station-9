@@ -9,21 +9,21 @@ import { inSuite } from './suiteplan.js';
 import { propPlacement } from './worldplan.js';
 
 // Keys are 'screen-<art>'. life: seconds (the board says 0.5-3; at least 2, so you can see them). weight: how likely it's picked
-// when a monitor is in view (low, so screens stay rarer than the field-guide nine and keep surprising you).
+// when a monitor is in view (the cooldowns in js/apparitions.js APPARITION keep them from crowding in).
 export const SCREEN_KINDS = {
-  'screen-hatman':     { art: 'hatman',     life: 2.2, weight: 0.175 },
-  'screen-gasmask':    { art: 'gasmask',    life: 2.6, weight: 0.2, sound: 'breath', volume: 0.3 },
-  'screen-patient':    { art: 'patient',    life: 2.6, weight: 0.2 },
-  'screen-astronaut':  { art: 'astronaut',  life: 2.0, weight: 0.175 },
-  'screen-child':      { art: 'child',      life: 2.0, weight: 0.125 },
-  'screen-reflection': { art: 'reflection', life: 2.0, weight: 0.15 },
-  'screen-shadow':     { art: 'shadow',     life: 2.0, weight: 0.175 },
-  'screen-hanging':    { art: 'hanging',    life: 2.0, weight: 0.15 },
-  'screen-crew':       { art: 'crew',       life: 3.0, weight: 0.2 },
-  'screen-message':    { art: 'message',    life: 2.6, weight: 0.175 },
-  'screen-empty':      { art: 'empty',      life: 3.0, weight: 0.15 },
-  'screen-alien':      { art: 'alien',      life: 2.0, weight: 0.075 },
-  'screen-face':       { art: 'feed-peak',  life: 2.2, weight: 0.125 }, // the board's "Apparition Peak" face
+  'screen-hatman':     { art: 'hatman',     life: 2.2, weight: 0.35 },
+  'screen-gasmask':    { art: 'gasmask',    life: 2.6, weight: 0.4, sound: 'breath', volume: 0.3 },
+  'screen-patient':    { art: 'patient',    life: 2.6, weight: 0.4 },
+  'screen-astronaut':  { art: 'astronaut',  life: 2.0, weight: 0.35 },
+  'screen-child':      { art: 'child',      life: 2.0, weight: 0.25 },
+  'screen-reflection': { art: 'reflection', life: 2.0, weight: 0.3 },
+  'screen-shadow':     { art: 'shadow',     life: 2.0, weight: 0.35 },
+  'screen-hanging':    { art: 'hanging',    life: 2.0, weight: 0.3 },
+  'screen-crew':       { art: 'crew',       life: 3.0, weight: 0.4 },
+  'screen-message':    { art: 'message',    life: 2.6, weight: 0.35 },
+  'screen-empty':      { art: 'empty',      life: 3.0, weight: 0.3 },
+  'screen-alien':      { art: 'alien',      life: 2.0, weight: 0.15 },
+  'screen-face':       { art: 'feed-peak',  life: 2.2, weight: 0.25 }, // the board's "Apparition Peak" face
 };
 export const SCREEN_IDS = Object.keys(SCREEN_KINDS);
 // The rare one: every terminal in the room you're in goes off at once, all showing the same
@@ -36,7 +36,7 @@ export const SCREEN_ARTS = [...new Set([...SCREEN_IDS.map((id) => SCREEN_KINDS[i
 
 export const SCREEN = {
   near: 2,      // metres: closer than this and it's too obvious
-  far: 9,       // metres: further and you'd miss it
+  far: 12,      // metres: further and you'd miss it
   viewCos: Math.cos((35 * Math.PI) / 180), // within 35 degrees of where you look
   tooClose: 1.5, // walk up to it and it's gone ("may vanish when you look closer")
   // The board's Static & Flicker Rules, as fractions of the life.

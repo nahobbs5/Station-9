@@ -117,6 +117,9 @@ export const FURNITURE = [
   // Teleporter Lab.
   { kind: 'cabinet', room: 'teleporter', cell: [23, 9], solid: true },
   { kind: 'plant', room: 'teleporter', cell: [27, 8] },
+  // The teleporter control stand (Teleporter Chamber sheet). It faces east, onto open floor beside
+  // the chamber (the chamber's own cell is solid, so no one could stand in front of it there).
+  { kind: 'teleControl', room: 'teleporter', cell: [24, 9], solid: true, rot: Math.PI / 2 },
   // Escape Pod Bay (doors on its north and south walls; the pod lies across the middle).
   { kind: 'bench', room: 'pod', cell: [2, 14], solid: true },
   { kind: 'lockers', room: 'pod', cell: [5, 14], solid: true },

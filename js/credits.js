@@ -2,6 +2,8 @@
 export const CREDITS = [
   { group: 'Music', title: 'Dark Suspense Thriller (main theme)', credit: 'Alex Morgan via Pixabay',
     file: 'music/alex-morgan-dark-suspense-thriller-528314.mp3', use: 'Title screen' },
+  { group: 'Music', title: 'Spaceship (safe rooms)', credit: 'The Mountain via Pixabay',
+    file: 'music/the_mountain-spaceship-155569.mp3', use: 'Wellness and Quiet rooms' },
   { group: 'Music', title: 'Suspense Tension (ending theme)', credit: 'sub_clair via Pixabay',
     file: 'music/sub_clair-suspense-tension-622546.mp3', use: 'Escape and credits' },
   { group: 'Sound effects', title: 'Failing Reactor Hum', credit: 'Original sound design',

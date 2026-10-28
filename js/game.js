@@ -4,7 +4,7 @@ import { buildLayout, cellOf, cellCenter, lineClear, REPAIRS } from './layout.js
 import { createNoiseBus, heardLoudness, LOUDNESS, REPAIR, forcing, carryHeard } from './noise.js';
 import { Alien, inSight } from './alien.js';
 import { Player } from './player.js';
-import { GameAudio, Music, MENU_MUSIC, END_MUSIC } from './audio.js';
+import { GameAudio, Music, MENU_MUSIC, END_MUSIC, SAFE_MUSIC } from './audio.js';
 import { renderCredits } from './credits.js';
 import { findTarget, Throwables } from './interact.js';
 import { Tricks } from './tricks.js';
@@ -230,12 +230,14 @@ export function startGame(createView) {
       state = 'playing';
       $('pause').hidden = true;
       audio.resume();
+      if (suiteNow) safeMusic.fadeIn(500);
     } else if (!locked && state === 'playing') {
       state = 'paused';
       $('pause').hidden = false;
       eHeld = false;
       player.keys.clear();
       audio.suspend();
+      safeMusic.fade++; safeMusic.el.pause(); // picks up again on resume
       if ('speechSynthesis' in window) speechSynthesis.pause();
       tapes.pause();
     }
@@ -247,6 +249,7 @@ export function startGame(createView) {
   // click here starts the title theme and reveals the main menu.
   const music = new Music(MENU_MUSIC);
   const endMusic = new Music(END_MUSIC);
+  const safeMusic = new Music(SAFE_MUSIC, { volume: 0.4 }); // plays in the wellness suites (the safe rooms)
   const leaveSplash = () => {
     if ($('splash').hidden) return;
     $('splash').hidden = true;
@@ -507,6 +510,7 @@ export function startGame(createView) {
 
   function caught() {
     state = 'caught';
+    safeMusic.fadeOut(1000);
     player.lookAt(alien.pos.x, alien.pos.z);
     audio.play2D('teleporter', { volume: 1.5, rate: 1.6, duration: 2.5 });
     audio.play2D('clicks', { volume: 1.5, rate: 1.8, duration: 2 });
@@ -526,6 +530,7 @@ export function startGame(createView) {
 
   function win() {
     state = 'won';
+    safeMusic.fadeOut(1000);
     audio.silenceAlien(); // nothing of it in the ending
     world.launchPod?.(); // the door shuts, the thrusters flare
     const allLore = loreRead.size === LORE_TOTAL;
@@ -668,6 +673,7 @@ export function startGame(createView) {
       if (suiteNow && !suite) intercom.queue = intercom.queue.filter((l) => !l.suite);
       suiteNow = suite;
       audio.setInSuite(suite !== null); // nothing of the alien in here, and the station muffled
+      if (suite) safeMusic.fadeIn(2000); else safeMusic.fadeOut(1500);
       if (suite) {
         exposureK = 0.6;
         saidGraffiti = false;

@@ -718,6 +718,154 @@ export function tapeDeckTexture() {
   });
 }
 
+// The Teleporter Chamber (reference files/Station 9 Teleporter Chamber.png) ------------------------
+// The platform's grated top: a dark disc of concentric rings and spokes, seen from above.
+export function teleporterFloorTexture() {
+  return makeCanvas(512, 512, (g, w, h) => {
+    const c = w / 2;
+    g.fillStyle = '#1a1d1f'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#4a5054'; g.lineWidth = 3;
+    for (let r = 30; r < c; r += 22) { g.beginPath(); g.arc(c, c, r, 0, Math.PI * 2); g.stroke(); }
+    g.lineWidth = 4;
+    for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * Math.PI * 2;
+      g.beginPath(); g.moveTo(c + Math.cos(a) * 30, c + Math.sin(a) * 30); g.lineTo(c + Math.cos(a) * c, c + Math.sin(a) * c); g.stroke();
+    }
+    g.fillStyle = '#2c3134'; g.beginPath(); g.arc(c, c, 30, 0, Math.PI * 2); g.fill(); // the hub
+    const shine = g.createRadialGradient(c, c, 0, c, c, c);
+    shine.addColorStop(0, 'rgba(200,225,255,0.18)'); shine.addColorStop(1, 'rgba(200,225,255,0)');
+    g.fillStyle = shine; g.fillRect(0, 0, w, h);
+  });
+}
+
+// The floor band round the chamber, 5 x 5 m on a transparent canvas: orange-red, with a white
+// edge and STAND WITHIN RINGS written round it twice, each with an arrow.
+export function teleporterRingDecal() {
+  return makeCanvas(1024, 1024, (g, w) => {
+    const c = w / 2, px = w / 5; // pixels per metre
+    const r0 = 1.65 * px, r1 = 2.2 * px;
+    g.clearRect(0, 0, w, w);
+    g.fillStyle = 'rgba(176,58,34,0.85)';
+    g.beginPath(); g.arc(c, c, r1, 0, Math.PI * 2); g.arc(c, c, r0, 0, Math.PI * 2, true); g.fill();
+    g.strokeStyle = 'rgba(230,226,214,0.8)'; g.lineWidth = 6;
+    g.beginPath(); g.arc(c, c, r1 + 10, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.arc(c, c, r0 - 8, 0, Math.PI * 2); g.stroke();
+    // Worn paint: small chips back to the floor.
+    const rand = seeded(907);
+    g.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < 260; i++) {
+      const a = rand() * Math.PI * 2, r = r0 + rand() * (r1 - r0);
+      g.beginPath(); g.arc(c + Math.cos(a) * r, c + Math.sin(a) * r, 1 + rand() * 4, 0, Math.PI * 2); g.fill();
+    }
+    g.globalCompositeOperation = 'source-over';
+    // The words, letter by letter round the arc, tops toward the middle so they read from outside,
+    // and an arrow after each pointing on round.
+    const rm = (r0 + r1) / 2, text = 'STAND WITHIN RINGS';
+    g.fillStyle = 'rgba(240,236,224,0.92)'; g.font = `600 44px ${HEAD}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (const start of [-Math.PI * 0.9, Math.PI * 0.1]) {
+      let a = start;
+      for (const ch of text) {
+        const cw = g.measureText(ch).width + 4;
+        a -= cw / 2 / rm;
+        g.save(); g.translate(c + Math.cos(a) * rm, c + Math.sin(a) * rm); g.rotate(a - Math.PI / 2); g.fillText(ch, 0, 0); g.restore();
+        a -= cw / 2 / rm;
+      }
+      a -= 0.12;
+      g.save(); g.translate(c + Math.cos(a) * rm, c + Math.sin(a) * rm); g.rotate(a - Math.PI / 2);
+      g.fillRect(-26, -6, 34, 12);
+      g.beginPath(); g.moveTo(8, -18); g.lineTo(30, 0); g.lineTo(8, 18); g.closePath(); g.fill();
+      g.restore();
+    }
+  });
+}
+
+// TELEPORTER / STATION 9 with the emblem, painted straight onto the wall (transparent canvas).
+export function teleporterSignTexture() {
+  return makeCanvas(520, 400, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    drawEmblem(g, w / 2, 120, 92, { light: '#2c2c2a', accent: '#c8641e' });
+    g.fillStyle = '#2c2c2a'; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+    g.font = `600 74px ${HEAD}`; g.fillText('TELEPORTER', w / 2, 310);
+    g.font = `500 40px ${HEAD}`; g.fillText('S T A T I O N   9', w / 2, 368);
+  });
+}
+
+// The safety protocol panel: a cream plate, five numbered steps, orange hazard stripes along the foot.
+export function safetyProtocolTexture() {
+  return makeCanvas(440, 400, (g, w, h) => {
+    g.fillStyle = '#d9d2c0'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(40,40,38,0.5)'; g.lineWidth = 4; g.strokeRect(6, 6, w - 12, h - 12);
+    g.fillStyle = '#2c2c2a'; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+    g.font = `600 36px ${HEAD}`; g.fillText('SAFETY PROTOCOL', 30, 60);
+    g.fillRect(30, 72, 300, 3);
+    ['CLEAR AREA', 'SCAN', 'CONFIRM', 'STAND WITHIN RINGS', 'AWAIT TRANSFER'].forEach((t, i) => {
+      g.font = `600 26px ${HEAD}`; g.fillText(String(i + 1), 32, 118 + i * 40);
+      g.font = `500 24px ${HEAD}`; g.fillText(t, 62, 118 + i * 40);
+    });
+    g.save(); g.beginPath(); g.rect(0, h - 64, w, 64); g.clip();
+    g.fillStyle = '#d9d2c0'; g.fillRect(0, h - 64, w, 64);
+    g.fillStyle = '#c8641e';
+    for (let x = -60; x < w + 60; x += 56) { g.beginPath(); g.moveTo(x, h); g.lineTo(x + 28, h); g.lineTo(x + 68, h - 64); g.lineTo(x + 40, h - 64); g.closePath(); g.fill(); }
+    g.restore();
+    const rand = seeded(311);
+    for (let i = 0; i < 140; i++) { g.fillStyle = `rgba(50,40,28,${0.15 + rand() * 0.3})`; g.fillRect(rand() * w, rand() * h, 1 + rand() * 2, 1 + rand() * 2); }
+  });
+}
+
+// RESTRICTED ACCESS, on a dark plate for the door headers.
+export function restrictedTexture() {
+  return makeCanvas(512, 72, (g, w, h) => {
+    g.fillStyle = '#2b2e30'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#c8641e'; g.lineWidth = 3; g.strokeRect(4, 4, w - 8, h - 8);
+    g.fillStyle = '#e4ddc9'; g.font = `600 40px ${HEAD}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('RESTRICTED  ACCESS', w / 2, h / 2 + 2);
+  });
+}
+
+// The teleporter control stand's screen: a body scan, its checks, and an INITIATE button.
+export function teleControlScreen() {
+  return makeCanvas(512, 320, (g, w, h) => {
+    const teal = '#8fe0cf', dim = '#5d8a82', orange = '#f08a3c';
+    g.fillStyle = '#0d1516'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(143,224,207,0.25)'; g.lineWidth = 2; g.strokeRect(8, 8, w - 16, h - 16);
+    drawEmblem(g, 52, 46, 22, { light: '#cfe9e2', accent: orange });
+    g.fillStyle = '#d8ece6'; g.font = `600 22px ${HEAD}`; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+    g.fillText('TELEPORTER CONTROL', 96, 54);
+    g.fillStyle = 'rgba(143,224,207,0.2)'; g.fillRect(20, 78, w - 40, 1);
+    // Checks on the left.
+    g.font = `14px ${MONO}`;
+    ['VITALS', 'MASS', 'PATTERN', 'CLEARANCE'].forEach((t, i) => {
+      g.fillStyle = dim; g.fillText(t, 24, 120 + i * 30);
+      g.fillStyle = '#62d39a'; g.fillText('OK', 116, 120 + i * 30);
+    });
+    // The body scan in the middle: a wire figure in a frame.
+    g.strokeStyle = 'rgba(143,224,207,0.35)'; g.strokeRect(160, 90, 130, 210);
+    g.strokeStyle = teal; g.lineWidth = 2;
+    const bx = 225;
+    g.beginPath(); g.ellipse(bx, 116, 11, 14, 0, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.moveTo(bx - 22, 138); g.lineTo(bx + 22, 138); g.lineTo(bx + 16, 200); g.lineTo(bx - 16, 200); g.closePath(); g.stroke();
+    g.beginPath(); g.moveTo(bx - 22, 140); g.lineTo(bx - 34, 205); g.moveTo(bx + 22, 140); g.lineTo(bx + 34, 205); g.stroke();
+    g.beginPath(); g.moveTo(bx - 12, 200); g.lineTo(bx - 16, 288); g.moveTo(bx + 12, 200); g.lineTo(bx + 16, 288); g.stroke();
+    g.strokeStyle = 'rgba(143,224,207,0.3)'; g.lineWidth = 1;
+    for (let y = 150; y < 290; y += 14) { g.beginPath(); g.moveTo(bx - 20, y); g.lineTo(bx + 20, y); g.stroke(); }
+    // The steps on the right, and INITIATE.
+    const row = (y, label, tick, color) => {
+      g.strokeStyle = color; g.lineWidth = 2; g.strokeRect(306, y, 186, 38);
+      g.fillStyle = color; g.font = `600 15px ${HEAD}`; g.fillText(label, 340, y + 25);
+      g.beginPath();
+      if (tick) { g.moveTo(316, y + 20); g.lineTo(322, y + 27); g.lineTo(332, y + 12); }
+      else { g.moveTo(468, y + 19); g.lineTo(482, y + 19); g.moveTo(476, y + 12); g.lineTo(483, y + 19); g.lineTo(476, y + 26); }
+      g.stroke();
+    };
+    row(92, 'DESTINATION', false, '#cfe9e2');
+    row(140, 'SCAN COMPLETE', true, '#cfe9e2');
+    row(188, 'CHAMBER READY', true, orange);
+    g.fillStyle = 'rgba(240,138,60,0.18)'; g.fillRect(306, 244, 186, 50);
+    g.strokeStyle = orange; g.lineWidth = 3; g.strokeRect(306, 244, 186, 50);
+    g.fillStyle = '#ffd9b8'; g.font = `600 24px ${HEAD}`; g.textAlign = 'center'; g.fillText('INITIATE', 399, 278);
+  });
+}
+
 export function mugTexture() {
   return makeCanvas(256, 128, (g, w, h) => {
     g.fillStyle = '#efe6d2'; g.fillRect(0, 0, w, h);

@@ -44,8 +44,9 @@ export function findFootfalls(samples, rate, { minGap = 0.3, maxLen = 0.45 } = {
 export const SOUND_FILES = Object.values(FILES).map((f) => 'sound_effects/' + f);
 export const MENU_MUSIC = 'music/alex-morgan-dark-suspense-thriller-528314.mp3';
 export const END_MUSIC = 'music/sub_clair-suspense-tension-622546.mp3';
+export const SAFE_MUSIC = 'music/the_mountain-spaceship-155569.mp3'; // the Wellness and Quiet rooms
 
-// A looping music track (title theme, ending theme). A plain <audio> element, since the
+// A looping music track (title theme, ending theme, the safe rooms). A plain <audio> element, since the
 // game's audio context is suspended outside play. Browsers only let it play after a click or key.
 export class Music {
   constructor(src, { volume = 0.5 } = {}) {
@@ -54,6 +55,7 @@ export class Music {
     this.volume = volume;
     this.el.volume = volume;
     this.stopped = false;
+    this.fade = 0; // each fade takes a ticket; an older one stops when a newer one starts
   }
 
   // Start playing, optionally fading in over fadeMs.
@@ -67,6 +69,13 @@ export class Music {
     if (p?.catch) p.catch(() => {});
   }
 
+  // Fade back in from wherever it was paused (the safe-room track comes and goes).
+  fadeIn(ms) {
+    this.stopped = false;
+    if (this.el.paused) { this.el.volume = 0; const p = this.el.play(); if (p?.catch) p.catch(() => {}); }
+    this.ramp(this.el.volume, this.volume, ms);
+  }
+
   fadeOut(ms) {
     this.stopped = true;
     this.ramp(this.el.volume, 0, ms, () => this.el.pause());
@@ -74,8 +83,9 @@ export class Music {
 
   ramp(from, to, ms, done) {
     const t0 = performance.now();
+    const ticket = ++this.fade;
     const step = (now) => {
-      if (this.stopped && to > 0) return; // a fade-out took over
+      if (ticket !== this.fade) return; // a newer fade took over
       const k = Math.min(1, (now - t0) / ms);
       this.el.volume = from + (to - from) * k;
       if (k < 1) requestAnimationFrame(step);

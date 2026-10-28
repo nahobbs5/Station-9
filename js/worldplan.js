@@ -98,7 +98,7 @@ export const POSTER_ART = {
   'labor-keeps': 0.79, observe: 0.535, discipline: 0.68, grow: 0.615, coffee: 0.62, conserve: 0.59,
   healthy: 0.68, 'farther-harder': 0.65, resources: 0.58, 'labor-builds': 0.635,
   'safer-farther': 0.67, brighter: 0.65, 'life-travels': 0.64, 'new-worlds': 0.61, 'same-skies': 0.62,
-  'difficult-work': 0.69, discover: 2.5,
+  'difficult-work': 0.69, discover: 2.5, 'keep-moving': 0.86,
 };
 export const POSTERS = [
   { room: 'airlock', side: 'n', art: ['safer-farther', 'new-worlds'] },
@@ -112,16 +112,18 @@ export const POSTERS = [
   { room: 'teleporter', side: 'w', art: ['discover'] },
   { room: 'pod', side: 'e', art: ['difficult-work', 'labor-builds'] },
   { room: 'storage', side: 's', art: ['labor-keeps'] }, // above the noise-maker crate
+  // Beside the Teleporter Lab's south door (along: where on the wall, 0..1; h: its height).
+  { room: 'teleporter', side: 's', art: ['keep-moving'], along: 0.71, h: 1.4 },
 ];
 const POSTER_H = 1.55, WIDE_H = 1.05, POSTER_Y = 1.7, PAIR_GAP = 0.3;
 
 // Every poster as hung: { id, room, x, y, z, rot, w, h }. A pair sits either side of the wall's middle.
 export function posterPlacements(layout) {
   const out = [];
-  for (const { room, side, art } of POSTERS) {
-    const s = wallSpot(layout.room(room), side);
+  for (const { room, side, art, along: at = 0.5, h: hOver } of POSTERS) {
+    const s = wallSpot(layout.room(room), side, at);
     const along = [Math.cos(s.rot), -Math.sin(s.rot)]; // the wall's direction
-    const sizes = art.map((id) => { const h = POSTER_ART[id] > 1.5 ? WIDE_H : POSTER_H; return [POSTER_ART[id] * h, h]; });
+    const sizes = art.map((id) => { const h = hOver ?? (POSTER_ART[id] > 1.5 ? WIDE_H : POSTER_H); return [POSTER_ART[id] * h, h]; });
     const total = sizes.reduce((t, [w]) => t + w, 0) + PAIR_GAP * (art.length - 1);
     let k = -total / 2;
     art.forEach((id, i) => {
@@ -145,6 +147,24 @@ export function generatorFixtures(layout) {
   return {
     panel: { ...wallSpot(room, 'e'), y: 1.45, w: 1.3, h: 0.72 },
     sign: { ...wallSpot(room, 'n', 0.8), y: 1.75, w: 1.5, h: 0.9 },
+  };
+}
+
+// The Teleporter Lab's wall pieces (after the Teleporter Chamber sheet). Its straight north wall
+// runs only x 48-54 with the door in the middle, so the painted TELEPORTER sign and the safety
+// protocol go either side of the door. RESTRICTED ACCESS sits on both door headers, room side
+// (the doors stand 1 m out from the room, in the corridor cell; the header is 0.54 m deep).
+export function teleporterFixtures(layout) {
+  const room = layout.room('teleporter');
+  const header = (d, inward) => ({ x: cellCenter(d.cx), y: WALL_H - FRAME.header / 2, z: cellCenter(d.cz) + inward * (FRAME.depth / 2 + 0.025), rot: inward > 0 ? 0 : Math.PI, w: 1.7, h: 0.24 });
+  const mid = room.x + room.w / 2;
+  const doorN = layout.doors.find((d) => d.cz === room.y - 1 && Math.abs(d.cx + 0.5 - mid) < 1);
+  const doorS = layout.doors.find((d) => d.cz === room.y + room.h && Math.abs(d.cx + 0.5 - mid) < 1);
+  return {
+    sign: { ...wallSpot(room, 'n', 0.29), y: 1.8, w: 1.3, h: 1.0 },
+    protocol: { ...wallSpot(room, 'n', 0.71), y: 1.55, w: 1.1, h: 1.0 },
+    restrictedN: header(doorN, 1),
+    restrictedS: header(doorS, -1),
   };
 }
 
@@ -275,7 +295,7 @@ export function roomBase(room, powered) {
 // How deep each piece is (metres from its back to its front), so it can stand against a wall.
 export const FURNITURE_DEPTH = {
   bunk: 0.95, lockers: 0.5, bench: 0.62, shelves: 0.45, bigCrate: 1.0, cart: 0.55, workbench: 0.75,
-  desk: 0.75, cabinet: 0.55, sofa: 0.9, plant: 0.45, messTable: 0.9, coffeeTable: 0.6,
+  desk: 0.75, cabinet: 0.55, sofa: 0.9, plant: 0.45, messTable: 0.9, coffeeTable: 0.6, teleControl: 0.6,
 };
 
 // Which wall a room-edge cell backs onto: the inward direction (dx, dz) and the turn that faces it.

@@ -14,8 +14,8 @@ import { SCREEN, SCREEN_KINDS, SCREEN_IDS, ROOM_EVENT, pickScreen, roomScreens }
 export const APPARITION = {
   firstAfter: 35,   // nothing in the first 35 s
   gap: [75, 130],   // seconds between apparitions (random in this range)
-  screenFirst: 120, // no terminal apparitions in the first 2 minutes...
-  screenGap: 180,   // ...or within 3 minutes of the last one, so they stay a surprise
+  screenFirst: 60,  // no terminal apparitions in the first minute...
+  screenGap: 90,    // ...or within 90 s of the last one, so they stay a surprise
   retry: 2,         // due, but nothing fits where you are: look again this often
   minDist: 3,       // never closer than this
   alienClear: 10,   // never within this of the alien

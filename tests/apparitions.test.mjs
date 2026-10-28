@@ -340,7 +340,7 @@ test('screen apparitions: the monitor cuts to a corridor camera that breaks down
 const crewConsoles = consoles.filter((c) => c.room === 'crew');
 const inCrew = floor.find((s) => s.room === 'crew' && crewConsoles.some((c) => clear(s, c.front)));
 
-test('pacing: 75-130 s between apparitions; terminals wait 2 minutes, then 3 minutes after each', () => {
+test('pacing: 75-130 s between apparitions; terminals wait a minute, then 90 s after each', () => {
   assert.deepEqual(APPARITION.gap, [75, 130]);
   const feed = fakeFeed();
   const { a } = make({ feed, consoles, rand: seeded(4) });
@@ -360,9 +360,9 @@ test('pacing: 75-130 s between apparitions; terminals wait 2 minutes, then 3 min
   for (let i = 1; i < starts.length; i++) assert.ok(starts[i] - starts[i - 1] >= APPARITION.screenGap, `${starts}`);
 });
 
-test('pacing: terminal kinds weigh less than the field-guide nine', () => {
+test('pacing: terminal kinds together weigh less than the field-guide nine', () => {
   const sum = (ids, T) => ids.reduce((n, id) => n + T[id].weight, 0);
-  assert.ok(sum(SCREEN_IDS, SCREEN_KINDS) < sum(KIND_IDS, KINDS) / 3);
+  assert.ok(sum(SCREEN_IDS, SCREEN_KINDS) < sum(KIND_IDS, KINDS));
 });
 
 test('room event: every terminal in Crew Quarters at once, none from a corridor', () => {

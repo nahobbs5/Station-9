@@ -75,8 +75,8 @@ export const CREDITS = [
 ];
 
 // Achievements (from Achievements.list()): earned ones with their description, as on the unlock
-// banner. With all, the ones not yet earned are listed too, by name only. Nothing earned and not
-// all: nothing is added.
+// banner. With all, the ones not yet earned are listed too, dimmed. Nothing earned and not all:
+// nothing is added.
 export function renderAchievements(el, list, { all = false } = {}) {
   const earned = list.filter((a) => a.earned);
   if (!all && !earned.length) return;
@@ -89,20 +89,17 @@ export function renderAchievements(el, list, { all = false } = {}) {
     const t = document.createElement('b');
     t.textContent = a.name;
     li.append(t);
-    if (a.earned) {
-      if (a.thisRun) {
-        const run = document.createElement('span');
-        run.className = 'run';
-        run.textContent = 'this run';
-        t.append(' ', run);
-      }
-      const text = document.createElement('span');
-      text.className = 'use';
-      text.textContent = a.text;
-      li.append(text);
-    } else {
-      li.className = 'locked';
+    if (a.thisRun) {
+      const run = document.createElement('span');
+      run.className = 'run';
+      run.textContent = 'this run';
+      t.append(' ', run);
     }
+    if (!a.earned) li.className = 'locked';
+    const text = document.createElement('span');
+    text.className = 'use';
+    text.textContent = a.text;
+    li.append(text);
     ol.append(li);
   }
   el.append(h, ol);

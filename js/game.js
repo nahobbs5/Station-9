@@ -291,7 +291,7 @@ export function startGame(createView) {
 
   renderCredits($('credits-list'));
   renderCredits($('win-credits'));
-  // Pause screen: every achievement, earned ones with their description, the rest by name only.
+  // Pause screen: every achievement with its description; ones not yet earned are dimmed.
   function showPause() {
     $('pause-ach').textContent = '';
     renderAchievements($('pause-ach'), achievements.list(), { all: true });
@@ -757,14 +757,23 @@ export function startGame(createView) {
   let secretFound = false, saidPod = false;
   // Achievements (js/achievements.js): a gold banner the first time each one is earned this game.
   const achievements = new Achievements();
+  // Two earned close together (e.g. Coward, then Not Today as the hunt ends) wait their turn.
   let achTimer = 0;
+  const achQueue = [];
+  function showAch(a) {
+    const el = $('achievement');
+    $('ach-name').textContent = a.name + (a.isNew ? '  \u00b7  NEW' : '');
+    $('ach-text').textContent = a.text;
+    el.hidden = true;
+    void el.offsetWidth; // restart the slide-in for each banner
+    el.hidden = false;
+    achTimer = 4.5;
+  }
   function achieve(id) {
     const a = achievements.earn(id);
     if (!a) return false;
-    $('ach-name').textContent = a.name + (a.isNew ? '  \u00b7  NEW' : '');
-    $('ach-text').textContent = a.text;
-    $('achievement').hidden = false;
-    achTimer = 4.5;
+    if (achTimer > 0) achQueue.push(a);
+    else showAch(a);
     return true;
   }
   const achLine = () => achievements.names.map((n) => ` · Achievement: ${n}`).join('');
@@ -933,7 +942,10 @@ export function startGame(createView) {
     if (hatman.dark) rig.flashlight = 0; // the flashlight dies with the power
     intercom.update(dt);
     if (toastTimer > 0 && (toastTimer -= dt) <= 0) $('toast').hidden = true;
-    if (achTimer > 0 && (achTimer -= dt) <= 0) $('achievement').hidden = true;
+    if (achTimer > 0 && (achTimer -= dt) <= 0) {
+      if (achQueue.length) showAch(achQueue.shift());
+      else $('achievement').hidden = true;
+    }
 
     drawHud(dt, target, repairing);
   }
@@ -1061,7 +1073,7 @@ export function startGame(createView) {
   // Handy for debugging in the browser console.
   window.station9 = {
     alien, player, world, achievements, seen, layout, hatman, tricks, apparitions: phantoms, screens: view.screens, progress, loreRead, explored, tapes, audio, intercom, vent, vents, decor: world.decor,
-    renderer: view.renderer, view, rig, engine: view.name, inventory, activeNoise, throwables,
+    renderer: view.renderer, view, rig, engine: view.name, inventory, activeNoise, throwables, achieve,
     get lore() { return lore; }, get state() { return state; }, get stage() { return stage; },
     get alienOff() { return alienOff; }, set alienOff(v) { setAlienOff(!!v); },
   };

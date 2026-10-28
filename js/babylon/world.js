@@ -13,6 +13,8 @@ import {
   stepDoor, roomLightLevel, teleporterLevel, roomState, roomBase, doorFrames, FRAME, kickPlateSpans, generatorFixtures, teleporterFixtures,
 } from '../worldplan.js';
 import { buildDecor } from './decor.js';
+import { buildGarden } from './garden.js';
+import { planGarden } from '../gardenplan.js';
 import { furnitureKit, buildFurniture } from './furniture.js';
 import { buildSuites } from './suites.js';
 import { buildCryo } from './cryo.js';
@@ -554,6 +556,9 @@ export function buildWorld(scene, layout) {
   // Pipes, patches, broken lights and leaks. Its sounds go to whoever sets world.onDecorEvent.
   let onDecorEvent = null;
   const decor = buildDecor(scene, layout, { onEvent: (type, at) => onDecorEvent?.(type, at) });
+  // Plant life: corridor planters and vines (js/gardenplan.js), placed round the decor.
+  const garden = planGarden(layout, decor.plan);
+  buildGarden(scene, garden);
 
   // Furniture from the interiors sheet, plus the chairs, signs and windows that go with it.
   const kit = furnitureKit(scene);
@@ -676,6 +681,18 @@ export function buildWorld(scene, layout) {
       if (r.cone) { r.cone.material.emissiveColor = srgb(r.base.color); r.cone.material.alpha = 0.05 * Math.min(1.5, k); }
       r.fixtureMat.emissiveColor = srgb(r.base.color).scale(Math.max(0.05, k));
     }
+    // Grow lamps run on their own supply: a little brighter once main power is back, out only
+    // in a blackout. One rack's lamp stutters now and then.
+    for (const gl of kit.glows) {
+      const r = rooms.find((q) => q.room.id === gl.room);
+      let k = r?.blackout ? 0.03 : powered ? 1 : 0.8;
+      if (gl.flicker) {
+        gl.timer -= dt;
+        if (gl.timer <= 0) { gl.stutter = 0.3 + Math.random() * 0.5; gl.timer = 5 + Math.random() * 10; }
+        if (gl.stutter > 0) { gl.stutter -= dt; if (Math.random() < 0.5) k *= 0.08; }
+      }
+      gl.mat.emissiveColor = gl.color.scale(k);
+    }
     if (props.genGlow) {
       // Output low: a weak, wavering glow. Repaired: steady and bright.
       const k = powered ? 1 : 0.3 + 0.12 * Math.sin(time * 7.3) * Math.sin(time * 2.1) + (Math.random() < 0.02 ? -0.2 : 0);
@@ -691,7 +708,7 @@ export function buildWorld(scene, layout) {
   }
 
   return {
-    doors, rooms, props, interactables, loose, decor, vents, setDoor, setPower, update,
+    doors, rooms, props, interactables, loose, decor, garden, vents, setDoor, setPower, update,
     // The pod launches: door shut, thrusters flaring (js/babylon/pod.js).
     launchPod() { podView?.launch(); },
     set onDecorEvent(fn) { onDecorEvent = fn; },

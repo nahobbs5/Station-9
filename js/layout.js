@@ -100,6 +100,8 @@ export const PROPS = [
 // Furniture (after the "Research Station Interiors" sheet). solid pieces block their cell like props;
 // the rest (chairs, plants, the cart) can be walked through. Pieces stand with their back to the
 // nearest wall unless `rot` turns them (radians, 0 = facing +z).
+// Plants (after the "Botanical Haven" sheet): a pot holding a downloaded plant model (js/modelplan.js
+// PLANTS: model, variant), scaled by `scale`; wilt 0..1 browns and droops it.
 export const FURNITURE = [
   // Crew Quarters: bunks, lockers, a mess table with chairs.
   { kind: 'bunk', room: 'crew', cell: [15, 10], solid: true },
@@ -109,21 +111,30 @@ export const FURNITURE = [
   // Arrival Airlock: a waiting bench, lockers, a plant.
   { kind: 'bench', room: 'airlock', cell: [11, 19], solid: true },
   { kind: 'lockers', room: 'airlock', cell: [9, 20], solid: true }, // the back wall's middle stays clear for the emblem
-  { kind: 'plant', room: 'airlock', cell: [9, 19] },
+  { kind: 'plant', room: 'airlock', cell: [9, 19], model: 'anthurium', variant: 'a', scale: 1.3 },
+  // ...and a hydroponic grow rack south of the east door, its bottom tier's lamp dead.
+  { kind: 'growRack', room: 'airlock', cell: [13, 22], solid: true, dry: true },
   // Storage: shelving, a big supply crate, the janitor's cart (doors on its west and east walls).
   { kind: 'shelves', room: 'storage', cell: [18, 19], solid: true },
   { kind: 'shelves', room: 'storage', cell: [20, 19], solid: true, medkit: true },
   { kind: 'bigCrate', room: 'storage', cell: [21, 23], solid: true },
   { kind: 'cart', room: 'storage', cell: [17, 23] },
+  { kind: 'growRack', room: 'storage', cell: [17, 22], solid: true },
   // Generator Room: a workbench and a tool shelf.
   { kind: 'workbench', room: 'generator', cell: [5, 9], solid: true },
   { kind: 'shelves', room: 'generator', cell: [1, 7], solid: true },
+  { kind: 'plant', room: 'generator', cell: [2, 10], model: 'fern', variant: 'b', scale: 1.1, wilt: 0.85 }, // cooked by the heat
   // Comms Room: an office desk and a filing cabinet.
   { kind: 'desk', room: 'comms', cell: [27, 15], solid: true },
   { kind: 'cabinet', room: 'comms', cell: [23, 15], solid: true },
+  // Either side of the north door: the tomato grow chamber and a seedling bench.
+  { kind: 'growChamber', room: 'comms', cell: [27, 14], solid: true },
+  { kind: 'pottingBench', room: 'comms', cell: [23, 14], solid: true },
+  // Control Room: a plant beside the west door.
+  { kind: 'plant', room: 'control', cell: [12, 2], model: 'anthurium', variant: 'b', scale: 1.1 },
   // Teleporter Lab.
   { kind: 'cabinet', room: 'teleporter', cell: [23, 9], solid: true },
-  { kind: 'plant', room: 'teleporter', cell: [27, 8] },
+  { kind: 'plant', room: 'teleporter', cell: [27, 8], model: 'calathea', variant: 'a', scale: 1.25, wilt: 0.7 },
   // The teleporter control stand (Teleporter Chamber sheet). It faces east, onto open floor beside
   // the chamber (the chamber's own cell is solid, so no one could stand in front of it there).
   { kind: 'teleControl', room: 'teleporter', cell: [24, 9], solid: true, rot: Math.PI / 2 },

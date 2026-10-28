@@ -41,7 +41,7 @@ function seeded(seed) {
 
 // Corridor stretches to decorate: runs of centreline points that are in corridor cells (not rooms
 // or doors), with side branches trimmed where they overlap the corridor they join.
-function corridorRuns(L) {
+export function corridorRuns(L) {
   const runs = [];
   for (const c of L.corridors) {
     const others = L.corridors.filter((o) => o !== c);
@@ -59,7 +59,7 @@ function corridorRuns(L) {
 }
 
 // Points every `step` metres along a run, pushed sideways by `offset` (left of travel).
-function along(run, step, offset = 0) {
+export function along(run, step, offset = 0) {
   const out = [];
   let next = run.pts[0].s;
   for (const p of run.pts) {

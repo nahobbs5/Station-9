@@ -48,13 +48,9 @@ Throw one away from you to pull the alien off your trail. There are only seven o
 - **Resonance Shard** rings once, and the sound carries a long way.
 - **Buzz Pod** hums for 12 seconds. It keeps pulling the alien toward it and covers your footsteps if you stay close.
 
-## The story
-
-Twelve staff terminals around the station hold audio logs that tell what really happened here. They play in your earpiece, so you can keep moving while you listen. Every log you hear adds to your score, and hearing all twelve changes the ending.
-
 ## Something isn't right
 
-The alien isn't the only thing on Station 9. Lights fail, doors move on their own, and you may see things that shouldn't be there. The station also hides a few secrets, and achievements are waiting for the curious.
+The alien isn't the only thing on Station 9. The station also hides a few secrets, and achievements are waiting for the curious.
 
 ## Settings
 

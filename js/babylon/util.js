@@ -38,7 +38,7 @@ function surfaceTexture(scene, set, map, tile) {
 // surface: a SURFACES name for scanned relief and roughness; tile: [u, v] repeats across the mesh's UVs;
 // bump: how strong the relief is; rough: false keeps this material's own roughness (just the relief).
 export function pbr(scene, { color = 0xffffff, map = null, roughness = 1, metalness = 0, transparent = false, zOffset = 0, twoSided = false,
-  surface = null, tile = [1, 1], bump = 1, rough = true } = {}) {
+  surface = null, tile = [1, 1], bump = 1, rough = true, cutout = false } = {}) {
   const BABYLON = B();
   const m = new BABYLON.PBRMaterial('pbr', scene);
   m.albedoColor = linear(color);
@@ -50,6 +50,11 @@ export function pbr(scene, { color = 0xffffff, map = null, roughness = 1, metaln
     map.hasAlpha = true; m.useAlphaFromAlbedoTexture = true; m.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
     // Where it's see-through, show nothing: no shine or reflection over the clear parts (decals).
     m.useSpecularOverAlpha = false; m.useRadianceOverAlpha = false;
+  }
+  if (cutout && map) {
+    // Leaf cards: fully there or not at all (alpha test), so overlapping leaves need no sorting.
+    map.hasAlpha = true; m.useAlphaFromAlbedoTexture = true; m.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHATEST; m.alphaCutOff = 0.4;
+    m.twoSidedLighting = true; // lit from whichever side you see
   }
   if (zOffset) m.zOffset = zOffset;
   if (twoSided) m.backFaceCulling = false;

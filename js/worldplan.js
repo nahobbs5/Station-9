@@ -100,6 +100,8 @@ export const POSTER_ART = {
   healthy: 0.68, 'farther-harder': 0.65, resources: 0.58, 'labor-builds': 0.635,
   'safer-farther': 0.67, brighter: 0.65, 'life-travels': 0.64, 'new-worlds': 0.61, 'same-skies': 0.62,
   'difficult-work': 0.69, discover: 2.5, 'keep-moving': 0.86, 'sleep-travel': 1.18,
+  // From the "Botanical Haven" sheet: hung near the plants.
+  botanical: 0.836, nourish: 0.594, hydroponics: 0.557, preserve: 0.646, 'grow-a': 0.795,
 };
 export const POSTERS = [
   { room: 'airlock', side: 'n', art: ['safer-farther', 'new-worlds'] },
@@ -116,6 +118,12 @@ export const POSTERS = [
   // Beside the Teleporter Lab's south door (along: where on the wall, 0..1; h: its height).
   { room: 'teleporter', side: 's', art: ['keep-moving'], along: 0.71, h: 1.4 },
   { room: 'cryo', side: 'n', art: ['sleep-travel'], along: 0.74, h: 1.3 }, // the secret bay, beside its door
+  // Botanical Haven signs, beside the grow racks, the tomato chamber and the potted plants.
+  { room: 'airlock', side: 'e', art: ['hydroponics'], along: 0.88 },
+  { room: 'airlock', side: 'w', art: ['grow-a'], along: 0.88, h: 1.3 }, // above the wall vent's corner
+  { room: 'storage', side: 'w', art: ['nourish'], along: 0.25 },
+  { room: 'comms', side: 's', art: ['botanical'], along: 0.2, h: 1.3 },
+  { room: 'control', side: 's', art: ['preserve'], along: 0.28, h: 1.4 },
 ];
 const POSTER_H = 1.55, WIDE_H = 1.05, POSTER_Y = 1.7, PAIR_GAP = 0.3;
 
@@ -299,6 +307,7 @@ export function roomBase(room, powered) {
 export const FURNITURE_DEPTH = {
   bunk: 0.95, lockers: 0.5, bench: 0.62, shelves: 0.45, bigCrate: 1.0, cart: 0.55, workbench: 0.75,
   desk: 0.75, cabinet: 0.55, sofa: 0.9, plant: 0.45, messTable: 0.9, coffeeTable: 0.6, teleControl: 0.6,
+  growRack: 0.45, growChamber: 0.6, pottingBench: 0.7,
 };
 
 // Which wall a room-edge cell backs onto: the inward direction (dx, dz) and the turn that faces it.

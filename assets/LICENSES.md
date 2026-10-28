@@ -22,4 +22,9 @@ They're credited in the game anyway (js/credits.js).
 | `models/propane_tank/` (glTF + 1K textures) | Propane Tank | Slinc, [Poly Haven](https://polyhaven.com/a/propane_tank) | CC0 |
 | `models/metal_jerrycan/` (glTF + 1K textures) | Metal Jerrycan | Sean Buckley, [Poly Haven](https://polyhaven.com/a/metal_jerrycan) | CC0 |
 | `models/industrial_caged_sconce/` (glTF + 1K textures) | Industrial Caged Sconce | Ulan Cabanilla, [Poly Haven](https://polyhaven.com/a/industrial_caged_sconce) | CC0 |
-| `posters/*.jpg` | Wall posters | Cut from the project's own concept sheets ("Station 9_ Propaganda in the Rust", "Station 9_ Tomorrow’s Frontier") | Project art |
+| `models/anthurium_botany_01/` (glTF + 1K textures) | Anthurium Botany 01 | Rob Tuytel, Rico Cilliers, [Poly Haven](https://polyhaven.com/a/anthurium_botany_01) | CC0 |
+| `models/fern_02/` (glTF + 1K textures) | Fern 02 | Rob Tuytel, Rico Cilliers, [Poly Haven](https://polyhaven.com/a/fern_02) | CC0 |
+| `models/calathea_orbifolia_01/` (glTF + 1K textures) | Calathea Orbifolia 01 | Rob Tuytel, Rico Cilliers, [Poly Haven](https://polyhaven.com/a/calathea_orbifolia_01) | CC0 |
+| `models/potted_plant_04/` (glTF + 1K textures) | Potted Plant 04 | James Ray Cock, [Poly Haven](https://polyhaven.com/a/potted_plant_04) | CC0 |
+| `models/shrub_sorrel_01/` (glTF + 1K textures) | Shrub Sorrel 01 | Rico Cilliers, [Poly Haven](https://polyhaven.com/a/shrub_sorrel_01) | CC0 |
+| `posters/*.jpg` | Wall posters | Cut from the project's own concept sheets ("Station 9_ Propaganda in the Rust", "Station 9_ Tomorrow’s Frontier", "Station 9_ Botanical Haven") | Project art |

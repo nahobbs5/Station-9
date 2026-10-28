@@ -963,7 +963,7 @@ test('posters: every one has its art, hangs in a normal room, clear of doors and
   const { posterPlacements, POSTER_ART } = await import('../js/worldplan.js');
   const layout = buildLayout();
   const all = posterPlacements(layout);
-  assert.equal(all.length, 19);
+  assert.equal(all.length, 24);
   for (const p of all) {
     assert.ok(POSTER_ART[p.id], `${p.id} has an aspect`);
     assert.ok(existsSync(new URL(`../assets/posters/${p.id}.jpg`, import.meta.url)), `${p.id}.jpg exists`);
@@ -1074,6 +1074,11 @@ test('achievements: earned once a game, NEW only the first time ever, unknown id
   assert.ok(next && !next.isNew, 'remembered from before');
   assert.throws(() => a.earn('nope'));
   assert.ok(new Achievements(undefined).earn('rudeAwakening'), 'works with no storage');
+  for (const id of ['scholar', 'marathoner', 'coward']) {
+    assert.ok(a.earn(id), id);
+    assert.equal(a.earn(id), null, `${id} only once a game`);
+  }
+  assert.deepEqual(a.names, ['Rude Awakening', 'Scholar', 'Marathoner', 'Coward']);
 });
 
 test('personalize swaps "Technician" for the player name', async () => {

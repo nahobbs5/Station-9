@@ -62,6 +62,16 @@ export const CREDITS = [
     file: 'assets/models/metal_jerrycan/metal_jerrycan_1k.gltf', use: 'Fuel cans' },
   { group: 'Art', title: 'Industrial Caged Sconce (3D model)', credit: 'Ulan Cabanilla via Poly Haven (CC0)',
     file: 'assets/models/industrial_caged_sconce/industrial_caged_sconce_1k.gltf', use: 'Dead caged lamps in corridors' },
+  { group: 'Art', title: 'Anthurium Botany 01 (3D model)', credit: 'Rob Tuytel, Rico Cilliers via Poly Haven (CC0)',
+    file: 'assets/models/anthurium_botany_01/anthurium_botany_01_1k.gltf', use: 'Potted plants and corridor planters' },
+  { group: 'Art', title: 'Fern 02 (3D model)', credit: 'Rob Tuytel, Rico Cilliers via Poly Haven (CC0)',
+    file: 'assets/models/fern_02/fern_02_1k.gltf', use: 'Potted plants and corridor planters' },
+  { group: 'Art', title: 'Calathea Orbifolia 01 (3D model)', credit: 'Rob Tuytel, Rico Cilliers via Poly Haven (CC0)',
+    file: 'assets/models/calathea_orbifolia_01/calathea_orbifolia_01_1k.gltf', use: 'Potted plants and corridor planters' },
+  { group: 'Art', title: 'Potted Plant 04 (3D model)', credit: 'James Ray Cock via Poly Haven (CC0)',
+    file: 'assets/models/potted_plant_04/potted_plant_04_1k.gltf', use: 'Desk plants' },
+  { group: 'Art', title: 'Shrub Sorrel 01 (3D model)', credit: 'Rico Cilliers via Poly Haven (CC0)',
+    file: 'assets/models/shrub_sorrel_01/shrub_sorrel_01_1k.gltf', use: 'Seedlings on the seedling bench' },
 ];
 
 // Fill a container with one heading and list per group.

@@ -5,6 +5,7 @@ import { cellCenter } from './layout.js';
 import { furniturePlacement, nearPod } from './worldplan.js';
 import { grateSpots } from './vents.js';
 import { GRATE_CLEAR } from './decorplan.js';
+import { planGarden } from './gardenplan.js';
 
 // key -> folder in assets/models/. node: keep only this part of a file holding several variants.
 export const MODELS = {
@@ -16,7 +17,16 @@ export const MODELS = {
   propane: { dir: 'propane_tank' },
   jerrycan: { dir: 'metal_jerrycan' },
   sconce: { dir: 'industrial_caged_sconce', node: 'industrial_caged_sconce_c', dead: true },
+  // Plants (Botanical Haven). Most files hold several plants side by side, picked by a
+  // placement's `variant` (the node whose name ends _<variant>), which is moved to the middle.
+  anthurium: { dir: 'anthurium_botany_01', plant: true },
+  fern: { dir: 'fern_02', plant: true },
+  calathea: { dir: 'calathea_orbifolia_01', plant: true },
+  deskPlant: { dir: 'potted_plant_04', plant: true },   // a small pot plant, already potted
+  seedlings: { dir: 'shrub_sorrel_01', plant: true },   // a little patch of sprouts
 };
+// The top of a floor pot's soil (js/babylon/furniture.js plant).
+export const POT_SOIL = 0.39;
 export const modelUrl = (key) => `assets/models/${MODELS[key].dir}/${MODELS[key].dir}_1k.gltf`;
 const BARREL_R = { barrel: 0.28, drum: 0.32 }, BARREL_H = { barrel: 0.88, drum: 0.93 };
 
@@ -63,5 +73,29 @@ export function modelPlacements(layout, plan) {
   }
   const lockers = layout.furniture.find((f) => f.kind === 'lockers');
   if (lockers) out.push({ model: 'medbox', ...onFurniture(layout, lockers, 0.1, 1.9, 0) });
+
+  // Plants. Each pot's plant takes over from the pot's leaf-card stand-ins.
+  for (const f of layout.furniture.filter((q) => q.kind === 'plant' && q.model)) {
+    const at = furniturePlacement(layout, f);
+    out.push({ model: f.model, variant: f.variant, x: at.x, y: POT_SOIL, z: at.z, yaw: at.rotY + 0.6, scale: f.scale ?? 1, wilt: f.wilt ?? 0, replaces: 'plant-' + f.model });
+  }
+  for (const pl of planGarden(layout, plan).planters) {
+    for (const p of pl.plants) out.push({ model: p.model, variant: p.variant, x: p.x, y: p.y, z: p.z, yaw: p.yaw, scale: p.scale, wilt: p.wilt });
+  }
+  // Small pot plants on the comms desk, the mess table and the seedling bench; sprouts in its trays.
+  const on = (kind, lx, y, lz, extra = {}) => {
+    const f = layout.furniture.find((q) => q.kind === kind);
+    if (f) out.push({ model: 'deskPlant', ...onFurniture(layout, f, lx, y, lz), scale: 1.3, ...extra });
+  };
+  on('desk', -0.6, 0.765, -0.15);
+  on('messTable', 0.55, 0.775, 0.25, { wilt: 0.6 });
+  on('pottingBench', -0.1, 0.925, -0.18);
+  const seedBench = layout.furniture.find((q) => q.kind === 'pottingBench');
+  if (seedBench) {
+    for (const [lx, lz, yaw, wilt] of [[-0.48, 0.04, 0.05, 0], [0.0, 0.08, -0.08, 0.7]]) {
+      const p = onFurniture(layout, seedBench, lx, 0.975, lz);
+      out.push({ model: 'seedlings', ...p, yaw: p.yaw + yaw, scale: 1.25, wilt });
+    }
+  }
   return out;
 }

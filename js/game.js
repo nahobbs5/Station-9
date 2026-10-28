@@ -18,9 +18,10 @@ import { TapePlayer } from './tapes.js';
 import { CameraRig } from './rig.js';
 import { inSuite, graffitiWall, GRAFFITI_RANGE } from './suiteplan.js';
 import { cryoPods } from './cryoplan.js';
-import { Achievements } from './achievements.js';
+import { Achievements, MARATHON_TIME, COWARD_TIME } from './achievements.js';
 import { VENT, VentState, grateAt, nearestGrate, clampYaw, lookingOut, ventPoint, grateSpots } from './vents.js';
 import { NOISEMAKERS, TYPES, Inventory, ActiveNoise, CRATE_CONTENTS, pickupPlacements, MAX_CARRY } from './noisemakers.js';
+import { planterBlocker } from './gardenplan.js';
 
 const $ = (id) => document.getElementById(id);
 const ORDER = REPAIRS;
@@ -43,7 +44,8 @@ export function startGame(createView) {
   const world = view.world;
   const isDoorClosed = (x, z) => world.doorAt(x, z)?.closed ?? false;
   // A circle of radius r at (x, z) is blocked by a wall (the smooth shape), a prop or a closed door.
-  const blockedAt = (x, z, r = 0) => layout.walkDistance(x, z) < r ||
+  const inPlanter = planterBlocker(world.garden?.planters ?? []); // corridor planters (js/gardenplan.js)
+  const blockedAt = (x, z, r = 0) => layout.walkDistance(x, z) < r || inPlanter(x, z, r) ||
     [[-r, -r], [r, -r], [-r, r], [r, r]].some(([ox, oz]) => {
       const cx = cellOf(x + ox), cz = cellOf(z + oz);
       return layout.isSolid(cx, cz) || isDoorClosed(cx, cz);
@@ -130,7 +132,7 @@ export function startGame(createView) {
   const lastDoorLine = { wellness: -Infinity, quiet: -Infinity };
   const DOOR_LINE_GAP = 20; // seconds before she repeats a door line
   const graffiti = graffitiWall(layout);
-  const stats = { hunts: 0, decoys: 0 };
+  const stats = { hunts: 0, decoys: 0, sprintTime: 0, ventTime: 0 };
   // Vents (js/vents.js): which one you're in, and the E key's tap-or-hold at a grate.
   const vents = world.vents?.vents ?? [];
   const vent = new VentState(vents);
@@ -420,6 +422,7 @@ export function startGame(createView) {
       loreRead.add(target.id);
       world.markRead(target.id);
       toast(`Lore ${loreRead.size}/${LORE_TOTAL}  +${SCORE.lore}`);
+      if (loreRead.size === LORE_TOTAL) achieve('scholar');
     }
   }
 
@@ -761,6 +764,11 @@ export function startGame(createView) {
     const aimed = vent.inside ? null : findTarget(rig, world.interactables);
     ventGrate = updateVent(dt, aimed);
     if (state !== 'playing') return; // caught in a vent
+    // Marathoner and Coward: running and vent time, added up over the game.
+    if (player.mode === 'sprint' && player.moving && !vent.inside) stats.sprintTime += dt;
+    if (vent.inside) stats.ventTime += dt;
+    if (stats.sprintTime > MARATHON_TIME) achieve('marathoner');
+    if (stats.ventTime > COWARD_TIME) achieve('coward');
     if (player.flashClicked) {
       player.flashClicked = false;
       makeNoise(player.pos, LOUDNESS.flashlight);

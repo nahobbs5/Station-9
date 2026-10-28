@@ -5,7 +5,7 @@ import { createNoiseBus, heardLoudness, LOUDNESS, REPAIR, forcing, carryHeard } 
 import { Alien, inSight } from './alien.js';
 import { Player } from './player.js';
 import { GameAudio, Music, MENU_MUSIC, END_MUSIC, SAFE_MUSIC } from './audio.js';
-import { renderCredits } from './credits.js';
+import { renderCredits, renderAchievements } from './credits.js';
 import { findTarget, Throwables } from './interact.js';
 import { Tricks } from './tricks.js';
 import { HatMan, cameoSurfaces, corridorEndLamps } from './hatman.js';
@@ -263,7 +263,7 @@ export function startGame(createView) {
       if (suiteNow) safeMusic.fadeIn(500);
     } else if (!locked && state === 'playing') {
       state = 'paused';
-      $('pause').hidden = false;
+      showPause();
       eHeld = false;
       player.keys.clear();
       audio.suspend();
@@ -291,7 +291,17 @@ export function startGame(createView) {
 
   renderCredits($('credits-list'));
   renderCredits($('win-credits'));
-  $('credits-open').addEventListener('click', () => { $('title').hidden = true; $('credits').hidden = false; });
+  // Pause screen: every achievement, earned ones with their description, the rest by name only.
+  function showPause() {
+    $('pause-ach').textContent = '';
+    renderAchievements($('pause-ach'), achievements.list(), { all: true });
+    $('pause').hidden = false;
+  }
+  $('credits-open').addEventListener('click', () => {
+    renderCredits($('credits-list'), new Achievements().list()); // what's saved, read fresh
+    $('title').hidden = true;
+    $('credits').hidden = false;
+  });
   // Graphics: High (shadows, ambient occlusion, bloom, dust) or Low, remembered between visits.
   const QUALITY_KEY = 'station9.graphics';
   const readQuality = () => { try { return localStorage.getItem(QUALITY_KEY) || 'high'; } catch { return 'high'; } };
@@ -384,7 +394,7 @@ export function startGame(createView) {
     $('hud').hidden = false;
     for (const line of introLines) intercom.say(line);
     state = DEBUG || document.pointerLockElement === canvas ? 'playing' : 'paused';
-    $('pause').hidden = state === 'playing';
+    if (state === 'paused') showPause();
   }
 
   // Actions -------------------------------------------------------------------------
@@ -629,6 +639,7 @@ export function startGame(createView) {
       $('win-stats').textContent =
         `Time ${fmt(elapsed)} · Times hunted: ${stats.hunts} · Noise-makers thrown: ${stats.decoys} · Lore read: ${loreRead.size}/${LORE_TOTAL}${secretFound ? ' · Secret: Cryosleep Bay found' : ''}${achLine()}`;
       $('win-score').textContent = `Score: ${score(true)}`;
+      renderCredits($('win-credits'), achievements.list());
       document.exitPointerLock();
     }, allLore ? 9000 : 1800);
   }

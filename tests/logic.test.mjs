@@ -1096,6 +1096,22 @@ test('achievements: earned once a game, NEW only the first time ever, unknown id
   assert.deepEqual(a.names, ['Rude Awakening', 'Scholar', 'Marathoner', 'Coward']);
 });
 
+test('achievements: list() gives every one in order, earned ever and this game', async () => {
+  const { Achievements, ACHIEVEMENTS } = await import('../js/achievements.js');
+  const store = new Map();
+  const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+  new Achievements(storage).earn('scholar'); // a previous game
+  const a = new Achievements(storage);
+  a.earn('coward');
+  const list = a.list();
+  assert.deepEqual(list.map((x) => x.id), ACHIEVEMENTS.map((x) => x.id));
+  const by = (id) => list.find((x) => x.id === id);
+  assert.ok(by('scholar').earned && !by('scholar').thisRun, 'earned before, not this game');
+  assert.ok(by('coward').earned && by('coward').thisRun, 'earned this game');
+  assert.ok(!by('marathoner').earned && !by('marathoner').thisRun, 'not earned');
+  assert.equal(by('coward').text, ACHIEVEMENTS.find((x) => x.id === 'coward').text);
+});
+
 test('achievements: every newer one exists with the given name', async () => {
   const { ACHIEVEMENTS } = await import('../js/achievements.js');
   const names = ['Over Here!', 'Not Today', 'Close Enough', 'Predator and Prey', 'Untouchable', "You're Not Alone",

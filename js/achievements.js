@@ -89,4 +89,7 @@ export class Achievements {
 
   // Names earned this game, for the end screens.
   get names() { return this.run.map((id) => ACHIEVEMENTS.find((q) => q.id === id).name); }
+
+  // Every achievement in order, with whether it's been earned ever and this game.
+  list() { return ACHIEVEMENTS.map((a) => ({ ...a, earned: this.ever.has(a.id), thisRun: this.run.includes(a.id) })); }
 }

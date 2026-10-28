@@ -74,9 +74,44 @@ export const CREDITS = [
     file: 'assets/models/shrub_sorrel_01/shrub_sorrel_01_1k.gltf', use: 'Seedlings on the seedling bench' },
 ];
 
-// Fill a container with one heading and list per group.
-export function renderCredits(el) {
+// Achievements (from Achievements.list()): earned ones with their description, as on the unlock
+// banner. With all, the ones not yet earned are listed too, by name only. Nothing earned and not
+// all: nothing is added.
+export function renderAchievements(el, list, { all = false } = {}) {
+  const earned = list.filter((a) => a.earned);
+  if (!all && !earned.length) return;
+  const h = document.createElement('h3');
+  h.className = 'ach';
+  h.textContent = `Achievements \u00b7 ${earned.length} / ${list.length}`;
+  const ol = document.createElement('ol');
+  for (const a of all ? list : earned) {
+    const li = document.createElement('li');
+    const t = document.createElement('b');
+    t.textContent = a.name;
+    li.append(t);
+    if (a.earned) {
+      if (a.thisRun) {
+        const run = document.createElement('span');
+        run.className = 'run';
+        run.textContent = 'this run';
+        t.append(' ', run);
+      }
+      const text = document.createElement('span');
+      text.className = 'use';
+      text.textContent = a.text;
+      li.append(text);
+    } else {
+      li.className = 'locked';
+    }
+    ol.append(li);
+  }
+  el.append(h, ol);
+}
+
+// Fill a container with the achievements earned (if a list is given), then one heading and list per group.
+export function renderCredits(el, achievements = []) {
   el.textContent = '';
+  renderAchievements(el, achievements);
   for (const group of [...new Set(CREDITS.map((c) => c.group))]) {
     const h = document.createElement('h3');
     h.textContent = group;

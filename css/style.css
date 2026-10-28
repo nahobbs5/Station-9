@@ -24,7 +24,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
   padding: 24px; text-align: center;
   background: radial-gradient(ellipse at center, rgba(0,0,0,0.35), rgba(0,0,0,0.9));
 }
-#pause { cursor: pointer; background: rgba(0,0,0,0.7); }
+#pause { cursor: pointer; background: rgba(0,0,0,0.8); justify-content: flex-start; overflow-y: auto; }
+#pause h2 { margin-top: 4vh; }
 h1 {
   font-family: var(--display); font-weight: 600; margin: 0;
   font-size: clamp(48px, 10vw, 120px); letter-spacing: 0.22em; color: #cfcac0;
@@ -98,6 +99,10 @@ button.link:hover { background: none; color: var(--ink); }
 .credits-list li b { font-weight: normal; color: var(--ink); }
 .credits-list .by { color: var(--teal); font-size: 13px; }
 .credits-list .use { color: var(--dim); font-size: 12px; }
+/* Achievements: gold like the unlock banner; ones not yet earned are just a dim name. */
+.credits-list h3.ach { color: #f2c14e; }
+.credits-list .run { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: #f2c14e; margin-left: 6px; }
+.credits-list li.locked b { color: var(--dim); }
 
 /* HUD */
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; font-size: 14px; }

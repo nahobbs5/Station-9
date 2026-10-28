@@ -57,3 +57,11 @@ suiteDoor.quiet: You seem tired. We built this room specifically for you to rest
 suiteHunt: Please stay where you are. This is the safest place in the station.
 # Getting close to the writing on the Quiet Room wall.
 graffiti: That wall will be cleaned soon, whenever we can afford a new janitor. 
+
+# --- The secret Cryosleep Bay ---
+# Stepping into the bay for the first time.
+cryoEnter: This bay isn't on your rotation, Technician. Everyone in here is resting. Please let them rest.
+# Standing by the one occupied pod for the first time.
+cryoPod: Please don't worry about that one, Technician. It's only a backup.
+# Throwing a noise-maker into the bay (the Rude Awakening achievement).
+cryoNoise: Please keep it down, Technician. Some of us are sleeping.

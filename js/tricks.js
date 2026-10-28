@@ -91,7 +91,7 @@ export class Tricks {
     const { world, audio, player, isInView, say } = this.w;
     const pc = [cellOf(player.pos.x), cellOf(player.pos.z)];
     const candidates = world.doors.filter((d) =>
-      d.closed && d.closedByPlayer && dist(d, player.pos) < RANGE && !(d.cx === pc[0] && d.cz === pc[1]) && !isInView(d));
+      d.closed && d.closedByPlayer && !d.hidden && dist(d, player.pos) < RANGE && !(d.cx === pc[0] && d.cz === pc[1]) && !isInView(d));
     if (!candidates.length) return null;
     const door = candidates[Math.floor(Math.random() * candidates.length)];
     return {

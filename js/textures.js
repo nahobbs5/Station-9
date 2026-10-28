@@ -231,6 +231,7 @@ export function mapTexture(layout) {
     g.fillStyle = '#cde8dc';
     g.font = 'bold 13px sans-serif';
     for (const r of layout.rooms) {
+      if (r.secret) continue; // never on the map
       g.fillText((r.safe ? 'SAFE' : r.name).toUpperCase(), ox + (r.cx + 0.5) * s, oy + (r.cz + 0.5) * s + 4);
     }
     g.fillStyle = '#ff6a4a';
@@ -488,7 +489,7 @@ export function consoleScreen(kind, state = {}) {
       if (L) {
         const sx = (x) => 170 + (x / (L.w * TILE)) * 320, sz = (z) => 74 + (z / (L.h * TILE)) * 196;
         g.strokeStyle = C.teal; g.lineWidth = 1.5;
-        for (const c of L.corridors) { g.beginPath(); c.pts.forEach((p, i) => (i ? g.lineTo(sx(p.x), sz(p.z)) : g.moveTo(sx(p.x), sz(p.z)))); g.stroke(); }
+        for (const c of L.corridors.filter((q) => !q.secret)) { g.beginPath(); c.pts.forEach((p, i) => (i ? g.lineTo(sx(p.x), sz(p.z)) : g.moveTo(sx(p.x), sz(p.z)))); g.stroke(); }
         const short = { control: 'CONTROL', generator: 'GEN', teleporter: 'LAB', storage: 'STORAGE', comms: 'COMMS', airlock: 'AIRLOCK', pod: 'ESCAPE', crew: 'CREW' };
         for (const r of L.rooms) {
           if (r.safe) continue;

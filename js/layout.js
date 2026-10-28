@@ -3,6 +3,7 @@
 // paths on and what most game logic reads. No engine imports here, so Node tests can load it.
 import { buildShape, sampleCorridor } from './shape.js';
 import { SUITE_SOLIDS } from './suiteplan.js';
+import { CRYO_SOLIDS } from './cryoplan.js';
 import { POD } from './podplan.js';
 
 export const TILE = 2;      // metres per grid cell
@@ -25,6 +26,9 @@ export const ROOMS = [
   { id: 'crew',       name: 'Crew Quarters',   x: 12, y: 10, w: 5, h: 5, chamfer: 1 },
   { id: 'wellness',   name: 'Wellness Room',   x: 7,  y: 6,  w: 4, h: 4, safe: true }, // Suite A (js/suiteplan.js)
   { id: 'quiet',      name: 'Quiet Room',      x: 19, y: 11, w: 3, h: 3, safe: true }, // Suite B
+  // The secret Cryosleep Bay (js/cryoplan.js), only through a hidden panel in the Wellness Room.
+  // Safe like the suites, so the alien never goes in, and kept off every map.
+  { id: 'cryo',       name: 'Cryosleep Bay',   x: 7,  y: 13, w: 4, h: 4, safe: true, secret: true },
 ];
 
 // The three repairs, in the order you have to do them.
@@ -53,6 +57,9 @@ export const CORRIDORS = [
   // Side branches to the safe rooms.
   { id: 'wellness', parts: [{ line: [[8, 2.6], [8, 7]] }] },
   { id: 'quiet', parts: [{ line: [[25, 12], [21, 12]] }] },
+  // The hidden passage from the Wellness Room down to the Cryosleep Bay. Its door on the Wellness
+  // side is the secret padded panel; the one into the bay is an ordinary door.
+  { id: 'cryo', parts: [{ line: [[8, 8], [8, 14]] }], secret: true },
 ];
 
 // Things you can use. Each fills one cell and blocks movement.
@@ -169,7 +176,8 @@ export function buildLayout() {
       const [x, z] = [cellOf(p.x), cellOf(p.z)];
       if (type[idx(x, z)] === DOOR) continue;
       type[idx(x, z)] = DOOR;
-      doors.push({ cx: x, cz: z, safe: !!room.safe });
+      // A secret corridor's door onto an ordinary room is the hidden one.
+      doors.push({ cx: x, cz: z, safe: !!room.safe || !!c.secret, secret: !!c.secret && !room.secret, hidden: !!c.secret });
     }
   }
 
@@ -177,11 +185,12 @@ export function buildLayout() {
   for (const d of doors) {
     // 'x' means you walk through the door along the x axis.
     d.axis = isFloor(d.cx - 1, d.cz) && isFloor(d.cx + 1, d.cz) ? 'x' : 'z';
-    d.startClosed = START_CLOSED.includes(key(d.cx, d.cz));
+    d.startClosed = START_CLOSED.includes(key(d.cx, d.cz)) || d.hidden; // the secret passage's doors start shut
   }
 
   const solid = new Set([...PROPS, ...FURNITURE.filter((f) => f.solid)].map((p) => key(p.cell[0], p.cell[1])));
   for (const [x, z] of SUITE_SOLIDS) solid.add(key(x, z)); // the suites' gurneys
+  for (const [x, z] of CRYO_SOLIDS) solid.add(key(x, z)); // the cryopods and the bay's desk
   for (const [x, z] of POD.solidCells) solid.add(key(x, z)); // the escape pod (4.5 m long)
   // Safe rooms and their hatches: the alien never goes in.
   const safe = new Set();
@@ -190,6 +199,17 @@ export function buildLayout() {
     for (let z = r.y; z < r.y + r.h; z++) for (let x = r.x; x < r.x + r.w; x++) safe.add(key(x, z));
   }
   for (const d of doors) if (d.safe) safe.add(key(d.cx, d.cz));
+  // Secret places: the hidden room, its passage and both of its doors. Off the maps, and safe.
+  const secret = new Set();
+  for (const r of rooms) {
+    if (!r.secret) continue;
+    for (let z = r.y; z < r.y + r.h; z++) for (let x = r.x; x < r.x + r.w; x++) secret.add(key(x, z));
+  }
+  for (const c of corridors) {
+    if (!c.secret) continue;
+    for (const p of c.pts) { const k = key(cellOf(p.x), cellOf(p.z)); if (type[idx(cellOf(p.x), cellOf(p.z))] !== VOID && !(roomIdx[idx(cellOf(p.x), cellOf(p.z))] >= 0 && !rooms[roomIdx[idx(cellOf(p.x), cellOf(p.z))]].secret)) secret.add(k); }
+  }
+  for (const k of secret) safe.add(k);
   const doorIndex = new Map(doors.map((d, i) => [key(d.cx, d.cz), i]));
 
   const layout = {
@@ -205,6 +225,7 @@ export function buildLayout() {
     isCorridor: (x, z) => inBounds(x, z) && type[idx(x, z)] === CORRIDOR,
     isSolid: (x, z) => solid.has(key(x, z)),
     isSafe: (x, z) => safe.has(key(x, z)),
+    isSecret: (x, z) => secret.has(key(x, z)),
     // Floor you can stand on (doors count, whatever their state).
     isOpen: (x, z) => isFloor(x, z) && !solid.has(key(x, z)),
     doorIndexAt: (x, z) => doorIndex.get(key(x, z)) ?? -1,

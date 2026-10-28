@@ -15,6 +15,8 @@ import {
 import { buildDecor } from './decor.js';
 import { furnitureKit, buildFurniture } from './furniture.js';
 import { buildSuites } from './suites.js';
+import { buildCryo } from './cryo.js';
+import { paddedWallTexture } from '../suitetextures.js';
 import { buildVentMeshes } from './vents.js';
 import { cutVentHoles } from '../vents.js';
 import { paddedSuite } from '../suiteplan.js';
@@ -134,11 +136,26 @@ export function buildWorld(scene, layout) {
   const hatchMat = pbr(scene, { map: TBox(doorTexture('#2f6e6a')), roughness: 0.45, metalness: 0.65, surface: 'painted', tile: [1, 1.5] }); // safe-room hatches
   const lampRed = basic(scene, 0xff2a1a);
   const lampGreen = basic(scene, 0x2aff7a);
+  // The secret panel: quilted padding like the Wellness Room's, but subtly off (js/suitetextures.js).
+  const oddPad = toTexture(scene, paddedWallTexture({ odd: true }), { anisotropy: 4, flipV: true });
+  oddPad.uScale = 2.3 / 1.2; oddPad.vScale = WALL_H / 1.2;
+  const oddMat = pbr(scene, { map: oddPad, roughness: 0.95 });
   const doors = layout.doors.map((d) => {
     const along = d.axis === 'x';
+    const x = cellCenter(d.cx), z = cellCenter(d.cz);
+    if (d.secret) {
+      // Flush with the room's padding (which stands 2 cm off the wall), not a metre back in the
+      // doorway; a closed door blocks its whole cell, so this is where you stop anyway.
+      const room = [[0, -1], [0, 1], [-1, 0], [1, 0]].map(([dx, dz]) => layout.roomAt(d.cx + dx, d.cz + dz)).find(Boolean);
+      const mesh = MeshBuilder.CreateBox('secret-panel', { width: along ? 0.25 : 2.3, height: WALL_H, depth: along ? 2.3 : 0.25 }, scene);
+      mesh.material = oddMat;
+      const wallZ = room.y + room.h === d.cz ? d.cz * TILE : (d.cz + 1) * TILE; // the room's wall line on this side
+      const toward = room.y + room.h === d.cz ? -1 : 1;
+      mesh.position.set(x, WALL_H / 2, wallZ + (toward < 0 ? 0.135 : -0.135) + toward * 0.01);
+      return { ...d, x, z, mesh, lamps: [], closed: false, closedByPlayer: false, t: 0 };
+    }
     const mesh = bevelBox('door', { width: along ? 0.25 : TILE, height: WALL_H, depth: along ? TILE : 0.25, bevel: 0.04 }, scene);
     mesh.material = d.safe ? hatchMat : doorMat;
-    const x = cellCenter(d.cx), z = cellCenter(d.cz);
     mesh.position.set(x, WALL_H / 2, z);
     const lamps = [-1, 1].map((side) => {
       const lamp = MeshBuilder.CreateBox('lamp', { width: 0.5, height: 0.08, depth: 0.08 }, scene);
@@ -479,7 +496,9 @@ export function buildWorld(scene, layout) {
     }
   }
   for (const d of doors) {
-    interactables.push({ id: 'door', kind: 'door', door: d, pos: { x: d.x, y: 1.4, z: d.z }, range: 2.6 });
+    // The secret panel is used where it is, flush with the wall, not at the doorway's middle.
+    const at = d.secret ? { x: d.mesh.position.x, y: 1.4, z: d.mesh.position.z } : { x: d.x, y: 1.4, z: d.z };
+    interactables.push({ id: 'door', kind: 'door', door: d, pos: at, range: 2.6 });
   }
 
   // The generator room's switch panel: lamps above each toggle go green when power is restored.
@@ -542,6 +561,7 @@ export function buildWorld(scene, layout) {
 
   // The wellness suites: padded, bright, and their own light.
   const suites = buildSuites(scene, layout);
+  const cryo = buildCryo(scene, layout, kit);
 
   // The vents: covers, gratings and the ducts behind them (js/vents.js).
   const vents = buildVentMeshes(scene, layout);
@@ -632,6 +652,7 @@ export function buildWorld(scene, layout) {
   function update(dt, time, alien = null, player = null) {
     decor.update(dt, time, player);
     suites.update(dt, time);
+    cryo.update(time);
     vents.update(dt);
     for (const m of pickups.values()) { m.bob(time); m.glow(0.28 + 0.08 * Math.sin(time * 2.3)); }
     podView?.update(dt);

@@ -11,9 +11,11 @@ const MARKER = '"Permanent Marker", "Marker Felt", Impact, sans-serif';
 const PRINT = 'Oswald, "Arial Narrow", sans-serif';
 
 // Quilted Clinic White padding with fabric buttons. One tile is one 1.2 m panel square.
-export function paddedWallTexture() {
+// odd: the secret panel in the Wellness Room. A hair greyer and warmer, no buttons, and a darker
+// seam round its edge: there if you look, easy to miss.
+export function paddedWallTexture({ odd = false } = {}) {
   return makeCanvas(512, 512, (g, w, h) => {
-    g.fillStyle = CLINIC_WHITE; g.fillRect(0, 0, w, h);
+    g.fillStyle = odd ? '#E9EBE6' : CLINIC_WHITE; g.fillRect(0, 0, w, h);
     const n = 4, s = w / n;
     // Each quilted diamond is a soft cushion: lighter in the middle, shaded toward the seams.
     for (let i = -1; i <= n; i++) {
@@ -28,8 +30,8 @@ export function paddedWallTexture() {
         g.closePath(); g.fill();
       }
     }
-    // Buttons where the seams meet.
-    for (let i = 0; i <= n; i++) {
+    // Buttons where the seams meet (the odd panel has none).
+    for (let i = 0; i <= (odd ? -1 : n); i++) {
       for (let j = 0; j <= n * 2; j++) {
         const x = i * s + (j % 2 ? s / 2 : 0), y = (j * s) / 2;
         g.fillStyle = 'rgba(120,140,134,0.6)';
@@ -40,6 +42,7 @@ export function paddedWallTexture() {
     }
     // The panel's edge seam.
     g.strokeStyle = 'rgba(140,160,152,0.7)'; g.lineWidth = 3; g.strokeRect(1.5, 1.5, w - 3, h - 3);
+    if (odd) { g.fillStyle = 'rgba(214,206,190,0.12)'; g.fillRect(0, 0, w, h); }
   }, { wrap: true });
 }
 

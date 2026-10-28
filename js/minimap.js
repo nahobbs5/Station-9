@@ -28,7 +28,7 @@ export function mapMarkers(layout, explored, { stage = 0, gotCrate = false, lore
   const prop = (id) => layout.props.find((p) => p.id === id);
   const out = [];
   for (const r of layout.rooms) {
-    if (r.safe && seenRoom(r)) out.push({ kind: 'safe', x: r.x + r.w / 2, z: r.y + r.h / 2 });
+    if (r.safe && !r.secret && seenRoom(r)) out.push({ kind: 'safe', x: r.x + r.w / 2, z: r.y + r.h / 2 });
   }
   REPAIRS.forEach((id, i) => {
     const p = prop(id);
@@ -122,18 +122,21 @@ export function revealAround(layout, explored, pos, isDoorClosed, radius = 4) {
 // The walkable shape sampled k times per cell side, for drawing maps with curves and angled
 // corners. Each sample: its sub-grid spot, the grid cell it's in, what kind of floor it is, and
 // which sides border a wall.
-export function floorSamples(layout, k = 3) {
+// showSecret: include the secret room and its passage (hidden, they're drawn as solid wall).
+export function floorSamples(layout, k = 3, { showSecret = false } = {}) {
   const L = layout;
   const step = TILE / k;
   const walk = (sx, sz) => sx >= 0 && sz >= 0 && sx < L.w * k && sz < L.h * k &&
-    L.walkDistance((sx + 0.5) * step, (sz + 0.5) * step) > 0;
+    L.walkDistance((sx + 0.5) * step, (sz + 0.5) * step) > 0 &&
+    (showSecret || !L.isSecret?.(Math.floor(sx / k), Math.floor(sz / k)));
   const list = [];
   for (let sz = 0; sz < L.h * k; sz++) {
     for (let sx = 0; sx < L.w * k; sx++) {
       if (!walk(sx, sz)) continue;
       const cx = Math.floor(sx / k), cz = Math.floor(sz / k);
       const room = L.roomAt(cx, cz);
-      const kind = L.isSafe(cx, cz) || room?.safe ? 'safe' : L.isDoor(cx, cz) ? 'door' : room ? 'room' : 'corridor';
+      const kind = room?.secret || L.isSecret?.(cx, cz) ? (L.isDoor(cx, cz) ? 'door' : room ? 'room' : 'corridor')
+        : L.isSafe(cx, cz) || room?.safe ? 'safe' : L.isDoor(cx, cz) ? 'door' : room ? 'room' : 'corridor';
       list.push({ sx, sz, cx, cz, kind, n: !walk(sx, sz - 1), s: !walk(sx, sz + 1), w: !walk(sx - 1, sz), e: !walk(sx + 1, sz) });
     }
   }
@@ -154,10 +157,11 @@ export class Minimap {
     canvas.style.height = this.height + 'px';
     this.g = canvas.getContext('2d');
     this.floor = floorSamples(layout, 3);
+    this.floorSecret = floorSamples(layout, 3, { showSecret: true }); // once the hidden panel is found
   }
 
   // s: { player, explored, doors, terminals: [{ id, cell }], loreRead: Set, stage, gotCrate, time }
-  draw({ player, explored, doors, terminals, loreRead, stage, gotCrate, time, grates = [], pickups = [] }) {
+  draw({ player, explored, doors, terminals, loreRead, stage, gotCrate, time, grates = [], pickups = [], secretFound = false }) {
     const { g, layout: L } = this;
     const seen = (x, z) => L.inBounds(x, z) && explored[z * L.w + x] === 1;
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -165,7 +169,7 @@ export class Minimap {
 
     // Floor (the real shape, so curves and angled corners show), then wall edges. A bit of floor
     // shows once its cell, or for floor outside the grid's cells a neighbouring cell, has been seen.
-    const { k, list } = this.floor;
+    const { k, list } = secretFound ? this.floorSecret : this.floor;
     const sub = CELL / k;
     const shown = (f) => seen(f.cx, f.cz) ||
       (!L.isFloor(f.cx, f.cz) && (seen(f.cx + 1, f.cz) || seen(f.cx - 1, f.cz) || seen(f.cx, f.cz + 1) || seen(f.cx, f.cz - 1)));
@@ -184,7 +188,7 @@ export class Minimap {
 
     // Doors, as a bar across the doorway.
     for (const d of doors) {
-      if (!seen(d.cx, d.cz)) continue;
+      if (!seen(d.cx, d.cz) || (d.hidden && !secretFound)) continue;
       g.fillStyle = d.safe ? COLORS.hatch : d.closed ? COLORS.doorClosed : COLORS.doorOpen;
       if (d.axis === 'x') g.fillRect(d.cx * CELL + CELL / 2 - 1, d.cz * CELL, 2, CELL);
       else g.fillRect(d.cx * CELL, d.cz * CELL + CELL / 2 - 1, CELL, 2);

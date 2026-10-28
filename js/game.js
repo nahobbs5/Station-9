@@ -17,6 +17,8 @@ import { parseIntro, parseLore, parseLines } from './textfiles.js';
 import { TapePlayer } from './tapes.js';
 import { CameraRig } from './rig.js';
 import { inSuite, graffitiWall, GRAFFITI_RANGE } from './suiteplan.js';
+import { cryoPods } from './cryoplan.js';
+import { Achievements } from './achievements.js';
 import { VENT, VentState, grateAt, nearestGrate, clampYaw, lookingOut, ventPoint, grateSpots } from './vents.js';
 import { NOISEMAKERS, TYPES, Inventory, ActiveNoise, CRATE_CONTENTS, pickupPlacements, MAX_CARRY } from './noisemakers.js';
 
@@ -29,7 +31,7 @@ const OBJECTIVES = {
 };
 const DORMANT = 30;     // seconds of quiet before the alien wakes
 const CATCH_DIST = 1.3;
-const SCORE = { lore: 100, repair: 250, escape: 1000, timeBonusFrom: 900 };
+const SCORE = { lore: 100, repair: 250, escape: 1000, timeBonusFrom: 900, secret: 250 };
 // ?debug lets automated tests play without pointer lock.
 const DEBUG = new URLSearchParams(location.search).has('debug');
 
@@ -249,7 +251,7 @@ export function startGame(createView) {
   // click here starts the title theme and reveals the main menu.
   const music = new Music(MENU_MUSIC);
   const endMusic = new Music(END_MUSIC);
-  const safeMusic = new Music(SAFE_MUSIC, { volume: 0.4 }); // plays in the wellness suites (the safe rooms)
+  const safeMusic = new Music(SAFE_MUSIC, { volume: 0.6 }); // plays in the wellness suites (the safe rooms)
   const leaveSplash = () => {
     if ($('splash').hidden) return;
     $('splash').hidden = true;
@@ -358,6 +360,14 @@ export function startGame(createView) {
   }
 
   function press(target) {
+    if (target.kind === 'door' && target.door.secret && !target.door.found) {
+      // The odd padded panel in the Wellness Room: it gives, and slides up with a low hiss.
+      const d = target.door;
+      d.found = true;
+      world.setDoor(d, false);
+      audio.playAt('door', { x: d.x, z: d.z }, { volume: 0.6, duration: 2.4, rate: 0.7 });
+      return;
+    }
     if (target.kind === 'door') {
       const d = target.door;
       const pc = [cellOf(player.pos.x), cellOf(player.pos.z)];
@@ -408,7 +418,7 @@ export function startGame(createView) {
 
   function score(won) {
     const repairs = won ? 3 : stage;
-    let total = loreRead.size * SCORE.lore + repairs * SCORE.repair;
+    let total = loreRead.size * SCORE.lore + repairs * SCORE.repair + (secretFound ? SCORE.secret : 0);
     if (won) total += SCORE.escape + Math.max(0, Math.floor(SCORE.timeBonusFrom - elapsed));
     return total;
   }
@@ -523,7 +533,7 @@ export function startGame(createView) {
       $('hud').hidden = true;
       $('caught').hidden = false;
       $('caught-stats').textContent =
-        `You lasted ${fmt(elapsed)} and finished ${stage} of 3 repairs. Lore read: ${loreRead.size}/${LORE_TOTAL}. Score: ${score(false)}`;
+        `You lasted ${fmt(elapsed)} and finished ${stage} of 3 repairs. Lore read: ${loreRead.size}/${LORE_TOTAL}.${secretFound ? ' Secret: Cryosleep Bay found.' : ''}${achievements.names.map((n) => ` Achievement: ${n}.`).join('')} Score: ${score(false)}`;
       document.exitPointerLock();
     }, 1400);
   }
@@ -552,7 +562,7 @@ export function startGame(createView) {
       if (allLore) $('win-text').textContent =
         'The pod drops away from Station 9. Marigold is still reading names into the dark. Yours is not one of them.';
       $('win-stats').textContent =
-        `Time ${fmt(elapsed)} · Times hunted: ${stats.hunts} · Noise-makers thrown: ${stats.decoys} · Lore read: ${loreRead.size}/${LORE_TOTAL}`;
+        `Time ${fmt(elapsed)} · Times hunted: ${stats.hunts} · Noise-makers thrown: ${stats.decoys} · Lore read: ${loreRead.size}/${LORE_TOTAL}${secretFound ? ' · Secret: Cryosleep Bay found' : ''}${achLine()}`;
       $('win-score').textContent = `Score: ${score(true)}`;
       document.exitPointerLock();
     }, allLore ? 9000 : 1800);
@@ -666,6 +676,37 @@ export function startGame(createView) {
 
   // Stepping into a wellness suite: Marigold's line at the door, and your eyes adjusting to the light
   // (exposure from 0.6 to 1.0 of normal over 1.5 s). In Suite B she comments if you get close to the wall.
+  // The secret Cryosleep Bay: found the first time you step inside; Marigold has a word about it,
+  // and another the first time you stand by your own pod.
+  let secretFound = false, saidPod = false;
+  // Achievements (js/achievements.js): a gold banner the first time each one is earned this game.
+  const achievements = new Achievements();
+  let achTimer = 0;
+  function achieve(id) {
+    const a = achievements.earn(id);
+    if (!a) return false;
+    $('ach-name').textContent = a.name + (a.isNew ? '  \u00b7  NEW' : '');
+    $('ach-text').textContent = a.text;
+    $('achievement').hidden = false;
+    achTimer = 4.5;
+    return true;
+  }
+  const achLine = () => achievements.names.map((n) => ` · Achievement: ${n}`).join('');
+  const yourPod = cryoPods(layout).find((p) => p.occupied);
+  function updateCryo() {
+    const here = layout.roomAt(cellOf(player.pos.x), cellOf(player.pos.z));
+    if (here?.id !== 'cryo') return;
+    if (!secretFound) {
+      secretFound = true;
+      toast(`Secret found: Cryosleep Bay  +${SCORE.secret}`);
+      intercom.say(LINES.cryoEnter, { priority: true });
+    }
+    if (!saidPod && Math.hypot(player.pos.x - yourPod.x, player.pos.z - yourPod.z) < 2.6) {
+      saidPod = true;
+      intercom.say(LINES.cryoPod);
+    }
+  }
+
   function updateSuite(dt) {
     const suite = inSuite(layout, player.pos);
     if (suite !== suiteNow) {
@@ -736,6 +777,8 @@ export function startGame(createView) {
     throwables.update(dt, elapsed, (pos, type, item) => {
       audio.playAt(type === 'echo' ? 'clatter' : type === 'shard' ? 'tick' : 'thud', pos, { volume: 0.9 });
       activeNoise.place(type, item.ball.position); // follows it if it rolls
+      // Into the Cryosleep Bay, where everyone is resting: Rude Awakening.
+      if (layout.roomAt(cellOf(pos.x), cellOf(pos.z))?.id === 'cryo' && achieve('rudeAwakening')) intercom.say(LINES.cryoNoise);
       if (type === 'buzz') audio.playAt('buzz', item.ball.position, { volume: 0.9, loop: true, duration: NOISEMAKERS.buzz.life, ref: 3 });
     });
     // Each landed noise-maker goes off on its own schedule; the alien takes them as lures.
@@ -775,6 +818,7 @@ export function startGame(createView) {
     if (state !== 'playing') return; // caught at a grate
     if (!hidden && alien.dormant <= 0 && !safe && d < CATCH_DIST) { caught(); return; }
     updateSuite(dt);
+    updateCryo();
 
     tricks.update(dt);
     hatman.update(dt, {
@@ -791,6 +835,7 @@ export function startGame(createView) {
     if (hatman.dark) rig.flashlight = 0; // the flashlight dies with the power
     intercom.update(dt);
     if (toastTimer > 0 && (toastTimer -= dt) <= 0) $('toast').hidden = true;
+    if (achTimer > 0 && (achTimer -= dt) <= 0) $('achievement').hidden = true;
 
     drawHud(dt, target, repairing);
   }
@@ -810,7 +855,7 @@ export function startGame(createView) {
     minimap.draw({
       player, explored, terminals, loreRead, stage, gotCrate: !crateLeft.length, pickups: [...pickupsLeft.values()],
       grates: vents.flatMap((v) => v.grates),
-      doors: world.doors,
+      doors: world.doors, secretFound: secretFound || world.doors.some((d) => d.secret && d.found),
       time: elapsed,
     });
   }
@@ -818,7 +863,8 @@ export function startGame(createView) {
   function drawHud(dt, target, repairing) {
     drawMap(dt);
     const room = layout.roomAt(cellOf(player.pos.x), cellOf(player.pos.z));
-    $('location').textContent = vent.inside ? (vent.vent?.kind === 'duct' ? 'Duct' : 'Vent') + ' · HIDING' : room ? room.name + (room.safe ? ' · SAFE' : '') : layout.isSafe(cellOf(player.pos.x), cellOf(player.pos.z)) ? 'Hatch · SAFE' : 'Corridor';
+    $('location').textContent = vent.inside ? (vent.vent?.kind === 'duct' ? 'Duct' : 'Vent') + ' · HIDING' : room ? room.name + (room.safe && !room.secret ? ' · SAFE' : '') : layout.isSecret(cellOf(player.pos.x), cellOf(player.pos.z)) ? 'Passage' // the secret one: no SAFE tag to give it away
+      : layout.isSafe(cellOf(player.pos.x), cellOf(player.pos.z)) ? 'Hatch · SAFE' : 'Corridor';
     $('lore').textContent = `LORE ${loreRead.size}/${LORE_TOTAL}`;
     $('objective').textContent = stage < 3 ? OBJECTIVES[ORDER[stage]] : '';
     $('checklist').innerHTML = ORDER.map((id, i) =>
@@ -837,7 +883,8 @@ export function startGame(createView) {
 
     let prompt = '';
     if (target) {
-      if (target.kind === 'door') prompt = `[E] ${target.door.closed ? 'Open' : 'Close'} door`;
+      if (target.kind === 'door' && target.door.secret && !target.door.found) prompt = ''; // just padding, as far as you know
+      else if (target.kind === 'door') prompt = `[E] ${target.door.closed ? 'Open' : 'Close'} door`;
       else if (target.kind === 'repair') {
         if (progress[target.id] >= 1) prompt = 'Done';
         else if (!canRepair(target.id)) prompt = target.id === 'pod' && stage < 2 ? 'Needs main power and a rescue call' : 'Needs main power';
@@ -914,7 +961,7 @@ export function startGame(createView) {
 
   // Handy for debugging in the browser console.
   window.station9 = {
-    alien, player, world, layout, hatman, tricks, apparitions: phantoms, screens: view.screens, progress, loreRead, explored, tapes, audio, intercom, vent, vents, decor: world.decor,
+    alien, player, world, achievements, layout, hatman, tricks, apparitions: phantoms, screens: view.screens, progress, loreRead, explored, tapes, audio, intercom, vent, vents, decor: world.decor,
     renderer: view.renderer, view, rig, engine: view.name, inventory, activeNoise, throwables,
     get lore() { return lore; }, get state() { return state; }, get stage() { return stage; },
     get alienOff() { return alienOff; }, set alienOff(v) { setAlienOff(!!v); },

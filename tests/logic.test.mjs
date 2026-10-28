@@ -34,11 +34,13 @@ test('every room can reach every other room', () => {
   }
 });
 
-test('the station has 9 corridors with two doors each, plus one hatch per safe room', () => {
+test('the station has 9 corridors with two doors each, a hatch per suite, and the secret passage', () => {
   assert.equal(layout.rooms.length, ROOMS.length);
   assert.ok(layout.room('crew'), 'crew quarters exists');
-  assert.equal(layout.doors.length, 9 * 2 + 2);
-  assert.equal(layout.doors.filter((d) => d.safe).length, 2);
+  assert.equal(layout.doors.length, 9 * 2 + 2 + 2);
+  assert.equal(layout.doors.filter((d) => d.safe && !d.hidden).length, 2, 'one hatch per suite');
+  assert.equal(layout.doors.filter((d) => d.hidden).length, 2, 'the secret passage has two doors');
+  assert.equal(layout.doors.filter((d) => d.secret).length, 1, 'one of them is the hidden panel');
   for (const d of layout.doors) assert.ok(layout.isDoor(d.cx, d.cz));
 });
 
@@ -961,12 +963,12 @@ test('posters: every one has its art, hangs in a normal room, clear of doors and
   const { posterPlacements, POSTER_ART } = await import('../js/worldplan.js');
   const layout = buildLayout();
   const all = posterPlacements(layout);
-  assert.equal(all.length, 18);
+  assert.equal(all.length, 19);
   for (const p of all) {
     assert.ok(POSTER_ART[p.id], `${p.id} has an aspect`);
     assert.ok(existsSync(new URL(`../assets/posters/${p.id}.jpg`, import.meta.url)), `${p.id}.jpg exists`);
     const room = layout.room(p.room);
-    assert.ok(!room.safe, `${p.id} not in a safe room`);
+    assert.ok(!room.safe || room.secret, `${p.id} not in a padded suite`);
     // Its whole width stays on this room's wall, and not by a door.
     const along = [Math.cos(p.rot), -Math.sin(p.rot)];
     for (const k of [-p.w / 2, 0, p.w / 2]) {
@@ -1008,4 +1010,68 @@ test('teleporter lab: wall pieces clear of the doors, and the room still walkabl
   for (let x = room.x; x < room.x + room.w; x++) for (let z = room.y; z < room.y + room.h; z++) {
     if (open(x, z)) assert.ok(seen.has(x + ',' + z), `${x},${z} reachable`);
   }
+});
+
+test('cryosleep bay: only through the hidden panel, safe from the alien, and off the maps', async () => {
+  const { floorSamples, mapMarkers } = await import('../js/minimap.js');
+  const { cryoPods, CRYO_SOLIDS } = await import('../js/cryoplan.js');
+  const layout = buildLayout();
+  const cryo = layout.room('cryo');
+  assert.ok(cryo.secret && cryo.safe);
+  // It doesn't touch any other room (a gap of at least one cell all round).
+  for (const r of layout.rooms) {
+    if (r === cryo) continue;
+    const apart = r.x >= cryo.x + cryo.w + 1 || cryo.x >= r.x + r.w + 1 || r.y >= cryo.y + cryo.h + 1 || cryo.y >= r.y + r.h + 1;
+    assert.ok(apart, `cryo touches ${r.id}`);
+  }
+  const panel = layout.doors.find((d) => d.secret);
+  assert.ok(panel && panel.startClosed);
+  assert.equal(layout.roomAt(panel.cx, panel.cz - 1)?.id, 'wellness', 'the panel is on the Wellness Room wall');
+  // Flood from the airlock: with the panel shut the bay can't be reached; open, all of it can.
+  const reach = (panelOpen) => {
+    const start = layout.room('airlock').spot, seen = new Set([start.join(',')]), queue = [start];
+    while (queue.length) {
+      const [x, z] = queue.shift();
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, nz = z + dz, k = nx + ',' + nz;
+        if (seen.has(k) || !layout.isOpen(nx, nz)) continue;
+        if (!panelOpen && nx === panel.cx && nz === panel.cz) continue;
+        seen.add(k); queue.push([nx, nz]);
+      }
+    }
+    return seen;
+  };
+  const shut = reach(false), open = reach(true);
+  for (let z = cryo.y; z < cryo.y + cryo.h; z++) for (let x = cryo.x; x < cryo.x + cryo.w; x++) {
+    if (!layout.isOpen(x, z)) continue;
+    assert.ok(!shut.has(x + ',' + z), `${x},${z} reachable without the panel`);
+    assert.ok(open.has(x + ',' + z), `${x},${z} unreachable with the panel open`);
+    assert.ok(layout.isSafe(x, z) && layout.isSecret(x, z));
+  }
+  for (const d of layout.doors.filter((q) => q.hidden)) assert.ok(layout.isSafe(d.cx, d.cz) && layout.isSecret(d.cx, d.cz));
+  // Pods and desk block their cells; your pod is one of the six.
+  for (const [x, z] of CRYO_SOLIDS) assert.ok(layout.isSolid(x, z));
+  const pods = cryoPods(layout);
+  assert.equal(pods.length, 6);
+  assert.equal(pods.filter((p) => p.occupied).length, 1);
+  // Maps: hidden floor never includes the bay; no SAFE marker for it even once seen.
+  assert.ok(!floorSamples(layout, 3).list.some((f) => layout.isSecret(f.cx, f.cz)));
+  assert.ok(floorSamples(layout, 3, { showSecret: true }).list.some((f) => layout.isSecret(f.cx, f.cz)));
+  const explored = new Uint8Array(layout.w * layout.h).fill(1);
+  assert.ok(!mapMarkers(layout, explored).some((m) => m.kind === 'safe' && Math.floor(m.x) >= cryo.x && Math.floor(m.x) < cryo.x + cryo.w && Math.floor(m.z) >= cryo.y && Math.floor(m.z) < cryo.y + cryo.h));
+});
+
+test('achievements: earned once a game, NEW only the first time ever, unknown ids rejected', async () => {
+  const { Achievements } = await import('../js/achievements.js');
+  const store = new Map();
+  const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+  const a = new Achievements(storage);
+  const first = a.earn('rudeAwakening');
+  assert.ok(first && first.isNew && first.name === 'Rude Awakening');
+  assert.equal(a.earn('rudeAwakening'), null, 'only once a game');
+  assert.deepEqual(a.names, ['Rude Awakening']);
+  const next = new Achievements(storage).earn('rudeAwakening');
+  assert.ok(next && !next.isNew, 'remembered from before');
+  assert.throws(() => a.earn('nope'));
+  assert.ok(new Achievements(undefined).earn('rudeAwakening'), 'works with no storage');
 });

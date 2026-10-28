@@ -23,6 +23,7 @@ export const LIGHTS = {
   EMERGENCY: { color: 0xff3a22, intensity: 5 },
   POWERED: { color: 0xd8e2ff, intensity: 16 },
   SAFE: { color: 0xeef6ff, intensity: 5 }, // the wellness suites: cool white and steady, on their own circuit
+  CRYO: { color: 0x9fd2ff, intensity: 6 }, // the secret Cryosleep Bay: cold, dim and steady
 };
 
 // The walls, as flat panels about 2 m wide following the station's outline (js/walls.js), so they
@@ -98,7 +99,7 @@ export const POSTER_ART = {
   'labor-keeps': 0.79, observe: 0.535, discipline: 0.68, grow: 0.615, coffee: 0.62, conserve: 0.59,
   healthy: 0.68, 'farther-harder': 0.65, resources: 0.58, 'labor-builds': 0.635,
   'safer-farther': 0.67, brighter: 0.65, 'life-travels': 0.64, 'new-worlds': 0.61, 'same-skies': 0.62,
-  'difficult-work': 0.69, discover: 2.5, 'keep-moving': 0.86,
+  'difficult-work': 0.69, discover: 2.5, 'keep-moving': 0.86, 'sleep-travel': 1.18,
 };
 export const POSTERS = [
   { room: 'airlock', side: 'n', art: ['safer-farther', 'new-worlds'] },
@@ -114,6 +115,7 @@ export const POSTERS = [
   { room: 'storage', side: 's', art: ['labor-keeps'] }, // above the noise-maker crate
   // Beside the Teleporter Lab's south door (along: where on the wall, 0..1; h: its height).
   { room: 'teleporter', side: 's', art: ['keep-moving'], along: 0.71, h: 1.4 },
+  { room: 'cryo', side: 'n', art: ['sleep-travel'], along: 0.74, h: 1.3 }, // the secret bay, beside its door
 ];
 const POSTER_H = 1.55, WIDE_H = 1.05, POSTER_Y = 1.7, PAIR_GAP = 0.3;
 
@@ -282,11 +284,12 @@ export function teleporterLevel(time) {
 
 // A room's light state, as kept by the renderers.
 export function roomState(room) {
-  const base = room.safe ? LIGHTS.SAFE : LIGHTS.EMERGENCY;
+  const base = room.secret ? LIGHTS.CRYO : room.safe ? LIGHTS.SAFE : LIGHTS.EMERGENCY;
   return { room, base: { ...base }, mult: 1, beat: 0, haunt: 0, glitch: 0, blackout: false };
 }
 // Its base colour and strength with or without main power. The pod bay stays red: its own circuit.
 export function roomBase(room, powered) {
+  if (room.secret) return { ...LIGHTS.CRYO };
   if (room.safe) return { ...LIGHTS.SAFE };
   return powered && room.id !== 'pod' ? { ...LIGHTS.POWERED } : { ...LIGHTS.EMERGENCY };
 }

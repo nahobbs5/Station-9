@@ -27,6 +27,11 @@ export const LINES = {
   },
   suiteHunt: 'Please stay where you are. This is the safest place in the station.',
   graffiti: 'That wall will be cleaned soon.',
+  // The secret Cryosleep Bay: stepping in, and standing by your own pod.
+  cryoEnter: "This bay isn't on your rotation, Technician. Everyone in here is resting. Please let them rest.",
+  cryoPod: "Please don't worry about that one, Technician. It's only a backup.",
+  // A noise-maker thrown into the bay (the Rude Awakening achievement).
+  cryoNoise: 'Please keep it down, Technician. Some of us are sleeping.',
   needPower: 'That system requires main power. Safety first!',
   needComms: 'Pod launch requires a confirmed rescue window. Please contact Comms first.',
   // A thrown noise-maker (not a Buzz Pod) ran out and the alien never heard it. First time only.

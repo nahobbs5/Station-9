@@ -6,7 +6,8 @@ import { buildLayout, cellOf, cellCenter } from '../js/layout.js';
 import { inSuite } from '../js/suiteplan.js';
 import { grateSpots } from '../js/vents.js';
 import { cameoSurfaces } from '../js/hatman.js';
-import { APPARITION, KINDS, KIND_IDS, Apparitions, floorSpots, pickSpot } from '../js/apparitions.js';
+import { APPARITION, KINDS, KIND_IDS, Apparitions, floorSpots, pickSpot, segmentHitsBox } from '../js/apparitions.js';
+import { podFootprint } from '../js/podplan.js';
 
 const layout = buildLayout();
 const grates = grateSpots(layout);
@@ -37,10 +38,11 @@ function* everywhere() {
   for (const s of floor) for (const f of dirs) yield { player: { x: s.x, z: s.z }, forward: f, room: s.room };
 }
 
-test('apparitions: nine kinds, each with art', async () => {
+test('apparitions: the nine field-guide kinds plus the window watcher, each with art', async () => {
   const fs = await import('node:fs');
-  assert.equal(KIND_IDS.length, 9);
-  for (const id of KIND_IDS) assert.ok(fs.existsSync(new URL(`../assets/apparitions/${id}.png`, import.meta.url)), id);
+  assert.equal(KIND_IDS.length, 10);
+  assert.equal(KIND_IDS[9], 'watcher'); // keys 1-9 summon the first nine
+  for (const id of KIND_IDS) assert.ok(fs.existsSync(new URL(`../assets/apparitions/${KINDS[id].art ?? id}.png`, import.meta.url)), id);
 });
 
 test('apparitions: standing spots are open floor, never in a safe room or its doorway', () => {
@@ -77,8 +79,23 @@ test('apparitions: each kind only where it belongs, and never within 3 m', () =>
     if (id === 'astronaut') assert.ok(room === 'airlock' || room === 'pod', room);
     if (id === 'gasmask') assert.ok(room === 'generator' || grates.some((g) => Math.hypot(g.x - p.x, g.z - p.z) < 4), `${room}`);
     if (id === 'child') assert.ok(layout.isCorridor(cellOf(p.x), cellOf(p.z)));
+    if (id === 'watcher') {
+      // On the Pod Bay window, and only when you're in the bay.
+      assert.equal(room, 'pod');
+      assert.equal(layout.roomAt(cellOf(ctx.player.x), cellOf(ctx.player.z))?.id, 'pod');
+      assert.ok(p.window && Math.abs(p.y - (p.window.y - p.window.h / 2)) < 0.2);
+      assert.ok(!segmentHitsBox(ctx.player, p.window, podFootprint()), 'the pod is in the way');
+    }
   }
   for (const id of KIND_IDS) assert.ok(seen[id] > 0, `${id} never fits anywhere`);
+});
+
+test('apparitions: segmentHitsBox', () => {
+  const box = { x0: 0, x1: 2, z0: 0, z1: 2 };
+  assert.ok(segmentHitsBox({ x: -1, z: 1 }, { x: 3, z: 1 }, box));
+  assert.ok(!segmentHitsBox({ x: -1, z: 3 }, { x: 3, z: 3 }, box));
+  assert.ok(!segmentHitsBox({ x: -2, z: 1 }, { x: -1, z: 1 }, box), 'stops short');
+  assert.ok(segmentHitsBox({ x: -1, z: -1 }, { x: 3, z: 3 }, box), 'diagonal');
 });
 
 test('apparitions: the shadow is at the edge of your vision, 35-48 degrees off', () => {

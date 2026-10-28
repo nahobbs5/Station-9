@@ -117,14 +117,18 @@ export function corridorEndLamps(layout) {
 //   showCameo(surface), hideCameo(), setLamps(k) (corridor-end lamp brightness), position }
 // rig: the camera ({ position, forward() }). lineClear(a, b): nothing solid (or a shut door) between.
 // world: { setBlackout(on), dimBeat(seconds) }. onFirst(): called the first time he's ever shown.
+// onShow(id): he's shown ('hatman', or 'hatman-cameo' in glass); not for debug shows.
+// onStare(id): you looked at him until he went.
 export class HatMan {
-  constructor(figure, layout, { rig, lineClear, world, onFirst = () => {}, rand = Math.random }) {
+  constructor(figure, layout, { rig, lineClear, world, onFirst = () => {}, onShow = () => {}, onStare = () => {}, rand = Math.random }) {
     this.figure = figure;
     this.layout = layout;
     this.rig = rig;
     this.lineClear = lineClear;
     this.world = world;
     this.onFirst = onFirst;
+    this.onShow = onShow;
+    this.onStare = onStare;
     this.rand = rand;
     this.spots = corridorSpots(layout);
     this.used = new Set();
@@ -220,6 +224,7 @@ export class HatMan {
     this.lights(true, 'shown');
     this.looked = 0;
     if (this.sightings++ === 0) this.onFirst();
+    if (!this.debugShow) this.onShow('hatman');
   }
 
   whileShown(dt, ctx) {
@@ -229,6 +234,7 @@ export class HatMan {
     const held = !this.debugShow && (ctx.inSuite || ctx.blocked);
     if (this.looked >= HATMAN.lookAway || this.t >= HATMAN.life || held ||
         dist(this.figure.position, ctx.player) < HATMAN.tooClose) {
+      if (this.looked >= HATMAN.lookAway && !this.debugShow) this.onStare('hatman');
       this.figure.hide();
       this.lights(false, 'flicker');
     }
@@ -258,6 +264,7 @@ export class HatMan {
   showCameo(surface) {
     if (!this.enabled || this.busy || this.cameoActive) return false;
     this.figure.showCameo(surface);
+    this.onShow('hatman-cameo');
     this.cameoLeft = HATMAN.cameo;
     this.world.dimBeat(HATMAN.dip);
     this.dipLeft = HATMAN.dip;

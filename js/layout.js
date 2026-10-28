@@ -94,7 +94,9 @@ export const PROPS = [
     ['teleporter', [23, 7], 'off'],
     ['crew',      [12, 13], 'roster',      'Skipper suit\nis by the\nfridge.\n– S.D.', true],
     ['pod',       [1, 18],  'manifest'],
-  ].map(([room, cell, screen, note = null, mug = false], i) => ({ id: 'console' + (i + 1), kind: 'console', room, cell, screen, note, mug })),
+  ].map(([room, cell, screen, note = null, mug = false], i) => ({ id: 'console' + (i + 1), kind: 'console', room, cell, screen, note, mug,
+    // The Crew Quarters roster console doubles as the onboarding kiosk (text/onboarding.txt).
+    kiosk: screen === 'roster' })),
 ];
 
 // Furniture (after the "Research Station Interiors" sheet). solid pieces block their cell like props;

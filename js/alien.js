@@ -70,28 +70,30 @@ export class Alien {
     if (heard < d) return false;
     const cell = this.reachableCell(noise.x, noise.z);
     const fromPlayer = noise.source === 'player';
+    // noise.taken: it set off towards this noise (Over Here!, for a noise-maker).
     switch (this.state) {
       case 'patrol':
       case 'lost':
-        this.investigate(cell, heard);
+        noise.taken = this.investigate(cell, heard);
         break;
       case 'investigate':
         if (fromPlayer && d <= HEAR_CLOSE) this.startHunt(cell, d);
-        else this.investigate(cell, heard);
+        else noise.taken = this.investigate(cell, heard);
         break;
       case 'hunt':
         if (fromPlayer) this.contact(cell);
         // A decoy only pulls it away if it hasn't had eyes on you for a moment.
-        else if (this.time - this.lastSeen > 0.5) this.investigate(cell, heard);
+        else if (this.time - this.lastSeen > 0.5) noise.taken = this.investigate(cell, heard);
         break;
     }
     return true;
   }
 
+  // Returns true if it now heads for this noise.
   investigate(cell, heard) {
     if (this.state === 'investigate') {
       // Go to the loudest recent noise: a quieter one can't pull it away straight after.
-      if (heard < this.targetHeard && this.time - this.targetTime < RECENT) return;
+      if (heard < this.targetHeard && this.time - this.targetTime < RECENT) return false;
     } else {
       this.state = 'investigate';
       this.warn = 0;
@@ -103,6 +105,7 @@ export class Alien {
     this.targetTime = this.time;
     this.searching = false;
     this.repath = true;
+    return true;
   }
 
   startHunt(cell, dist) {

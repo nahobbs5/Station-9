@@ -103,6 +103,56 @@ export const POSTER_ART = {
   // From the "Botanical Haven" sheet: hung near the plants.
   botanical: 0.836, nourish: 0.594, hydroponics: 0.557, preserve: 0.646, 'grow-a': 0.795,
 };
+// What each poster says (shown when you inspect it). The botanical signs aren't propaganda.
+export const POSTER_TEXT = {
+  'labor-keeps': 'LABOR KEEPS US HERE. People, systems, progress, together.',
+  observe: 'OBSERVE. REPORT. MAINTAIN.',
+  discipline: 'Discipline. Focus. Endurance. Results.',
+  grow: 'GROW. RECYCLE. REBUILD. REPEAT.',
+  coffee: 'GOOD WORK, BETTER COFFEE. Fuel, focus, function.',
+  conserve: 'CONSERVE TODAY, EXTEND TOMORROW. Water, air, power, materials, people.',
+  healthy: 'A HEALTHY STATION KEEPS US ALL MOVING. Medical checks: maintain, report.',
+  'farther-harder': 'FARTHER. HARDER. TOGETHER.',
+  resources: 'RESOURCES ARE NOT INFINITE.',
+  'labor-builds': 'YOUR LABOR BUILDS A SAFER TOMORROW.',
+  'safer-farther': 'SAFER. FARTHER. TOGETHER.',
+  brighter: 'A BRIGHTER TOMORROW, FURTHER OUT.',
+  'life-travels': 'LIFE TRAVELS WELL. Biosystems: sustain, explore.',
+  'new-worlds': 'NEW WORLDS, SAME HUMANITY.',
+  'same-skies': 'DIFFERENT PEOPLE, SAME SKIES.',
+  'difficult-work': 'DIFFICULT WORK, EXTRAORDINARY PLACES.',
+  discover: 'DISCOVER. RESEARCH. BELONG.',
+  'keep-moving': 'KEEP PEOPLE MOVING FOR A BRIGHTER TOMORROW.',
+  'sleep-travel': 'SLEEP. TRAVEL. EXPLORE. BELONG.',
+  botanical: 'STATION 9 BOTANICAL.',
+  nourish: 'NOURISH. RESEARCH. SUSTAIN. TOMORROW.',
+  hydroponics: 'HYDROPONICS: clean air, clean water, fresh food, stronger people.',
+  preserve: 'PRESERVE. CULTIVATE. EXPLORE. BELONG.',
+  'grow-a': 'GROW-A: hydroponics, research, propagation, genetics.',
+};
+const BOTANICAL = new Set(['botanical', 'nourish', 'hydroponics', 'preserve', 'grow-a']);
+export const isPropaganda = (id) => id in POSTER_ART && !BOTANICAL.has(id);
+
+// Safety notices you can read (E): the Teleporter Lab's protocol panel (teleporterFixtures) and
+// these, each a small plate on a room wall clear of doors, posters and furniture.
+export const SAFETY_NOTICES = [
+  { id: 'notice-generator', room: 'generator', side: 's', along: 0.78, title: 'HIGH VOLTAGE',
+    lines: ['AUTHORISED STAFF ONLY', 'LOCK OUT BEFORE SERVICE', 'NO LOOSE CLOTHING', 'REPORT ALL SPARKS'] },
+  { id: 'notice-pod', room: 'pod', side: 'n', along: 0.25, title: 'LAUNCH SAFETY',
+    lines: ['KEEP HATCH CLEAR', 'SECURE HARNESS', 'ONE OCCUPANT PER POD', 'DO NOT RUN'] },
+  { id: 'notice-airlock', room: 'airlock', side: 'e', along: 0.22, title: 'DECOMPRESSION',
+    lines: ['CHECK SEALS', 'SUIT UP BEFORE CYCLING', 'NEVER CYCLE ALONE', 'STAY CALM'] },
+];
+export const PROTOCOL_NOTICE = { id: 'tp-protocol', title: 'SAFETY PROTOCOL',
+  lines: ['CLEAR AREA', 'SCAN', 'CONFIRM', 'STAND WITHIN RINGS', 'AWAIT TRANSFER'] };
+const NOTICE_W = 0.62, NOTICE_H = 0.8, NOTICE_Y = 1.6;
+// Each as hung: { id, title, lines, room, x, y, z, rot, w, h }.
+export function safetyNotices(layout) {
+  return SAFETY_NOTICES.map((n) => ({ ...n, ...wallSpot(layout.room(n.room), n.side, n.along), y: NOTICE_Y, w: NOTICE_W, h: NOTICE_H }));
+}
+// The toast when you read one.
+export const noticeText = (n) => `${n.title}: ${n.lines.map((l) => l[0] + l.slice(1).toLowerCase()).join('. ')}.`;
+
 export const POSTERS = [
   { room: 'airlock', side: 'n', art: ['safer-farther', 'new-worlds'] },
   { room: 'crew', side: 'w', art: ['coffee', 'life-travels'] },

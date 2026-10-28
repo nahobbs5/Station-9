@@ -1,0 +1,31 @@
+# The onboarding recording on the Crew Quarters kiosk (the roster console). Same format as
+# text/lore.txt. It isn't a lore tape: it doesn't count toward LORE, Scholar or Ignorance Is Bliss.
+# Hearing it to the end without clicking past a line earns "This Meeting Could Have Been an Email".
+# Keep the id k01.
+
+=== k01: Mandatory Wellness & Productivity Orientation, Module 1 of 14
+room: crew
+author: Vantora Transit Group
+date: 2091-02-17
+
+Hello, and welcome to Mandatory Wellness and Productivity Orientation, Module 1 of 14. This module will take approximately four minutes. Please do not skip ahead. Skipping ahead is logged.
+
+Before we begin, please make sure you are seated comfortably, facing the screen, and not operating any machinery. If you are operating machinery, please stop. Machinery can wait. Orientation cannot.
+
+At Vantora Transit Group, we believe that people are our most valuable resource. Resources, as you know, are not infinite. That is why we ask every team member to treat themselves with the same care they would give to station equipment.
+
+In this module, we will cover three topics. Topic one: your schedule. Topic two: your wellbeing. Topic three: a brief summary of topics one and two.
+
+Topic one. Your schedule. Your shift is twelve hours long. Your rest period is also twelve hours long, minus time spent on orientation modules, incident reports, and wellness check-ins. Rest periods are optional but strongly recommended.
+
+Topic two. Your wellbeing. Vantora is committed to a healthy station. A healthy station keeps us all moving. If you feel tired, stressed, or watched, this is completely normal. Please log the feeling with Marigold, who is always listening, and then return to work.
+
+If the feeling continues for more than three shifts, you may book a session in the Wellness Room. Sessions last forty-five minutes. Please arrive ten minutes early, and please do not touch the padded panels.
+
+Some team members report hearing footsteps in empty rooms, seeing figures at the ends of corridors, or noticing that doors they closed are now open. These are common side effects of long-haul deployment. They are not a cause for concern. They are not a reason to stop working.
+
+Topic three. A brief summary. Your schedule is twelve hours. Your rest is also twelve hours, approximately. You are healthy. You are valued. You are not being watched, except by Marigold, for your safety.
+
+Thank you for completing Module 1 of 14. Module 2, Hydration and You, will begin at the start of your next rest period. Attendance is mandatory.
+
+Remember: your labor is our freedom. Have a productive day.

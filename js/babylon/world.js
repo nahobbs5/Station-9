@@ -5,12 +5,13 @@ import {
   wallTexture, floorTextures, ceilingTexture, doorTexture, mapTexture, wallSpot,
   consoleScreen, LIVE_SCREENS, keyboardTexture, stickyNote, mugTexture, housingTexture, hazardTexture, crtTexture,
   tapeBanner, tapeDeckTexture, teleporterFloorTexture, teleporterRingDecal, teleporterSignTexture,
-  safetyProtocolTexture, restrictedTexture,
+  safetyProtocolTexture, restrictedTexture, safetyNoticeTexture,
   commsCallScreen, reactorPlateTexture, switchPanelTexture, SWITCH_GROUPS,
 } from '../textures.js';
 import {
   wallPanels, guideStrips, propPlacement, propHeight, posterPlacements, WALL_MAP, EMBLEM, looseItems,
   stepDoor, roomLightLevel, teleporterLevel, roomState, roomBase, doorFrames, FRAME, kickPlateSpans, generatorFixtures, teleporterFixtures,
+  POSTER_TEXT, isPropaganda, safetyNotices, noticeText, PROTOCOL_NOTICE,
 } from '../worldplan.js';
 import { buildDecor } from './decor.js';
 import { buildGarden } from './garden.js';
@@ -487,7 +488,9 @@ export function buildWorld(scene, layout) {
     if (p.kind === 'console') {
       // Set dressing: no light, and aiming at it just says it's locked (js/game.js).
       status.dispose();
-      interactables.push({ id: p.id, kind: 'console', label: p.screen === 'off' ? 'Dead terminal' : 'Terminal locked', pos: { x, y: propHeight(p), z }, range: 2.7 });
+      // ...except the kiosk, which plays the onboarding recording (js/game.js, text/onboarding.txt).
+      if (p.kiosk) interactables.push({ id: p.id, kind: 'kiosk', label: 'Play onboarding', pos: { x, y: propHeight(p), z }, range: 2.7 });
+      else interactables.push({ id: p.id, kind: 'console', label: p.screen === 'off' ? 'Dead terminal' : 'Terminal locked', pos: { x, y: propHeight(p), z }, range: 2.7 });
     } else if (p.kind !== 'scenery') {
       if (p.kind === 'crate') status.dispose(); // no marker light: its noise-makers sit on the lid
       else add(status, ...statusPos);
@@ -613,6 +616,9 @@ export function buildWorld(scene, layout) {
     tex.uScale = -1; // mirrored back, as for the emblem
     tex.anisotropicFilteringLevel = 4;
     art.material = pbr(scene, { map: tex, roughness: 0.85 });
+    // E reads it (Corporate Culture counts the propaganda ones).
+    interactables.push({ id: 'poster:' + pp.id, kind: 'poster', poster: pp.id, propaganda: isPropaganda(pp.id), text: POSTER_TEXT[pp.id] ?? '',
+      label: 'Inspect poster', pos: { x: pp.x + Math.sin(pp.rot) * 0.05, y: pp.y, z: pp.z + Math.cos(pp.rot) * 0.05 }, range: 2.6 });
   }
   poster(WALL_MAP.room, WALL_MAP.side, mapTexture(layout), WALL_MAP.w, WALL_MAP.h, WALL_MAP.y);
 
@@ -649,6 +655,14 @@ export function buildWorld(scene, layout) {
     const signTex = TWall(teleporterSignTexture()); signTex.hasAlpha = true;
     wallPiece(tf.sign, pbr(scene, { map: signTex, roughness: 0.8, transparent: true, zOffset: -2 }), 'tp-sign');
     wallPiece(tf.protocol, pbr(scene, { map: TWall(safetyProtocolTexture()), roughness: 0.7 }), 'tp-protocol');
+    const notice = (n, f) => interactables.push({ id: n.id, kind: 'notice', text: noticeText(n), label: 'Read notice',
+      pos: { x: f.x + Math.sin(f.rot) * 0.05, y: f.y, z: f.z + Math.cos(f.rot) * 0.05 }, range: 2.4 });
+    notice(PROTOCOL_NOTICE, tf.protocol);
+    // The other safety notices (worldplan.js SAFETY_NOTICES), on plates like the protocol's.
+    safetyNotices(layout).forEach((n, i) => {
+      wallPiece(n, pbr(scene, { map: TWall(safetyNoticeTexture(n.title, n.lines, i)), roughness: 0.7 }), n.id);
+      notice(n, n);
+    });
     const restricted = pbr(scene, { map: TWall(restrictedTexture()), roughness: 0.6, metalness: 0.3 });
     wallPiece(tf.restrictedN, restricted, 'tp-restricted');
     wallPiece(tf.restrictedS, restricted, 'tp-restricted');

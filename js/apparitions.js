@@ -9,6 +9,9 @@
 import { cellOf, cellCenter, WALL_H } from './layout.js';
 import { inSuite } from './suiteplan.js';
 import { corridorSpots } from './hatman.js';
+import { windowPlacements } from './worldplan.js';
+import { STARE_TIME } from './achievements.js';
+import { podFootprint } from './podplan.js';
 import { SCREEN, SCREEN_KINDS, SCREEN_IDS, ROOM_EVENT, pickScreen, roomScreens } from './screenapparitions.js';
 
 export const APPARITION = {
@@ -39,6 +42,9 @@ export const KINDS = {
   reflection: { tint: 'pale',  h: 0.8,  aspect: 0.88, weight: 1,   life: 2.5 },
   static:     { tint: 'art',   h: 2.1,  aspect: 0.89, weight: 1,   life: 3,   sound: 'radio' },
   hanging:    { tint: 'black', h: 2.2,  aspect: 0.84, weight: 0.8, life: 2.5, glow: 0xff2a18 },
+  // A suited figure outside the Escape Pod Bay window, small with distance, staring in. Only when
+  // you're in the bay facing the window; once a game. art: whose picture it uses (as a pale silhouette).
+  watcher:    { tint: 'pale',  h: 0.72, aspect: 0.9,  weight: 3,   life: 9,   maxPerRun: 1, art: 'astronaut', color: 0x9aa6a4 },
 };
 export const KIND_IDS = Object.keys(KINDS);
 
@@ -48,6 +54,20 @@ const kindOf = (id) => KINDS[id] ?? SCREEN_KINDS[id] ?? (id === ROOM_EVENT.id ? 
 const isScreen = (id) => id in SCREEN_KINDS || id === ROOM_EVENT.id;
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+// Does the flat segment a-b pass through the box { x0, x1, z0, z1 }? (The escape pod, which the
+// grid's line-of-sight doesn't know about, stands between most of the bay and its window.)
+export function segmentHitsBox(a, b, r) {
+  let t0 = 0, t1 = 1;
+  for (const [p, d, lo, hi] of [[a.x, b.x - a.x, r.x0, r.x1], [a.z, b.z - a.z, r.z0, r.z1]]) {
+    if (Math.abs(d) < 1e-9) { if (p < lo || p > hi) return false; continue; }
+    let u = (lo - p) / d, v = (hi - p) / d;
+    if (u > v) [u, v] = [v, u];
+    t0 = Math.max(t0, u); t1 = Math.min(t1, v);
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+const POD_BOX = podFootprint();
 const isSafeAt = (layout, p) => layout.isSafe(cellOf(p.x), cellOf(p.z)) || inSuite(layout, p) !== null;
 
 // Where they can stand: the middle of every open floor cell, rooms and corridors alike, clear of the
@@ -100,13 +120,21 @@ export class Apparitions {
   //         grates (js/vents.js grateSpots), surfaces (js/hatman.js cameoSurfaces), rand,
   //         feed: the screen renderer's { show(key, id), set(id, k, t), hide() } (js/babylon/screens.js),
   //         consoles: js/screenapparitions.js consoleScreens }. No feed: no screen apparitions.
-  constructor(figure, layout, { lineClear = () => true, sound = () => null, grates = [], surfaces = [], rand = Math.random, feed = null, consoles = [] } = {}) {
+  // Hooks (none fire for debug summons): onShow(id) when one starts, onStare(id) when you were
+  // still looking straight at it as it went, onSpotted(id) the first time you look right at it.
+  constructor(figure, layout, { lineClear = () => true, sound = () => null, grates = [], surfaces = [], rand = Math.random, feed = null, consoles = [],
+    onShow = () => {}, onStare = () => {}, onSpotted = () => {} } = {}) {
     this.figure = figure;
     this.layout = layout;
     this.lineClear = lineClear;
     this.sound = sound;
     this.grates = grates;
     this.surfaces = surfaces.filter((s) => !isSafeAt(layout, s));
+    this.onShow = onShow;
+    this.onStare = onStare;
+    this.onSpotted = onSpotted;
+    // The glass the watcher shows in: each window, a hair in front of its pane, facing into the room.
+    this.windows = windowPlacements(layout).map((w) => ({ room: w.room, x: w.x + Math.sin(w.rot) * 0.02, y: w.y, z: w.z + Math.cos(w.rot) * 0.02, rotY: w.rot, w: 1.3, h: 0.8 }));
     this.rand = rand;
     this.floor = floorSpots(layout);
     this.corridor = corridorSpots(layout).filter((s) => !isSafeAt(layout, s));
@@ -224,6 +252,22 @@ export class Apparitions {
         const s = pickSpot([...this.corridor, ...grates], ctx, { near: 6, far: 12, maxAngle: 25 }, lc, rand);
         return s && { ...s, y: WALL_H - KINDS.hanging.h };
       }
+      case 'watcher': {
+        // You're in the window's room, within 9 m, facing it (within ~35 degrees), with a clear view.
+        const here = L.roomAt(cellOf(ctx.player.x), cellOf(ctx.player.z))?.id;
+        const f = ctx.forward, flen = Math.hypot(f.x, f.z) || 1;
+        const w = this.windows.find((w) => {
+          const dx = w.x - ctx.player.x, dz = w.z - ctx.player.z, d = Math.hypot(dx, dz);
+          if (w.room !== here || d > 9 || d < APPARITION.minDist) return false;
+          const facesYou = Math.sin(w.rotY) * -dx + Math.cos(w.rotY) * -dz > 0;
+          const inRoom = { x: w.x + Math.sin(w.rotY) * 0.4, z: w.z + Math.cos(w.rotY) * 0.4 };
+          return facesYou && (f.x * dx + f.z * dz) / (d * flen) > 0.82 && lc(ctx.player, inRoom) && !segmentHitsBox(ctx.player, w, POD_BOX);
+        });
+        if (!w) return null;
+        // Flat on the pane, a little off centre, its feet near the bottom of the glass.
+        const side = (rand() - 0.5) * 0.5, rx = Math.cos(w.rotY), rz = -Math.sin(w.rotY);
+        return { x: w.x + rx * side, y: w.y - w.h / 2 + 0.08, z: w.z + rz * side, rotY: w.rotY, window: w };
+      }
       case 'reflection': {
         // Dark glass you're close to and facing (like the Hat Man's cameo).
         const f = ctx.forward;
@@ -261,6 +305,7 @@ export class Apparitions {
     const k = kindOf(id);
     this.forced = null;
     if (!debug) this.shown[id]++; // a debug show doesn't use up the child's one appearance
+    if (!debug) this.onShow(id === ROOM_EVENT.id ? place.as : id);
     if (isScreen(id)) {
       // The whole room plays one kind (place.as); otherwise it's this kind on one monitor.
       const as = place.as ?? id, room = !!place.screens;
@@ -275,7 +320,7 @@ export class Apparitions {
     // A reflection placed ahead (no glass near) stands like the others.
     const h = id === 'reflection' ? (place.glass ? place.glass.h * 0.9 : 1.8) : k.h;
     const a = this.active = {
-      id, t: 0, leaving: -1, looked: 0, place, debug,
+      id, t: 0, leaving: -1, looked: 0, spotted: false, place, debug,
       pose: { x: place.x, y: place.y, z: place.z, alpha: 1, jitter: 0, flipX: false, rotY: place.rotY ?? null, h },
       jumpIn: 0, home: { x: place.x, z: place.z }, startPlayer: { x: ctx.player.x, z: ctx.player.z },
     };
@@ -286,7 +331,13 @@ export class Apparitions {
   }
 
   // Start going (a short glitch-out), unless already on the way or it hasn't had its couple of seconds.
-  leave() { const a = this.active; if (a.leaving < 0 && a.t >= APPARITION.minShow) a.leaving = 0; }
+  // Still looking straight at it as it starts to go: Don't Blink.
+  leave() {
+    const a = this.active;
+    if (a.leaving >= 0 || a.t < APPARITION.minShow) return;
+    a.leaving = 0;
+    if (!a.debug && !a.screen && a.looked >= STARE_TIME) this.onStare(a.id);
+  }
 
   end() {
     if (this.active.screen) { this.feed.hide(); this.sinceScreen = 0; }
@@ -336,6 +387,7 @@ export class Apparitions {
     const centre = { x: P.x, y: P.y + P.h * 0.55, z: P.z };
     const looked = this.lookingAt(ctx, centre);
     a.looked = looked ? a.looked + dt : 0;
+    if (!a.spotted && a.looked >= 0.3) { a.spotted = true; if (!a.debug) this.onSpotted(a.id); }
     if (d < APPARITION.minDist) this.leave();
     this.behave(a, dt, ctx, d, looked);
     this.figure.pose(P);
@@ -397,6 +449,17 @@ export class Apparitions {
         P.jitter = 0.1;
         P.y = a.place.y + Math.sin(t * 3) * 0.03;
         break;
+      case 'watcher': { // fades in on the glass, drifts a little, and goes a moment after you see it
+        if (!a.place.window) { P.alpha = Math.min(1, t / 0.6) * 0.9; P.jitter = 0.05; break; } // debug: no window
+        const w = a.place.window, rx = Math.cos(w.rotY), rz = -Math.sin(w.rotY);
+        const drift = Math.sin(t * 0.7) * 0.05;
+        P.x = a.place.x + rx * drift; P.z = a.place.z + rz * drift;
+        P.y = a.place.y + Math.sin(t * 0.9) * 0.02;
+        P.alpha = Math.min(1, t / 0.6) * 0.9;
+        P.jitter = 0.05;
+        if (a.looked >= 1.5) this.leave();
+        break;
+      }
     }
   }
 }

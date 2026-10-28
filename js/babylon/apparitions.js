@@ -11,7 +11,7 @@ export function makeApparitionFigure(scene) {
   const parts = {};
   for (const id of KIND_IDS) {
     const k = KINDS[id];
-    const tex = new Texture(`assets/apparitions/${id}.png`, scene, false, true, Texture.TRILINEAR_SAMPLINGMODE);
+    const tex = new Texture(`assets/apparitions/${k.art ?? id}.png`, scene, false, true, Texture.TRILINEAR_SAMPLINGMODE);
     tex.hasAlpha = true;
     tex.wrapU = tex.wrapV = Texture.CLAMP_ADDRESSMODE;
     let mat;
@@ -21,7 +21,7 @@ export function makeApparitionFigure(scene) {
       tex.level = k.level ?? 1.5;
       mat.fogEnabled = false; // the black fog would hide the far ones (the child at 20 m)
     } else if (k.tint === 'pale') {
-      mat = basic(scene, 0xbfd0cc, { opacity: tex, zOffset: -4 });
+      mat = basic(scene, k.color ?? 0xbfd0cc, { opacity: tex, zOffset: -4 });
     } else {
       mat = basic(scene, 0x020202, { opacity: tex });
     }

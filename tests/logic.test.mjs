@@ -1096,6 +1096,109 @@ test('achievements: earned once a game, NEW only the first time ever, unknown id
   assert.deepEqual(a.names, ['Rude Awakening', 'Scholar', 'Marathoner', 'Coward']);
 });
 
+test('achievements: every newer one exists with the given name', async () => {
+  const { ACHIEVEMENTS } = await import('../js/achievements.js');
+  const names = ['Over Here!', 'Not Today', 'Close Enough', 'Predator and Prey', 'Untouchable', "You're Not Alone",
+    'Unreliable Witness', 'Collective Delusion', "Don't Blink", 'Employee Wellness', 'Corporate Culture',
+    'Nothing to See Here', 'Safety First!', 'This Meeting Could Have Been an Email', 'Ignorance Is Bliss'];
+  for (const n of names) assert.ok(ACHIEVEMENTS.some((a) => a.name === n), n);
+  assert.equal(new Set(ACHIEVEMENTS.map((a) => a.id)).size, ACHIEVEMENTS.length, 'ids are unique');
+});
+
+test('apparition log: kinds this game, types ever (screen and cameo count as their figure)', async () => {
+  const { ApparitionLog, APPARITION_TYPES, apparitionType } = await import('../js/achievements.js');
+  const { KIND_IDS } = await import('../js/apparitions.js');
+  const { SCREEN_IDS } = await import('../js/screenapparitions.js');
+  // Every type can be met, and every screen kind maps to a type or to nothing (message, empty room...).
+  for (const id of KIND_IDS) assert.ok(APPARITION_TYPES.includes(id), id);
+  assert.equal(apparitionType('screen-gasmask'), 'gasmask');
+  assert.equal(apparitionType('hatman-cameo'), 'hatman');
+  assert.equal(apparitionType('screen-message'), null);
+  for (const id of SCREEN_IDS) apparitionType(id);
+  const store = new Map();
+  const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+  const log = new ApparitionLog(storage);
+  log.see('screen-patient'); log.see('patient'); log.see('hatman');
+  assert.equal(log.run.size, 3);
+  assert.ok(!log.allTypes);
+  const again = new ApparitionLog(storage);
+  assert.equal(again.run.size, 0, 'a new game starts empty');
+  assert.ok(again.ever.has('patient') && again.ever.has('hatman'), 'types remembered');
+  for (const t of APPARITION_TYPES) again.see(t);
+  assert.ok(again.allTypes);
+});
+
+test('Over Here!: a noise-maker it goes after is marked taken; one it ignores is not', () => {
+  const a = makeAlien();
+  const n = { ...at(layout.room('generator').spot), loudness: 50, source: 'decoy' };
+  hearOpen(a, n);
+  assert.equal(a.state, 'investigate');
+  assert.equal(n.taken, true);
+  // Straight after, a quieter one can't pull it away.
+  const quiet = { ...at(layout.room('pod').spot), loudness: 45, source: 'decoy' };
+  assert.equal(hearOpen(a, quiet), true);
+  assert.ok(!quiet.taken);
+  // While it has eyes on you, a decoy is heard but ignored.
+  const b = makeAlien();
+  startHunt(b, 2);
+  b.update(0.05, ctx({ x: b.pos.x + 2, z: b.pos.z }, { canSee: true }));
+  const lure = { ...at(layout.room('generator').spot), loudness: 50, source: 'decoy' };
+  hearOpen(b, lure);
+  assert.equal(b.state, 'hunt');
+  assert.ok(!lure.taken);
+});
+
+test('safety notices and posters: every poster has words, notices sit on room walls clear of doors', async () => {
+  const { POSTER_ART, POSTER_TEXT, isPropaganda, safetyNotices, posterPlacements } = await import('../js/worldplan.js');
+  const { POSTERS_NEEDED } = await import('../js/achievements.js');
+  for (const id of Object.keys(POSTER_ART)) assert.ok(POSTER_TEXT[id], id);
+  // Enough propaganda outside the secret bay to earn Corporate Culture.
+  const hung = posterPlacements(layout).filter((p) => isPropaganda(p.id) && p.room !== 'cryo');
+  assert.ok(hung.length >= POSTERS_NEEDED + 3, `${hung.length}`);
+  for (const n of safetyNotices(layout)) {
+    for (const d of layout.doors) assert.ok(Math.hypot(cellCenter(d.cx) - n.x, cellCenter(d.cz) - n.z) > 1.4, `${n.id} by a door`);
+    for (const p of posterPlacements(layout)) assert.ok(Math.hypot(p.x - n.x, p.z - n.z) > p.w / 2 + n.w / 2, `${n.id} over ${p.id}`);
+  }
+});
+
+test('onboarding.txt: one long Vantora recording, id k01, not a lore tape', () => {
+  const [e, ...rest] = parseLore(readFileSync(new URL('../text/onboarding.txt', import.meta.url), 'utf8'));
+  assert.equal(rest.length, 0);
+  assert.equal(e.id, 'k01');
+  assert.ok(e.text.split(/\s+/).length > 300, 'long');
+  assert.ok(tapeScript(e, Object.keys(VOICES)).every((l) => l.speaker in VOICES));
+  assert.ok(layout.props.some((p) => p.kiosk && p.kind === 'console'), 'a kiosk console');
+});
+
+test('tapes: onFinish fires when a tape plays to the end, with skipped set if a line was clicked past', async () => {
+  const { TapePlayer } = await import('../js/tapes.js');
+  const el = () => ({ textContent: '', hidden: true });
+  const make = () => {
+    const t = new TapePlayer({ audio: { tapeStart() {}, tapeStop() {} }, intercom: { busy: false }, el: { box: el(), head: el(), speaker: el(), line: el() } });
+    t.voice = false; // captions on a timer
+    t.finished = [];
+    t.onFinish = (e, o) => t.finished.push(o.skipped);
+    return t;
+  };
+  const entry = { id: 'k01', title: 'T', author: 'Vantora Transit Group', text: 'One. Two. Three.', head: 'KIOSK' };
+  const a = make();
+  a.play(entry);
+  assert.equal(a.el.head.textContent, 'KIOSK');
+  for (let i = 0; i < 400 && a.playing; i++) a.update(0.05);
+  assert.deepEqual(a.finished, [false]);
+  const b = make();
+  b.play(entry);
+  b.update(1);
+  b.skip();
+  for (let i = 0; i < 400 && b.playing; i++) b.update(0.05);
+  assert.deepEqual(b.finished, [true]);
+  const c = make();
+  c.play(entry);
+  c.update(1);
+  c.stop();
+  assert.deepEqual(c.finished, [], 'stopped: not finished');
+});
+
 test('personalize swaps "Technician" for the player name', async () => {
   const { personalize } = await import('../js/intercom.js');
   assert.equal(personalize('Safe travels, Technician. Technician status: ok.', 'Nathan'), 'Safe travels, Nathan. Nathan status: ok.');

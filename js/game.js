@@ -18,7 +18,10 @@ import { TapePlayer } from './tapes.js';
 import { CameraRig } from './rig.js';
 import { inSuite, graffitiWall, GRAFFITI_RANGE } from './suiteplan.js';
 import { cryoPods } from './cryoplan.js';
-import { Achievements, MARATHON_TIME, COWARD_TIME } from './achievements.js';
+import {
+  Achievements, ApparitionLog, MARATHON_TIME, COWARD_TIME, STRIKE_DIST, CLOSE_DIST, CLOSE_TIME, HUNT_STREAK,
+  WITNESS_KINDS, POSTERS_NEEDED, SAFETY_WINDOW, WELLNESS_TIME,
+} from './achievements.js';
 import { VENT, VentState, grateAt, nearestGrate, clampYaw, lookingOut, ventPoint, grateSpots } from './vents.js';
 import { NOISEMAKERS, TYPES, Inventory, ActiveNoise, CRATE_CONTENTS, pickupPlacements, MAX_CARRY } from './noisemakers.js';
 import { planterBlocker } from './gardenplan.js';
@@ -66,12 +69,16 @@ export function startGame(createView) {
     audio, intercom,
     el: { box: $('tape'), head: $('tape-head'), speaker: $('tape-speaker'), line: $('tape-line') },
   });
+  // The kiosk's onboarding, heard to the end without clicking past a line.
+  tapes.onFinish = (entry, { skipped }) => { if (entry.id === 'k01' && !skipped) achieve('meetingEmail'); };
   const throwables = new Throwables(view.makeBall, (x, z) => blockedAt(x, z, 0.05), NOISEMAKERS);
   // The Hat Man (reference files/Hatman.md). Marigold mentions him once, the first time he's out.
   const hatman = new HatMan(view.hatman, layout, {
     rig, world,
     lineClear: (a, b) => lineClear(layout, a, b, isDoorClosed),
     onFirst: () => intercom.say(LINES.hatman),
+    onShow: (id) => sawApparition(id),
+    onStare: () => achieve('dontBlink'),
   });
   view.hatman.addLamps(corridorEndLamps(layout));
   // The other nine from the Apparition Field Guide (js/apparitions.js): one at a time, never in a safe room.
@@ -83,6 +90,10 @@ export function startGame(createView) {
     // The computer screen apparitions play on the consoles' monitors (js/screenapparitions.js).
     feed: view.screens,
     consoles: consoleScreens(layout),
+    // Achievements: what you've seen, what you stared down, the figure at the window.
+    onShow: (id) => sawApparition(id),
+    onStare: () => achieve('dontBlink'),
+    onSpotted: (id) => { if (id === 'watcher') achieve('notAlone'); },
   });
 
   let apparitions = true; // the menu setting (read from storage below)
@@ -133,6 +144,19 @@ export function startGame(createView) {
   const DOOR_LINE_GAP = 20; // seconds before she repeats a door line
   const graffiti = graffitiWall(layout);
   const stats = { hunts: 0, decoys: 0, sprintTime: 0, ventTime: 0 };
+  // Achievement tracking (js/achievements.js).
+  let strikeClose = false; // this hunt got within striking distance
+  let huntStreak = 0;      // hunts survived
+  let closeTime = 0;       // seconds near it, unnoticed
+  let quietTime = 0;       // seconds in the Quiet Room
+  let safetyReadAt = -Infinity;
+  const postersRead = new Set();
+  const seen = new ApparitionLog();
+  function sawApparition(id) {
+    seen.see(id);
+    if (seen.run.size >= WITNESS_KINDS) achieve('unreliableWitness');
+    if (seen.allTypes) achieve('collectiveDelusion');
+  }
   // Vents (js/vents.js): which one you're in, and the E key's tap-or-hold at a grate.
   const vents = world.vents?.vents ?? [];
   const vent = new VentState(vents);
@@ -141,6 +165,7 @@ export function startGame(createView) {
   // Lore terminals and the opening announcements come from text/lore.txt and text/intro.txt,
   // loaded when the shift starts.
   let lore = new Map();
+  let onboarding = null; // the kiosk's recording (text/onboarding.txt)
   let introLines = LINES.intro;
   const loreRead = new Set();
   const LORE_TOTAL = layout.props.filter((p) => p.kind === 'log').length;
@@ -178,19 +203,20 @@ export function startGame(createView) {
     if (e.code === 'Backquote') { if (!e.repeat) setAlienOff(!alienOff); return true; }
     if (e.code === 'AltLeft' || e.code === 'AltRight') return true; // keep the browser's menu out of it
     if (e.altKey && e.code === 'KeyR') { if (!e.repeat) phantoms.summon('screen-room'); return true; } // every terminal in the room
+    if (e.code === 'Backslash') { if (!e.repeat) phantoms.summon('watcher'); return true; } // the figure at the Pod Bay window
     const i = DEBUG_KEYS.indexOf(e.code);
     if (i < 0) return false;
     if (e.repeat) return true;
     if (e.altKey) phantoms.summon(SCREEN_IDS[i]);
-    else if (i < KIND_IDS.length) phantoms.summon(KIND_IDS[i]);
     else if (e.code === 'Digit0') hatman.summon();
+    else if (i < 9) phantoms.summon(KIND_IDS[i]);
     else return false;
     return true;
   }
   if (DEBUG) {
     addEventListener('keyup', (e) => { if (e.code === 'AltLeft' || e.code === 'AltRight') e.preventDefault(); });
     addEventListener('wheel', (e) => { if (state === 'playing' && e.deltaY) inventory.cycle(Math.sign(e.deltaY)); }, { passive: true });
-    console.info('Debug keys: 1-9 ' + KIND_IDS.join(', ') + ' · 0 Hat Man · Alt+1-0, Alt+-, Alt+=, Alt+Backspace ' +
+    console.info('Debug keys: 1-9 ' + KIND_IDS.slice(0, 9).join(', ') + ' · 0 Hat Man · \\ watcher (Pod Bay window) · Alt+1-0, Alt+-, Alt+=, Alt+Backspace ' +
       SCREEN_IDS.map((id) => id.slice(7)).join(', ') + ' (on a monitor) · Alt+R every terminal in the room · ` alien off/on · wheel picks a noise-maker');
   }
   addEventListener('keydown', (e) => {
@@ -334,7 +360,9 @@ export function startGame(createView) {
     // Never let sound loading block the game: give it a few seconds, then go anyway.
     if (await Promise.race([audio.load(), wait(8000).then(() => 'timeout')]) === 'timeout') console.warn('Sound loading timed out; starting anyway.');
     try {
-      const [loreText, introText, marigoldText] = await Promise.all(['text/lore.txt', 'text/intro.txt', 'text/marigold.txt'].map(loadText));
+      const [loreText, introText, marigoldText, onboardingText] = await Promise.all(['text/lore.txt', 'text/intro.txt', 'text/marigold.txt', 'text/onboarding.txt'].map(loadText));
+      const ob = onboardingText && parseLore(onboardingText)[0];
+      if (ob) onboarding = { ...ob, head: `KIOSK · ${ob.title}` };
       if (marigoldText) applyLines(parseLines(marigoldText));
       if (loreText) lore = new Map(parseLore(loreText).map((e) => [e.id, e]));
       else console.warn('Lore did not load; terminals will show as offline.');
@@ -409,6 +437,21 @@ export function startGame(createView) {
     } else if (target.kind === 'log') {
       if (tapes.id === target.id) tapes.stop();
       else playTape(target);
+    } else if (target.kind === 'kiosk') {
+      // The onboarding recording: not a lore tape, so it doesn't count toward LORE.
+      audio.playAt('click', target.pos, { volume: 0.4 });
+      if (onboarding && tapes.id === onboarding.id) tapes.stop();
+      else if (onboarding) { makeNoise(target.pos, LOUDNESS.terminal); tapes.play(onboarding); }
+      else toast('KIOSK OFFLINE');
+    } else if (target.kind === 'poster') {
+      toast(target.text, 4);
+      if (target.propaganda && !postersRead.has(target.poster)) {
+        postersRead.add(target.poster);
+        if (postersRead.size >= POSTERS_NEEDED) achieve('corporateCulture');
+      }
+    } else if (target.kind === 'notice') {
+      toast(target.text, 5);
+      safetyReadAt = elapsed;
     }
   }
 
@@ -427,10 +470,10 @@ export function startGame(createView) {
     }
   }
 
-  function toast(text) {
+  function toast(text, secs = 3) {
     $('toast').textContent = text;
     $('toast').hidden = false;
-    toastTimer = 3;
+    toastTimer = secs;
   }
 
   function score(won) {
@@ -504,6 +547,8 @@ export function startGame(createView) {
       } else if (ev.type === 'huntWarn') {
         // The fair warning before every hunt: the hum cuts out, the clicking stops, the lights dip.
         stats.hunts++;
+        strikeClose = false;
+        closeTime = 0;
         audio.cutHum(true);
         audio.stopAlienClicks();
         world.dimBeat(ev.time + 0.4);
@@ -537,6 +582,7 @@ export function startGame(createView) {
 
   function caught() {
     state = 'caught';
+    if (elapsed - safetyReadAt <= SAFETY_WINDOW) achieve('safetyFirst');
     safeMusic.fadeOut(1000);
     player.lookAt(alien.pos.x, alien.pos.z);
     audio.play2D('teleporter', { volume: 1.5, rate: 1.6, duration: 2.5 });
@@ -560,6 +606,8 @@ export function startGame(createView) {
     safeMusic.fadeOut(1000);
     audio.silenceAlien(); // nothing of it in the ending
     world.launchPod?.(); // the door shuts, the thrusters flare
+    if (stats.hunts === 0) achieve('untouchable'); // it never once came for you
+    if (loreRead.size === 0) achieve('ignoranceBliss');
     const allLore = loreRead.size === LORE_TOTAL;
     tapes.stop(false);
     intercom.stop();
@@ -715,6 +763,7 @@ export function startGame(createView) {
     if (here?.id !== 'cryo') return;
     if (!secretFound) {
       secretFound = true;
+      achieve('nothingToSee');
       toast(`Secret found: Cryosleep Bay  +${SCORE.secret}`);
       intercom.say(LINES.cryoEnter, { priority: true });
     }
@@ -745,6 +794,7 @@ export function startGame(createView) {
       exposureK = Math.min(1, exposureK + (dt * 0.4) / 1.5);
       view.setExposureScale?.(exposureK);
     }
+    if (suite === 'quiet' && (quietTime += dt) >= WELLNESS_TIME) achieve('employeeWellness');
     if (suite === 'quiet' && !saidGraffiti && Math.abs(player.pos.x - graffiti.x) < GRAFFITI_RANGE) {
       saidGraffiti = true;
       intercom.say(LINES.graffiti, { suite: true });
@@ -805,7 +855,9 @@ export function startGame(createView) {
     });
     // Each landed noise-maker goes off on its own schedule; the alien takes them as lures.
     for (const n of activeNoise.update(dt)) {
-      if (makeNoise(n, n.loudness, 'decoy').heard) n.item.heard = true;
+      const heard = makeNoise(n, n.loudness, 'decoy');
+      if (heard.heard) n.item.heard = true;
+      if (heard.taken) achieve('overHere'); // it went for the noise-maker
       if (n.type === 'echo') audio.playAt('clicks', n, { volume: 0.9, rate: 1.6, duration: 0.9 });
       else if (n.type === 'shard') audio.playAt('ring', n, { volume: 1.1, ref: 4 });
     }
@@ -832,7 +884,20 @@ export function startGame(createView) {
     });
     handleAlienEvents();
     const hunting = alien.state === 'hunt';
-    if (hunting !== wasHunting) { audio.cutHum(hunting); wasHunting = hunting; }
+    if (hunting && d < STRIKE_DIST) strikeClose = true;
+    if (hunting !== wasHunting) {
+      audio.cutHum(hunting);
+      wasHunting = hunting;
+      if (!hunting) {
+        // A hunt ended and you're still here: Not Today if it was in striking distance.
+        if (strikeClose) achieve('notToday');
+        if (++huntStreak >= HUNT_STREAK) achieve('predatorPrey');
+      }
+    }
+    // Close Enough: near it, in the open, while it hasn't noticed you.
+    if (!hidden && !safe && alien.dormant <= 0 && !hunting && d < CLOSE_DIST) {
+      if ((closeTime += dt) >= CLOSE_TIME) achieve('closeEnough');
+    } else closeTime = 0;
     revealTimer = Math.max(0, revealTimer - dt);
     view.alien.setReveal(revealTimer / 1.2);
     view.alien.update(alien, elapsed);
@@ -914,6 +979,7 @@ export function startGame(createView) {
       } else if (target.kind === 'log') {
         prompt = tapes.id === target.id ? '[E] Stop tape' : `[E] Play tape${loreRead.has(target.id) ? ' (heard)' : ''}`;
       } else if (target.kind === 'console') prompt = target.label; // set dressing: nothing to do
+      else if (target.kind === 'kiosk') prompt = onboarding && tapes.id === onboarding.id ? '[E] Stop recording' : '[E] Play onboarding';
       else prompt = `[E] ${target.label}`;
     }
     // Vents: what E does at a grate, and the hold bar for slipping through quietly.
@@ -983,7 +1049,7 @@ export function startGame(createView) {
 
   // Handy for debugging in the browser console.
   window.station9 = {
-    alien, player, world, achievements, layout, hatman, tricks, apparitions: phantoms, screens: view.screens, progress, loreRead, explored, tapes, audio, intercom, vent, vents, decor: world.decor,
+    alien, player, world, achievements, seen, layout, hatman, tricks, apparitions: phantoms, screens: view.screens, progress, loreRead, explored, tapes, audio, intercom, vent, vents, decor: world.decor,
     renderer: view.renderer, view, rig, engine: view.name, inventory, activeNoise, throwables,
     get lore() { return lore; }, get state() { return state; }, get stage() { return stage; },
     get alienOff() { return alienOff; }, set alienOff(v) { setAlienOff(!!v); },

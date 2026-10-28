@@ -7,7 +7,7 @@
 // puts the plant models in the planters and along the reclaimed corridors.
 import { WALL_H, TILE, cellOf, cellCenter } from './layout.js';
 import { corridorRuns, along, GRATE_CLEAR } from './decorplan.js';
-import { wallAlong, signPlacements, posterPlacements, doorFrames, FRAME } from './worldplan.js';
+import { wallAlong, signPlacements, posterPlacements, safetyNotices, doorFrames, FRAME } from './worldplan.js';
 import { grateSpots } from './vents.js';
 import { seeded } from './textures.js';
 
@@ -39,7 +39,7 @@ export function planGarden(L, plan, seed = 77) {
   const grates = grateSpots(L);
   // Anything already on a corridor wall: the planter and its vines keep clear of it.
   const wallItems = [...plan.boards, ...plan.stencils, ...plan.tape, ...plan.plates, ...plan.sconces, ...plan.vents,
-    ...plan.faults.filter((f) => f.kind === 'spark'), ...signPlacements(L), ...posterPlacements(L)];
+    ...plan.faults.filter((f) => f.kind === 'spark'), ...signPlacements(L), ...posterPlacements(L), ...safetyNotices(L)];
 
   // Candidate spots: straight stretches of corridor wall between the ribs.
   const cands = [];

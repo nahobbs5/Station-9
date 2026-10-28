@@ -37,6 +37,8 @@ export class TapePlayer {
     this.wait = 0;
     this.utter = null;
     this.file = null;
+    this.skipped = false; // a line of this tape was clicked past
+    this.onFinish = () => {}; // (entry, { skipped }): it played to the end (not stopped, not skipped off the end)
     intercom.tape = this;
   }
 
@@ -50,7 +52,8 @@ export class TapePlayer {
     this.entry = entry;
     this.lines = tapeScript(entry, SPEAKERS);
     this.i = 0;
-    this.el.head.textContent = `TAPE ${entry.id.slice(1)} · ${entry.title}`;
+    this.skipped = false;
+    this.el.head.textContent = entry.head ?? `TAPE ${entry.id.slice(1)} · ${entry.title}`;
     this.el.speaker.textContent = '';
     this.el.line.textContent = '…';
     this.el.box.hidden = false;
@@ -77,6 +80,7 @@ export class TapePlayer {
   // On the last sentence, the tape ends. Returns true if there was a tape to skip.
   skip() {
     if (!this.entry) return false;
+    this.skipped = true;
     if (this.state === 'file') {
       const f = this.file;
       const i = this.i + 1;
@@ -143,9 +147,16 @@ export class TapePlayer {
   next() {
     this.utter = null;
     this.i++;
-    if (this.i >= this.lines.length) { this.stop(); return; }
+    if (this.i >= this.lines.length) { this.finish(); return; }
     this.state = 'gap';
     this.wait = GAP;
+  }
+
+  // The last line ended on its own.
+  finish() {
+    const entry = this.entry, skipped = this.skipped;
+    this.stop();
+    this.onFinish(entry, { skipped });
   }
 
   caption(line) {
@@ -158,7 +169,7 @@ export class TapePlayer {
     this.state = 'file';
     this.file = new Audio(url);
     this.file.volume = 0.9;
-    this.file.onended = () => { if (this.state === 'file') this.stop(); };
+    this.file.onended = () => { if (this.state === 'file') this.finish(); };
     this.file.onerror = () => { // no file: fall back to the synthetic voice
       if (this.state !== 'file') return;
       this.file = null;

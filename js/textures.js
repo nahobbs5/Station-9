@@ -813,6 +813,32 @@ export function safetyProtocolTexture() {
   });
 }
 
+// A small safety notice plate (worldplan.js SAFETY_NOTICES): a hazard-orange header, then the rules.
+export function safetyNoticeTexture(title, lines, seed = 1) {
+  return makeCanvas(310, 400, (g, w, h) => {
+    g.fillStyle = '#d9d2c0'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#c8641e'; g.fillRect(0, 0, w, 78);
+    g.strokeStyle = 'rgba(40,40,38,0.5)'; g.lineWidth = 4; g.strokeRect(6, 6, w - 12, h - 12);
+    // A warning triangle in the header.
+    g.fillStyle = '#1f1f1d'; g.beginPath(); g.moveTo(40, 18); g.lineTo(64, 60); g.lineTo(16, 60); g.closePath(); g.fill();
+    g.fillStyle = '#c8641e'; g.font = `700 30px ${HEAD}`; g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.fillText('!', 40, 56);
+    g.fillStyle = '#1f1f1d'; g.textAlign = 'left';
+    let size = 32;
+    do { g.font = `700 ${size}px ${HEAD}`; size -= 2; } while (g.measureText(title).width > w - 96 && size > 16);
+    g.fillText(title, 78, 52);
+    g.fillStyle = '#2c2c2a';
+    lines.forEach((t, i) => {
+      g.font = `600 22px ${HEAD}`; g.fillText('\u25B8', 22, 124 + i * 52);
+      let fs = 22;
+      do { g.font = `500 ${fs}px ${HEAD}`; fs -= 1; } while (g.measureText(t).width > w - 70 && fs > 12);
+      g.fillText(t, 46, 124 + i * 52);
+    });
+    g.font = `500 14px ${HEAD}`; g.fillStyle = 'rgba(44,44,42,0.7)'; g.fillText('VANTORA TRANSIT GROUP · STATION 9', 22, h - 22);
+    const rand = seeded(400 + seed);
+    for (let i = 0; i < 110; i++) { g.fillStyle = `rgba(50,40,28,${0.15 + rand() * 0.3})`; g.fillRect(rand() * w, rand() * h, 1 + rand() * 2, 1 + rand() * 2); }
+  });
+}
+
 // RESTRICTED ACCESS, on a dark plate for the door headers.
 export function restrictedTexture() {
   return makeCanvas(512, 72, (g, w, h) => {

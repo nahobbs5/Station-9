@@ -28,6 +28,10 @@ hunt: Please stay calm. A wellness check is on its way to you.
 # The first time a noise you made carries across the station.
 carried: That one carried. Something on this station has excellent hearing.
 
+# --- Side Hustle ---
+# The first stash of Vantora Marks you find in a crate or box.
+marks: Vantora Marks are company property, Technician. I have noted the discrepancy in your file. Carry on.
+
 # --- Noise-makers ---
 # The first noise-maker you pick up, whatever kind.
 crate: A noise-maker! Throw it with Q to redirect unwanted attention. Attention is our most precious resource. Please do not waste it.

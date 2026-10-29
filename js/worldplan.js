@@ -355,7 +355,7 @@ export function roomBase(room, powered) {
 // Furniture -------------------------------------------------------------------------------
 // How deep each piece is (metres from its back to its front), so it can stand against a wall.
 export const FURNITURE_DEPTH = {
-  bunk: 0.95, lockers: 0.5, bench: 0.62, shelves: 0.45, bigCrate: 1.0, cart: 0.55, workbench: 0.75,
+  bunk: 0.95, lockers: 0.5, bench: 0.62, shelves: 0.45, bigCrate: 1.0, cargoCrate: 0.55, cart: 0.55, workbench: 0.75,
   desk: 0.75, cabinet: 0.55, sofa: 0.9, plant: 0.45, messTable: 0.9, coffeeTable: 0.6, teleControl: 0.6,
   growRack: 0.45, growChamber: 0.6, pottingBench: 0.7,
 };

@@ -29,6 +29,7 @@ import { POD } from '../podplan.js';
 import { pbr, basic, toTexture, redraw, srgb, linear, compose, instances, TUNING, bevelBox } from './util.js';
 import { noisemakerMaker } from './props.js';
 import { pickupPlacements, NOISEMAKERS, CRATE_CONTENTS } from '../noisemakers.js';
+import { stashPlacements } from '../stashes.js';
 
 // Console status lights: Marigold until you've heard its tape, then Soft Teal (terminals spec).
 const UNREAD = 0xf2a92e, READ = 0x5fb3a8;
@@ -555,6 +556,11 @@ export function buildWorld(scene, layout) {
     m.position.set(pk.x, pk.y + 0.12, pk.z);
     pickups.set(pk.id, m);
     interactables.push({ id: pk.id, kind: 'pickup', type: pk.type, label: `Take ${NOISEMAKERS[pk.type].name}`, pos: { x: pk.x, y: pk.y + 0.12, z: pk.z }, range: 2.2 });
+  }
+
+  // Side Hustle stashes (js/stashes.js): crates and boxes you can search for Vantora Marks.
+  for (const st of stashPlacements(layout)) {
+    interactables.push({ id: st.id, kind: 'stash', label: st.label, pos: { x: st.x, y: st.y, z: st.z }, range: 2.7 });
   }
 
   // Pipes, patches, broken lights and leaks. Its sounds go to whoever sets world.onDecorEvent.

@@ -132,6 +132,11 @@ export function furnitureKit(scene) {
       box(g, 1.1, 0.9, 1.0, 0, 0.45, 0, M.crate);
       box(g, 1.14, 0.06, 1.04, 0, 0.88, 0, M.dark);
     },
+    cargoCrate(g) { // a small crate: grey body, dark lid and a yellow strap
+      box(g, 0.62, 0.46, 0.5, 0, 0.23, 0, M.crate).scaling.y = -1; // box textures come out upside down
+      box(g, 0.66, 0.05, 0.54, 0, 0.47, 0, M.dark);
+      box(g, 0.08, 0.475, 0.52, 0.18, 0.24, 0, M.yellow);
+    },
     cart(g) {
       posts(g, 1.0, 0.5, 0.95, 0.035);
       for (const y of [0.15, 0.55, 0.92]) box(g, 1.0, 0.03, 0.5, 0, y, 0, M.metal);

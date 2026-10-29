@@ -130,6 +130,7 @@ button.link:hover { background: none; color: var(--ink); }
 #stamina-bar.tired { background: #6a4a3a; }
 #mode { margin-top: 8px; font-size: 11px; letter-spacing: 0.2em; color: var(--dim); min-height: 1em; }
 #decoys { margin-top: 4px; color: #ff9a6a; }
+#marks { margin-top: 4px; color: #e8c86a; }
 
 #prompt {
   position: absolute; left: 50%; top: calc(50% + 28px); transform: translateX(-50%);

@@ -13,6 +13,7 @@ export const LINES = {
   power: 'Main power restored! The station is now forty percent brighter. So are you.',
   comms: 'Rescue call sent. A shuttle will arrive in approximately... soon. Please proceed to the Escape Pod Bay. Your labor is our freedom.',
   hunt: 'Please stay calm. A wellness check is on its way to you.',
+  marks: 'Vantora Marks are company property, Technician. I have noted the discrepancy in your file. Carry on.',
   crate: 'A noise-maker! Throw it with Q to redirect unwanted attention. Attention is our most precious resource. Please do not waste it.',
   nm_echo: 'Echo Seed. It rolls, and then it chatters. It sounds like someone you used to know.',
   nm_shard: 'Resonance Shard. One clear note that carries a very long way. Use it far from yourself.',

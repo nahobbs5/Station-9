@@ -143,6 +143,9 @@ export const FURNITURE = [
   // Escape Pod Bay (doors on its north and south walls; the pod lies across the middle).
   { kind: 'bench', room: 'pod', cell: [2, 14], solid: true },
   { kind: 'lockers', room: 'pod', cell: [5, 14], solid: true },
+  // Small cargo crates, each hiding a stash of Vantora Marks (js/stashes.js).
+  { kind: 'cargoCrate', room: 'pod', cell: [1, 14], solid: true },
+  { kind: 'cargoCrate', room: 'control', cell: [16, 2], solid: true },
   // The safe rooms (Wellness, Quiet) are furnished separately (js/suiteplan.js).
 ];
 // Windows onto the planet: [room, wall side].

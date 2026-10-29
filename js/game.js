@@ -24,6 +24,7 @@ import {
 } from './achievements.js';
 import { VENT, VentState, grateAt, nearestGrate, clampYaw, lookingOut, ventPoint, grateSpots } from './vents.js';
 import { NOISEMAKERS, TYPES, Inventory, ActiveNoise, CRATE_CONTENTS, pickupPlacements, MAX_CARRY } from './noisemakers.js';
+import { STASH_VALUE, STASH_TOTAL, CURRENCY, formatMarks } from './stashes.js';
 import { planterBlocker } from './gardenplan.js';
 
 const $ = (id) => document.getElementById(id);
@@ -35,7 +36,7 @@ const OBJECTIVES = {
 };
 const DORMANT = 30;     // seconds of quiet before the alien wakes
 const CATCH_DIST = 1.3;
-const SCORE = { lore: 100, repair: 250, escape: 1000, timeBonusFrom: 900, secret: 250 };
+const SCORE = { lore: 100, repair: 250, escape: 1000, timeBonusFrom: 900, secret: 250, perMark: 1 }; // perMark: each Vantora Mark found
 // ?debug lets automated tests play without pointer lock.
 const DEBUG = new URLSearchParams(location.search).has('debug');
 
@@ -128,6 +129,9 @@ export function startGame(createView) {
   const crateLeft = [...CRATE_CONTENTS];
   const pickupsLeft = new Map(pickupPlacements(layout).map((p) => [p.id, p]));
   const typesFound = new Set();
+  // Side Hustle (js/stashes.js): the stashes you've searched and the Vantora Marks found.
+  const stashesTaken = new Set();
+  let marks = 0;
   let noiseLevel = 0;
   let pulseTimer = 0;
   let nagTimer = 0;
@@ -444,6 +448,16 @@ export function startGame(createView) {
       pickupsLeft.delete(target.id);
       world.takePickup(target.id);
       audio.playAt('tick', target.pos, { volume: 0.5 });
+    } else if (target.kind === 'stash') {
+      if (stashesTaken.has(target.id)) return;
+      stashesTaken.add(target.id);
+      marks += STASH_VALUE;
+      world.setPickupLabel(target.id, 'Empty');
+      audio.playAt('clatter', target.pos, { volume: 0.35 });
+      makeNoise(target.pos, LOUDNESS.stash);
+      toast(`+${formatMarks(STASH_VALUE)} · ${formatMarks(marks)} / ${formatMarks(STASH_TOTAL)}`);
+      if (stashesTaken.size === 1) intercom.say(LINES.marks);
+      if (marks >= STASH_TOTAL) achieve('sideHustle');
     } else if (target.kind === 'log') {
       if (tapes.id === target.id) tapes.stop();
       else playTape(target);
@@ -488,7 +502,7 @@ export function startGame(createView) {
 
   function score(won) {
     const repairs = won ? 3 : stage;
-    let total = loreRead.size * SCORE.lore + repairs * SCORE.repair + (secretFound ? SCORE.secret : 0);
+    let total = loreRead.size * SCORE.lore + repairs * SCORE.repair + (secretFound ? SCORE.secret : 0) + marks * SCORE.perMark;
     if (won) total += SCORE.escape + Math.max(0, Math.floor(SCORE.timeBonusFrom - elapsed));
     return total;
   }
@@ -606,7 +620,7 @@ export function startGame(createView) {
       $('hud').hidden = true;
       $('caught').hidden = false;
       $('caught-stats').textContent =
-        `You lasted ${fmt(elapsed)} and finished ${stage} of 3 repairs. Lore read: ${loreRead.size}/${LORE_TOTAL}.${secretFound ? ' Secret: Cryosleep Bay found.' : ''}${achievements.names.map((n) => ` Achievement: ${n}.`).join('')} Score: ${score(false)}`;
+        `You lasted ${fmt(elapsed)} and finished ${stage} of 3 repairs. Lore read: ${loreRead.size}/${LORE_TOTAL}.${marks ? ` ${CURRENCY.name}: ${marks}/${STASH_TOTAL}.` : ''}${secretFound ? ' Secret: Cryosleep Bay found.' : ''}${achievements.names.map((n) => ` Achievement: ${n}.`).join('')} Score: ${score(false)}`;
       document.exitPointerLock();
     }, 1400);
   }
@@ -637,7 +651,7 @@ export function startGame(createView) {
       if (allLore) $('win-text').textContent =
         'The pod drops away from Station 9. Marigold is still reading names into the dark. Yours is not one of them.';
       $('win-stats').textContent =
-        `Time ${fmt(elapsed)} · Times hunted: ${stats.hunts} · Noise-makers thrown: ${stats.decoys} · Lore read: ${loreRead.size}/${LORE_TOTAL}${secretFound ? ' · Secret: Cryosleep Bay found' : ''}${achLine()}`;
+        `Time ${fmt(elapsed)} · Times hunted: ${stats.hunts} · Noise-makers thrown: ${stats.decoys} · Lore read: ${loreRead.size}/${LORE_TOTAL}${marks ? ` · ${CURRENCY.name}: ${marks}/${STASH_TOTAL}` : ''}${secretFound ? ' · Secret: Cryosleep Bay found' : ''}${achLine()}`;
       $('win-score').textContent = `Score: ${score(true)}`;
       renderCredits($('win-credits'), achievements.list());
       document.exitPointerLock();
@@ -989,6 +1003,7 @@ export function startGame(createView) {
     $('decoys').textContent = inventory.found
       ? TYPES.map((t) => { const s = `${NOISEMAKERS[t].short} ×${inventory.counts[t]}`; return t === inventory.selected ? `[${s}]` : s; }).join(' · ') + `   Q throw · ${DEBUG ? 'wheel' : '1-3'} choose · ${inventory.total}/${MAX_CARRY}`
       : '';
+    $('marks').textContent = marks ? `${formatMarks(marks)} / ${formatMarks(STASH_TOTAL)}` : '';
     $('mode').textContent = player.mode === 'crouch' ? 'CROUCHED' : player.mode === 'sprint' ? 'SPRINTING' : '';
 
     let prompt = '';
@@ -1002,6 +1017,7 @@ export function startGame(createView) {
       } else if (target.kind === 'log') {
         prompt = tapes.id === target.id ? '[E] Stop tape' : `[E] Play tape${loreRead.has(target.id) ? ' (heard)' : ''}`;
       } else if (target.kind === 'console') prompt = target.label; // set dressing: nothing to do
+      else if (target.kind === 'stash' && stashesTaken.has(target.id)) prompt = 'Empty';
       else if (target.kind === 'kiosk') prompt = onboarding && tapes.id === onboarding.id ? '[E] Stop recording' : '[E] Play onboarding';
       else prompt = `[E] ${target.label}`;
     }
@@ -1074,6 +1090,7 @@ export function startGame(createView) {
   window.station9 = {
     alien, player, world, achievements, seen, layout, hatman, tricks, apparitions: phantoms, screens: view.screens, progress, loreRead, explored, tapes, audio, intercom, vent, vents, decor: world.decor,
     renderer: view.renderer, view, rig, engine: view.name, inventory, activeNoise, throwables, achieve,
+    get marks() { return marks; }, stashesTaken,
     get lore() { return lore; }, get state() { return state; }, get stage() { return stage; },
     get alienOff() { return alienOff; }, set alienOff(v) { setAlienOff(!!v); },
   };

@@ -12,6 +12,7 @@ export const LOUDNESS = {
   decoy: 16,
   flashlight: 3,
   terminal: 4,
+  stash: 3,       // rattling through a crate for Vantora Marks
   comms: 22,
   generator: 30,
 };

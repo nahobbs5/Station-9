@@ -19,6 +19,7 @@ export const ACHIEVEMENTS = [
   { id: 'nothingToSee', name: 'Nothing to See Here', text: 'Find a concealed or restricted room.' },
   { id: 'safetyFirst', name: 'Safety First!', text: 'Die immediately after reading a safety notice.' },
   { id: 'meetingEmail', name: 'This Meeting Could Have Been an Email', text: 'Listen to an unnecessarily long corporate recording.' },
+  { id: 'sideHustle', name: 'Side Hustle', text: 'Collect all 500 Vantora Marks stashed around the station.' },
   { id: 'ignoranceBliss', name: 'Ignorance Is Bliss', text: 'Complete the game without reading a single optional terminal entry.' },
 ];
 // Seconds, added up over a game: sprinting for Marathoner, inside vents and ducts for Coward.
